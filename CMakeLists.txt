@@ -22,6 +22,7 @@ add_library(broflora STATIC
     src/development.cpp
     src/spawning.cpp
     src/senescence.cpp
+    src/validate.cpp
     src/mesh_emit.cpp
 )
 add_library(broflora::broflora ALIAS broflora)

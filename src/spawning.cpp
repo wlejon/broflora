@@ -1,6 +1,9 @@
 #include "broflora/spawning.h"
 
+#include "broflora/rng.h"
 #include "broflora/vec_math.h"
+#include "internal_geom.h"
+#include "internal_select.h"
 
 #include <algorithm>
 #include <cmath>
@@ -12,50 +15,26 @@
 
 namespace broflora {
 
-// Nearest Voronoi site in (D, λ) parameter space. Returns nullptr if the
-// world has no prototypes registered. Exposed (non-anonymous) so seeding
-// in senescence.cpp can reuse the same juvenile-(D, λ) lookup.
-const BranchModulePrototype* pickPrototype(const WorldState& world,
-                                           float dPrime, float lambda) {
-    const BranchModulePrototype* best = nullptr;
+using internal::rotateYawPitch;
+using internal::sphereIntersectVolume;
+
+// Defined in this TU; declared in internal_select.h so senescence.cpp
+// (and any future caller) can share the same juvenile (D, λ) lookup.
+const BranchModulePrototype* internal::pickPrototype(const WorldState& world,
+                                                    float dPrime, float lambda) {
+    uint32_t bestIdx = UINT32_MAX;
     float bestD2 = std::numeric_limits<float>::infinity();
     for (const auto& site : world.voronoi) {
-        if (!site.prototype) continue;
+        if (site.prototypeIndex >= world.prototypes.size()) continue;
         float dd = site.determinacy - dPrime;
         float dl = site.apicalControl - lambda;
         float d2 = dd * dd + dl * dl;
-        if (d2 < bestD2) { bestD2 = d2; best = site.prototype; }
+        if (d2 < bestD2) { bestD2 = d2; bestIdx = site.prototypeIndex; }
     }
-    return best;
+    return prototypeAt(world, bestIdx);
 }
 
 namespace {
-
-// Same yaw+pitch rotation as development.cpp uses — duplicated here so
-// we don't need a header dep for one tiny helper. Roll (φ) is ignored
-// for branch placement.
-Vec3 rotateYP(Vec3 v, float yaw, float pitch) {
-    float cy = std::cos(yaw),   sy = std::sin(yaw);
-    float cp = std::cos(pitch), sp = std::sin(pitch);
-    Vec3 r1 = { cy * v.x + sy * v.z, v.y, -sy * v.x + cy * v.z };
-    return { r1.x, cp * r1.y - sp * r1.z, sp * r1.y + cp * r1.z };
-}
-
-// Closed-form intersection volume of two spheres — same formula as
-// light.cpp's helper; isolated here to keep the orientation evaluator
-// self-contained.
-float sphereIntersect(Vec3 c1, float r1, Vec3 c2, float r2) {
-    if (r1 <= 0.0f || r2 <= 0.0f) return 0.0f;
-    float d = v3_len(v3_sub(c2, c1));
-    if (d >= r1 + r2) return 0.0f;
-    if (d + std::min(r1, r2) <= std::max(r1, r2)) {
-        float rs = std::min(r1, r2);
-        return (4.0f / 3.0f) * 3.14159265358979f * rs * rs * rs;
-    }
-    float s = r1 + r2, df = r1 - r2;
-    return 3.14159265358979f * (s - d) * (s - d) *
-           (d * d + 2.0f * d * s - 3.0f * df * df) / (12.0f * std::max(d, 1e-6f));
-}
 
 struct NeighbourSphere { Vec3 c; float r; };
 
@@ -83,7 +62,7 @@ OrientationHypothesis predictHypothesis(const BranchModulePrototype& proto,
     Vec3 sum = {0.0f, 0.0f, 0.0f};
     for (const auto& nd : proto.nodes) {
         Vec3 loc = v3_sub(nd.position, root);
-        Vec3 r   = rotateYP(loc, psi, theta);
+        Vec3 r   = rotateYawPitch(loc, psi, theta);
         rotated.push_back(r);
         sum = v3_add(sum, r);
     }
@@ -98,7 +77,7 @@ OrientationHypothesis predictHypothesis(const BranchModulePrototype& proto,
     uint32_t term = proto.terminalNodes.empty() ? proto.rootNode : proto.terminalNodes.front();
     if (term < proto.nodes.size()) {
         Vec3 axisLoc = v3_sub(proto.nodes[term].position, root);
-        h.axis = v3_normalize(rotateYP(axisLoc, psi, theta));
+        h.axis = v3_normalize(rotateYawPitch(axisLoc, psi, theta));
     }
     return h;
 }
@@ -111,7 +90,7 @@ float evalDistribution(const BranchModulePrototype& proto,
     OrientationHypothesis h = predictHypothesis(proto, attachWorld, theta, psi);
     float fc = 0.0f;
     for (const auto& nb : neighbours) {
-        fc += sphereIntersect(h.centre, h.radius, nb.c, nb.r);
+        fc += sphereIntersectVolume(h.centre, h.radius, nb.c, nb.r);
     }
     float cosU = v3_dot(h.axis, tropismUp);
     float ft   = std::fabs(cosTarget - cosU);
@@ -156,7 +135,6 @@ void settleOrientation(const BranchModulePrototype& proto,
 } // namespace
 
 void spawnModules(Plant& plant, WorldState& world, uint64_t& rng) {
-    (void)rng;  // rng currently unused; kept in signature for caller symmetry
     auto& mods = plant.modules;
     if (mods.empty()) return;
 
@@ -220,7 +198,7 @@ void spawnModules(Plant& plant, WorldState& world, uint64_t& rng) {
             uint32_t termNode = terms[k];
             if (occupied.count(key(i, termNode))) continue;
 
-            const BranchModulePrototype* proto = pickPrototype(world, dPrime, lambda);
+            const BranchModulePrototype* proto = internal::pickPrototype(world, dPrime, lambda);
             if (!proto) continue;
 
             // Where this child will attach in world space — parent's
@@ -230,18 +208,23 @@ void spawnModules(Plant& plant, WorldState& world, uint64_t& rng) {
                 Vec3 localTerm = (termNode < u.nodePositions.size())
                     ? u.nodePositions[termNode]
                     : u.prototype->nodes[termNode].position;
-                Vec3 rot = rotateYP(localTerm, u.orientation.psi, u.orientation.theta);
+                Vec3 rot = rotateYawPitch(localTerm, u.orientation.psi, u.orientation.theta);
                 attachWorld = v3_add(u.worldPos, rot);
             }
 
             // Seed orientation: fanned yaw per terminal slot for sibling
-            // separation, mild outward pitch. Settled below by coord
-            // descent on f_distribution.
-            float theta = 0.15f;
+            // separation, mild outward pitch, plus a small rng-driven
+            // jitter so re-runs with different seeds produce different
+            // ecosystems while a fixed seed remains fully deterministic.
+            // Jitter is small (≈3°) relative to the descent's first
+            // probe step (≈23°) so the optimiser stays in the same basin.
+            const float jitter = 0.05f;
+            float theta = 0.15f + jitter * randFloatSigned(rng);
             float psi   = (terms.size() > 0)
                 ? (2.0f * 3.14159265358979f) * static_cast<float>(k)
                   / static_cast<float>(terms.size())
                 : 0.0f;
+            psi += jitter * randFloatSigned(rng);
             settleOrientation(*proto, attachWorld, neighbours,
                               tropismUp, cosTarget, w1, w2, theta, psi);
 

@@ -1,6 +1,7 @@
 #include "broflora/senescence.h"
 
 #include "broflora/rng.h"
+#include "internal_select.h"
 
 #include <algorithm>
 #include <cmath>
@@ -9,12 +10,6 @@
 #include <vector>
 
 namespace broflora {
-
-// Declared in spawning.cpp — same juvenile (D, λ) Voronoi lookup used at
-// spawn time. Reused here so seedlings start from a prototype consistent
-// with the species' juvenile parameters instead of `voronoi.front()`.
-const BranchModulePrototype* pickPrototype(const WorldState& world,
-                                           float dPrime, float lambda);
 
 namespace {
 
@@ -64,7 +59,7 @@ bool makeSeedling(const WorldState& world, const Species& species, Vec3 origin,
     const float vmax = species.maxVigor > 0.0f ? species.maxVigor : 1.0f;
     const float dPrime = species.rootVigorMax * species.determinacy / vmax;
     const BranchModulePrototype* proto =
-        pickPrototype(world, dPrime, species.apicalControl);
+        internal::pickPrototype(world, dPrime, species.apicalControl);
     if (!proto) return false;
 
     out.species = species;

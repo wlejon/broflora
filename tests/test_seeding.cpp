@@ -12,8 +12,8 @@ TEST(flowering_plant_eventually_drops_seeds) {
 
     WorldState world;
     world.shadow.qg.assign(1, 1.0f);
-    world.prototypes.push_back(proto);
-    world.voronoi.push_back({0.5f, 0.5f, &world.prototypes.back()});
+    uint32_t protoIdx = addPrototype(world, proto);
+    addVoronoiSite(world, protoIdx, 0.5f, 0.5f);
     world.rngState = 42ULL;
 
     Plant p;
@@ -27,7 +27,7 @@ TEST(flowering_plant_eventually_drops_seeds) {
     p.flowering = true;
 
     BranchModuleInstance root;
-    root.prototype = &world.prototypes.front();
+    root.prototype = prototypeAt(world, protoIdx);
     root.parent = UINT32_MAX;
     root.age = 0.0f;
     root.vigor = p.species.rootVigorMax;  // high root vigor → small F_eff

@@ -1,6 +1,7 @@
 #include "broflora/light.h"
 
 #include "broflora/vec_math.h"
+#include "internal_geom.h"
 
 #include <algorithm>
 #include <cmath>
@@ -8,23 +9,6 @@
 namespace broflora {
 
 namespace {
-
-// Volume of intersection of two spheres (centres C1, C2; radii r1, r2).
-// Closed-form Heaviside cap formula.
-float sphereIntersectVolume(Vec3 c1, float r1, Vec3 c2, float r2) {
-    if (r1 <= 0.0f || r2 <= 0.0f) return 0.0f;
-    float d = v3_len(v3_sub(c2, c1));
-    if (d >= r1 + r2) return 0.0f;
-    if (d + std::min(r1, r2) <= std::max(r1, r2)) {
-        // Full containment — smaller sphere's volume.
-        float rs = std::min(r1, r2);
-        return (4.0f / 3.0f) * 3.14159265358979f * rs * rs * rs;
-    }
-    float sum = r1 + r2, diff = r1 - r2;
-    float term1 = (sum - d) * (sum - d);
-    float term2 = d * d + 2.0f * d * sum - 3.0f * diff * diff;
-    return 3.14159265358979f * term1 * term2 / (12.0f * std::max(d, 1e-6f));
-}
 
 // Find the ShadowGrid cell containing world-space `p`. Returns false if
 // outside the grid.
@@ -64,7 +48,7 @@ void evaluateLightAndCollisions(WorldState& world) {
     std::vector<float> collisions(spheres.size(), 0.0f);
     for (size_t i = 0; i < spheres.size(); ++i) {
         for (size_t j = i + 1; j < spheres.size(); ++j) {
-            float v = sphereIntersectVolume(
+            float v = internal::sphereIntersectVolume(
                 spheres[i].c, spheres[i].r,
                 spheres[j].c, spheres[j].r);
             collisions[i] += v;

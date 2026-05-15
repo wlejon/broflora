@@ -18,8 +18,8 @@ TEST(orientation_avoids_neighbour) {
 
     WorldState world;
     world.shadow.qg.assign(1, 1.0f);
-    world.prototypes.push_back(proto);
-    world.voronoi.push_back({0.5f, 0.5f, &world.prototypes.back()});
+    uint32_t protoIdx = addPrototype(world, proto);
+    addVoronoiSite(world, protoIdx, 0.5f, 0.5f);
 
     Plant p;
     p.species = {};
@@ -31,7 +31,7 @@ TEST(orientation_avoids_neighbour) {
     p.effectiveRootVigorMax = p.species.rootVigorMax;
 
     BranchModuleInstance root;
-    root.prototype = &world.prototypes.front();
+    root.prototype = prototypeAt(world, protoIdx);
     root.parent = UINT32_MAX;
     root.age = 1.0f;     // mature
     root.vigor = 0.6f;
@@ -49,7 +49,7 @@ TEST(orientation_avoids_neighbour) {
     blocker.species = p.species;
     blocker.origin = {2.0f, 1.0f, 0.0f};  // off to +X
     BranchModuleInstance ghost;
-    ghost.prototype = &world.prototypes.front();
+    ghost.prototype = prototypeAt(world, protoIdx);
     ghost.parent = UINT32_MAX;
     ghost.age = 1.0f;
     ghost.vigor = 0.6f;
@@ -93,8 +93,8 @@ TEST(orientation_aligns_with_tropism_when_unblocked) {
 
     WorldState world;
     world.shadow.qg.assign(1, 1.0f);
-    world.prototypes.push_back(proto);
-    world.voronoi.push_back({0.5f, 0.5f, &world.prototypes.back()});
+    uint32_t protoIdx = addPrototype(world, proto);
+    addVoronoiSite(world, protoIdx, 0.5f, 0.5f);
 
     Plant p;
     p.species = {};
@@ -105,7 +105,7 @@ TEST(orientation_aligns_with_tropism_when_unblocked) {
     p.effectiveRootVigorMax = p.species.rootVigorMax;
 
     BranchModuleInstance root;
-    root.prototype = &world.prototypes.front();
+    root.prototype = prototypeAt(world, protoIdx);
     root.parent = UINT32_MAX;
     root.age = 1.0f;
     root.vigor = 0.6f;

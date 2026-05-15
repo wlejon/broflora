@@ -17,20 +17,33 @@ namespace broflora {
 
 // Module-selection parameter space (paper §3.4): each prototype occupies
 // a Voronoi cell in (D, λ) coordinates. At spawn time the local (D', λ)
-// picks the nearest cell.
+// picks the nearest cell. References the prototype by index into
+// `WorldState::prototypes` — using an index (not a pointer) means
+// growing the prototype list never silently invalidates the Voronoi.
 struct PrototypeVoronoiSite {
-    float determinacy   = 0.5f;   // D coordinate of this site
-    float apicalControl = 0.5f;   // λ coordinate of this site
-    const BranchModulePrototype* prototype = nullptr;
+    float    determinacy    = 0.5f;        // D coordinate of this site
+    float    apicalControl  = 0.5f;        // λ coordinate of this site
+    uint32_t prototypeIndex = UINT32_MAX;  // index into WorldState::prototypes
 };
 
+// Invariants (enforced by `validate(const WorldState&)`):
+//   - Every PrototypeVoronoiSite::prototypeIndex is < prototypes.size().
+//   - Every BranchModuleInstance::prototype points to one of the
+//     prototypes in this world. Because instances hold raw pointers,
+//     prototypes must be registered before any plant referencing them
+//     is added; use `addPrototype` / `addVoronoiSite` builders to
+//     guarantee a sane construction order.
+//   - Each Plant::modules is topologically sorted (parents precede
+//     children).
 struct WorldState {
     TerrainMap     terrain;
     SoilMap        soil;
     ShadowGrid     shadow;
     GlobalClimate  climate;
 
-    // Prototype library — non-owning pointers held inside `voronoi`.
+    // Prototype library. Owned by-value here; instances reference these
+    // by pointer (see invariants above). Reserve capacity up-front if
+    // you intend to grow this after creating module instances.
     std::vector<BranchModulePrototype> prototypes;
     std::vector<PrototypeVoronoiSite>  voronoi;
 
@@ -42,6 +55,34 @@ struct WorldState {
     // Total simulated time since construction.
     double simTime = 0.0;
 };
+
+// --- Builders --------------------------------------------------------
+// These exist so callers don't have to reason about the
+// raw-pointer-into-vector invariants. Prefer them over direct
+// push_back to `prototypes` / `voronoi` / `plants`.
+
+// Register a prototype and return its index. Stable across subsequent
+// calls; safe to keep and pass to `addVoronoiSite`.
+uint32_t addPrototype(WorldState& world, BranchModulePrototype proto);
+
+// Register a Voronoi site at (determinacy, apicalControl) pointing at
+// the given prototype index. The index must come from `addPrototype`
+// on this same world.
+void addVoronoiSite(WorldState& world,
+                    uint32_t prototypeIndex,
+                    float determinacy,
+                    float apicalControl);
+
+// Append a plant to the world. Returns a reference to the stored plant.
+// All module instances in `plant` must reference prototypes owned by
+// this world (typically registered first via `addPrototype`).
+Plant& addPlant(WorldState& world, Plant plant);
+
+// Look up a prototype by index. Returns nullptr for out-of-range.
+inline const BranchModulePrototype* prototypeAt(const WorldState& world,
+                                                uint32_t index) {
+    return index < world.prototypes.size() ? &world.prototypes[index] : nullptr;
+}
 
 // Advance the world by `dt` (seconds, or whatever your time unit is —
 // the paper uses dimensionless "frames"; downstream you pick the

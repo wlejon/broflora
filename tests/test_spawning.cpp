@@ -17,8 +17,8 @@ TEST(mature_module_spawns_children) {
     world.shadow.cellSize = 1.0f;
     world.shadow.origin = {-4.0f, -4.0f, -4.0f};
     world.shadow.qg.assign(8 * 8 * 8, 1.0f);
-    world.prototypes.push_back(proto);
-    world.voronoi.push_back({0.5f, 0.5f, &world.prototypes.back()});
+    uint32_t protoIdx = addPrototype(world, proto);
+    addVoronoiSite(world, protoIdx, 0.5f, 0.5f);
 
     Plant p;
     p.species = {};
@@ -27,7 +27,7 @@ TEST(mature_module_spawns_children) {
     p.effectiveRootVigorMax = p.species.rootVigorMax;
 
     BranchModuleInstance root;
-    root.prototype = &world.prototypes.front();
+    root.prototype = prototypeAt(world, protoIdx);
     root.parent = UINT32_MAX;
     root.age = 1.0f;        // already mature
     root.vigor = 0.6f;
@@ -54,8 +54,8 @@ TEST(immature_module_does_not_spawn) {
 
     WorldState world;
     world.shadow.qg.assign(1, 1.0f);
-    world.prototypes.push_back(proto);
-    world.voronoi.push_back({0.5f, 0.5f, &world.prototypes.back()});
+    uint32_t protoIdx = addPrototype(world, proto);
+    addVoronoiSite(world, protoIdx, 0.5f, 0.5f);
 
     Plant p;
     p.species = {};
@@ -63,7 +63,7 @@ TEST(immature_module_does_not_spawn) {
     p.effectiveRootVigorMax = p.species.rootVigorMax;
 
     BranchModuleInstance root;
-    root.prototype = &world.prototypes.front();
+    root.prototype = prototypeAt(world, protoIdx);
     root.parent = UINT32_MAX;
     root.age = 0.0f;
     root.vigor = 0.6f;

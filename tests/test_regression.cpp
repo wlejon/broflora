@@ -182,8 +182,8 @@ TEST(seedling_drop_uses_terrain_and_respects_soil) {
 
     WorldState world;
     world.shadow.qg.assign(1, 1.0f);
-    world.prototypes.push_back(proto);
-    world.voronoi.push_back({0.5f, 0.5f, &world.prototypes.back()});
+    uint32_t protoIdx = addPrototype(world, proto);
+    addVoronoiSite(world, protoIdx, 0.5f, 0.5f);
 
     // 2x2 terrain at (0,0), cellSize 10 — covers x,z in [0, 20).
     world.terrain.footprint.origin = {0.0f, 0.0f};
@@ -211,7 +211,7 @@ TEST(seedling_drop_uses_terrain_and_respects_soil) {
     p.origin = {15.0f, 0.0f, 15.0f};    // cell (1,1) — unblocked
 
     BranchModuleInstance root;
-    root.prototype = &world.prototypes.front();
+    root.prototype = prototypeAt(world, protoIdx);
     root.parent = UINT32_MAX;
     root.age = 0.0f;
     root.vigor = p.species.rootVigorMax;
@@ -241,8 +241,8 @@ TEST(flowering_flag_flips_when_age_exceeds_threshold) {
 
     WorldState world;
     world.shadow.qg.assign(1, 1.0f);
-    world.prototypes.push_back(proto);
-    world.voronoi.push_back({0.5f, 0.5f, &world.prototypes.back()});
+    uint32_t protoIdx = addPrototype(world, proto);
+    addVoronoiSite(world, protoIdx, 0.5f, 0.5f);
 
     Plant p;
     p.species = {};
@@ -254,7 +254,7 @@ TEST(flowering_flag_flips_when_age_exceeds_threshold) {
     p.flowering = false;
 
     BranchModuleInstance root;
-    root.prototype = &world.prototypes.front();
+    root.prototype = prototypeAt(world, protoIdx);
     root.parent = UINT32_MAX;
     root.vigor = p.species.rootVigorMax;
     root.light = 1.0f;

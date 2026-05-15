@@ -13,4 +13,5 @@
 #include "broflora/development.h"
 #include "broflora/spawning.h"
 #include "broflora/senescence.h"
+#include "broflora/validate.h"
 #include "broflora/mesh_emit.h"

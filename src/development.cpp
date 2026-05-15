@@ -1,6 +1,7 @@
 #include "broflora/development.h"
 
 #include "broflora/vec_math.h"
+#include "internal_geom.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,23 +11,7 @@
 
 namespace broflora {
 
-namespace {
-
-// Rotate `v` by yaw (around +Y) then pitch (around +X). Roll (φ) is
-// ignored for branch placement — it doesn't change a child's attachment
-// point. Paper-equivalent for branch positions; the roll only matters
-// later when we expose nodes for meshing.
-Vec3 rotateYawPitch(Vec3 v, float yaw, float pitch) {
-    float cy = std::cos(yaw),   sy = std::sin(yaw);
-    float cp = std::cos(pitch), sp = std::sin(pitch);
-    // Yaw first (around Y).
-    Vec3 r1 = { cy * v.x + sy * v.z, v.y, -sy * v.x + cy * v.z };
-    // Then pitch (around X).
-    Vec3 r2 = { r1.x, cp * r1.y - sp * r1.z, sp * r1.y + cp * r1.z };
-    return r2;
-}
-
-} // namespace
+using internal::rotateYawPitch;
 
 // Recompute the per-node positions in module-local frame for the current
 // module age (paper §3.3, branch length growth):

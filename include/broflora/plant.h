@@ -74,6 +74,18 @@ struct Species {
 };
 
 // One plant instance.
+//
+// Invariants (enforced by `validate(const Plant&)` in validate.h):
+//   - modules[0] is the root (parent == UINT32_MAX).
+//   - For every i > 0, modules[i].parent < i — i.e. parents always
+//     precede children in the vector. The basipetal/acropetal vigor
+//     passes (vigor.cpp) walk the vector once and rely on this order.
+//   - Every module.prototype is non-null and refers to a prototype
+//     whose lifetime exceeds this plant's (typically owned by the
+//     enclosing WorldState).
+//   - Newly spawned modules are appended at the end by spawnModules,
+//     preserving the order. Senescence shedding (senescence.cpp)
+//     compacts in place and remaps parent indices.
 struct Plant {
     Species species;
 

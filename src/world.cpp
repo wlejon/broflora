@@ -6,7 +6,30 @@
 #include "broflora/spawning.h"
 #include "broflora/senescence.h"
 
+#include <utility>
+
 namespace broflora {
+
+uint32_t addPrototype(WorldState& world, BranchModulePrototype proto) {
+    world.prototypes.push_back(std::move(proto));
+    return static_cast<uint32_t>(world.prototypes.size() - 1);
+}
+
+void addVoronoiSite(WorldState& world,
+                    uint32_t prototypeIndex,
+                    float determinacy,
+                    float apicalControl) {
+    PrototypeVoronoiSite site;
+    site.determinacy    = determinacy;
+    site.apicalControl  = apicalControl;
+    site.prototypeIndex = prototypeIndex;
+    world.voronoi.push_back(site);
+}
+
+Plant& addPlant(WorldState& world, Plant plant) {
+    world.plants.push_back(std::move(plant));
+    return world.plants.back();
+}
 
 void step(WorldState& world, float dt) {
     // A. Light + collisions (paper §3.1).
