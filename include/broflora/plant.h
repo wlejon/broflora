@@ -9,7 +9,7 @@
 // Paper §1 (plant scale) and §3 (per-plant params).
 
 #include "broflora/module.h"
-#include "broflora/vec_math.h"
+#include "bromath/vec.h"
 
 #include <cstdint>
 #include <vector>
@@ -34,7 +34,7 @@ struct Species {
     float determinacyMature   = 0.2f;
 
     // Tropism (paper §3.3): gravity direction, two strength factors.
-    Vec3  tropismDir = {0.0f, -1.0f, 0.0f};
+    bromath::Vec3 tropismDir = {0.0f, -1.0f, 0.0f};
     float tropismG1  = 1.0f;
     float tropismG2  = 1.0f;
 
@@ -90,7 +90,7 @@ struct Plant {
     Species species;
 
     // Position of u_root in world space.
-    Vec3 origin = {0.0f, 0.0f, 0.0f};
+    bromath::Vec3 origin = {0.0f, 0.0f, 0.0f};
 
     // Plant age p_t.
     float age = 0.0f;

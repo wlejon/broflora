@@ -1,12 +1,17 @@
 #include "broflora/light.h"
 
-#include "broflora/vec_math.h"
+#include "bromath/scalar.h"
+#include "bromath/sphere.h"
+#include "bromath/vec.h"
 #include "internal_geom.h"
 
 #include <algorithm>
 #include <cmath>
 
 namespace broflora {
+
+using bromath::Vec3;
+using bromath::lerp;
 
 namespace {
 
@@ -33,8 +38,8 @@ void evaluateLightAndCollisions(WorldState& world) {
     // --- 1. Collisions — pairwise sphere-intersection sums across every
     // module in every plant (O(N²) over the whole world). Fine for the
     // foundation; swap in a BVH later if N grows past a few thousand.
-    struct Sphere { Vec3 c; float r; size_t plant; size_t mod; };
-    std::vector<Sphere> spheres;
+    struct CollideSphere { Vec3 c; float r; size_t plant; size_t mod; };
+    std::vector<CollideSphere> spheres;
     for (size_t p = 0; p < world.plants.size(); ++p) {
         const auto& pl = world.plants[p];
         for (size_t i = 0; i < pl.modules.size(); ++i) {
@@ -48,9 +53,9 @@ void evaluateLightAndCollisions(WorldState& world) {
     std::vector<float> collisions(spheres.size(), 0.0f);
     for (size_t i = 0; i < spheres.size(); ++i) {
         for (size_t j = i + 1; j < spheres.size(); ++j) {
-            float v = internal::sphereIntersectVolume(
-                spheres[i].c, spheres[i].r,
-                spheres[j].c, spheres[j].r);
+            float v = bromath::sintersectVolume(
+                bromath::Sphere{spheres[i].c, spheres[i].r},
+                bromath::Sphere{spheres[j].c, spheres[j].r});
             collisions[i] += v;
             collisions[j] += v;
         }

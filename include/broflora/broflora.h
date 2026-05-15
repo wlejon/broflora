@@ -2,8 +2,7 @@
 
 // Umbrella header. Includes the whole public API.
 
-#include "broflora/vec_math.h"
-#include "broflora/rng.h"
+#include "broflora/orientation.h"
 #include "broflora/module.h"
 #include "broflora/plant.h"
 #include "broflora/environment.h"

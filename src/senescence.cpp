@@ -1,6 +1,7 @@
 #include "broflora/senescence.h"
 
-#include "broflora/rng.h"
+#include "bromath/rng.h"
+#include "bromath/vec.h"
 #include "internal_select.h"
 
 #include <algorithm>
@@ -10,6 +11,11 @@
 #include <vector>
 
 namespace broflora {
+
+using bromath::Vec2;
+using bromath::Vec3;
+using bromath::randFloat01;
+using bromath::randGaussian2D;
 
 namespace {
 

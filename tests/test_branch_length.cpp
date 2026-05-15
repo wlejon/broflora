@@ -1,8 +1,11 @@
 #include "test_framework.h"
 
+#include "bromath/vec.h"
+
 #include <cmath>
 
 using namespace broflora;
+using bromath::vlen;
 
 // Per-segment branch length grows from 0 → l_max as the module ages.
 // We don't expose lengths directly; verify via the bbox radius, which
@@ -78,6 +81,6 @@ TEST(branch_length_zero_before_node_appears) {
     const auto& inst = world.plants[0].modules[0];
     ASSERT(inst.nodePositions.size() == 2, "node cache populated");
     // Terminal still pinned at root position — both nodes coincide.
-    float d = v3_len(v3_sub(inst.nodePositions[1], inst.nodePositions[0]));
+    float d = vlen(inst.nodePositions[1] - inst.nodePositions[0]);
     ASSERT(d < 1e-5f, "late-appearing node hasn't grown yet");
 }

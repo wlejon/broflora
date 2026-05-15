@@ -1,6 +1,7 @@
 #include "broflora/mesh_emit.h"
 
-#include "broflora/vec_math.h"
+#include "bromath/scalar.h"
+#include "bromath/vec.h"
 #include "internal_geom.h"
 
 #include <algorithm>
@@ -11,6 +12,9 @@
 
 namespace broflora {
 
+using bromath::Vec3;
+using bromath::vlen;
+using bromath::vnorm;
 using internal::rotateYawPitch;
 
 namespace {
@@ -27,38 +31,37 @@ void frameAround(Vec3 axis, Vec3& outX, Vec3& outZ) {
         up.z * axis.x - up.x * axis.z,
         up.x * axis.y - up.y * axis.x,
     };
-    x = v3_normalize(x);
+    x = vnorm(x);
     Vec3 z = {
         axis.y * x.z - axis.z * x.y,
         axis.z * x.x - axis.x * x.z,
         axis.x * x.y - axis.y * x.x,
     };
     outX = x;
-    outZ = v3_normalize(z);
+    outZ = vnorm(z);
 }
 
 void emitCylinder(MeshData& mesh,
                   Vec3 a, Vec3 b, float radiusA, float radiusB,
                   uint32_t sides) {
     if (sides < 3) sides = 3;
-    Vec3 axis = v3_sub(b, a);
-    float len = v3_len(axis);
+    Vec3 axis = b - a;
+    float len = vlen(axis);
     if (len < 1e-5f || (radiusA <= 0.0f && radiusB <= 0.0f)) return;
-    axis = v3_scale(axis, 1.0f / len);
+    axis = axis * (1.0f / len);
 
     Vec3 fx, fz;
     frameAround(axis, fx, fz);
 
     const uint32_t baseIdx = static_cast<uint32_t>(mesh.positions.size() / 3);
-    const float twoPi = 2.0f * 3.14159265358979f;
 
     for (uint32_t i = 0; i < sides; ++i) {
-        float t = twoPi * static_cast<float>(i) / static_cast<float>(sides);
+        float t = bromath::TWO_PI * static_cast<float>(i) / static_cast<float>(sides);
         float cx = std::cos(t), cz = std::sin(t);
         // Outward radial direction in world space.
-        Vec3 radial = v3_add(v3_scale(fx, cx), v3_scale(fz, cz));
-        Vec3 pa = v3_add(a, v3_scale(radial, radiusA));
-        Vec3 pb = v3_add(b, v3_scale(radial, radiusB));
+        Vec3 radial = fx * cx + fz * cz;
+        Vec3 pa = a + radial * radiusA;
+        Vec3 pb = b + radial * radiusB;
 
         mesh.positions.push_back(pa.x); mesh.positions.push_back(pa.y); mesh.positions.push_back(pa.z);
         mesh.normals.push_back(radial.x); mesh.normals.push_back(radial.y); mesh.normals.push_back(radial.z);
@@ -84,7 +87,7 @@ Vec3 worldNodePos(const BranchModuleInstance& m, uint32_t nodeIdx) {
     Vec3 local = (nodeIdx < m.nodePositions.size())
         ? m.nodePositions[nodeIdx]
         : m.prototype->nodes[nodeIdx].position;
-    return v3_add(m.worldPos, rotateYawPitch(local, m.orientation.psi, m.orientation.theta));
+    return m.worldPos + rotateYawPitch(local, m.orientation.psi, m.orientation.theta);
 }
 
 // Depth of every prototype node from `rootNode`, measured in edge hops.

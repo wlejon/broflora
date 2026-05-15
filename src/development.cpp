@@ -1,6 +1,7 @@
 #include "broflora/development.h"
 
-#include "broflora/vec_math.h"
+#include "bromath/scalar.h"
+#include "bromath/vec.h"
 #include "internal_geom.h"
 
 #include <algorithm>
@@ -11,6 +12,11 @@
 
 namespace broflora {
 
+using bromath::Vec3;
+using bromath::vlen;
+using bromath::vlen2;
+using bromath::vnorm;
+using bromath::smoothstep01;
 using internal::rotateYawPitch;
 
 // Recompute the per-node positions in module-local frame for the current
@@ -49,15 +55,15 @@ void refreshModuleNodePositions(BranchModuleInstance& m) {
             continue;
         }
         const auto& nodeI = proto.nodes[i];
-        Vec3 protoDir = v3_sub(proto.nodes[i].position, proto.nodes[p].position);
-        float protoLen = v3_len(protoDir);
-        Vec3 dir = (protoLen > 1e-6f) ? v3_scale(protoDir, 1.0f / protoLen) : Vec3{};
+        Vec3 protoDir = proto.nodes[i].position - proto.nodes[p].position;
+        float protoLen = vlen(protoDir);
+        Vec3 dir = (protoLen > 1e-6f) ? protoDir * (1.0f / protoLen) : Vec3{};
 
         float ab = std::max(0.0f, m.age - nodeI.ageAtBirth);
         float l  = std::min(nodeI.lengthMax, nodeI.thickening * ab);
         l = std::min(l, protoLen);  // never overshoot the static layout
 
-        m.nodePositions[i] = v3_add(m.nodePositions[p], v3_scale(dir, l));
+        m.nodePositions[i] = m.nodePositions[p] + dir * l;
     }
 }
 
@@ -87,16 +93,16 @@ void computeBbox(BranchModuleInstance& m) {
     size_t count = 0;
     for (size_t i = 0; i < m.nodePositions.size(); ++i) {
         Vec3 r = rotateYawPitch(m.nodePositions[i], m.orientation.psi, m.orientation.theta);
-        sum = v3_add(sum, r);
+        sum += r;
         ++count;
     }
-    Vec3 centre = v3_scale(sum, 1.0f / static_cast<float>(count));
+    Vec3 centre = sum * (1.0f / static_cast<float>(count));
     float maxD2 = 0.0f;
     for (size_t i = 0; i < m.nodePositions.size(); ++i) {
         Vec3 r = rotateYawPitch(m.nodePositions[i], m.orientation.psi, m.orientation.theta);
-        maxD2 = std::max(maxD2, v3_len2(v3_sub(r, centre)));
+        maxD2 = std::max(maxD2, vlen2(r - centre));
     }
-    m.bboxCenter = v3_add(m.worldPos, centre);
+    m.bboxCenter = m.worldPos + centre;
     m.bboxRadius = std::sqrt(maxD2);
 }
 
@@ -140,7 +146,7 @@ void developModules(Plant& plant, float dt) {
             if (parent.prototype && m.parentAttachTerminal < parent.prototype->nodes.size()) {
                 localTerm = localNodePos(parent, m.parentAttachTerminal);
             }
-            m.worldPos = v3_add(parent.worldPos, localTerm);
+            m.worldPos = parent.worldPos + localTerm;
         }
 
         // --- Tropism offset τ(a_b) = g1 · ĝ · g2 / (a_b + g1).
@@ -150,8 +156,8 @@ void developModules(Plant& plant, float dt) {
         const float denom = ab + sp.tropismG1;
         if (denom > 1e-6f) {
             float k = sp.tropismG1 * sp.tropismG2 / denom;
-            Vec3 g = v3_normalize(sp.tropismDir);
-            m.worldPos = v3_add(m.worldPos, v3_scale(g, k));
+            Vec3 g = vnorm(sp.tropismDir);
+            m.worldPos = m.worldPos + g * k;
         }
 
         computeBbox(m);

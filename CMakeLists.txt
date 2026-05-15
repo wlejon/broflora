@@ -39,6 +39,16 @@ else()
     target_compile_options(broflora PRIVATE -Wall -Wextra)
 endif()
 
+# --- Required bromath dependency (sibling header-only library) ---
+set(BROMATH_DIR "${CMAKE_SOURCE_DIR}/../bromath" CACHE PATH "bromath sibling")
+if(EXISTS "${BROMATH_DIR}/CMakeLists.txt")
+    add_subdirectory("${BROMATH_DIR}" "${CMAKE_BINARY_DIR}/bromath" EXCLUDE_FROM_ALL)
+    target_link_libraries(broflora PUBLIC bromath::bromath)
+    message(STATUS "broflora: using sibling bromath at ${BROMATH_DIR}")
+else()
+    message(FATAL_ERROR "bromath not found at ${BROMATH_DIR}")
+endif()
+
 # --- Optional bromesh boundary ---
 # When a sibling ../bromesh checkout exists, gate the mesh-emit module on
 # it via BROFLORA_HAS_BROMESH. Core library never depends on bromesh.

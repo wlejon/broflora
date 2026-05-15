@@ -13,7 +13,7 @@
 //
 // Paper §2.
 
-#include "broflora/vec_math.h"
+#include "bromath/vec.h"
 
 #include <cstdint>
 #include <vector>
@@ -21,7 +21,7 @@
 namespace broflora {
 
 struct GridFootprint2D {
-    Vec2     origin   = {0.0f, 0.0f};  // world-space (x,z) of cell (0,0)
+    bromath::Vec2     origin   = {0.0f, 0.0f};  // world-space (x,z) of cell (0,0)
     float    cellSize = 1.0f;
     uint32_t width    = 0;             // cells along +x
     uint32_t depth    = 0;             // cells along +z
@@ -38,7 +38,7 @@ struct SoilMap {
 };
 
 struct ShadowGrid {
-    Vec3     origin   = {0.0f, 0.0f, 0.0f};
+    bromath::Vec3     origin   = {0.0f, 0.0f, 0.0f};
     float    cellSize = 1.0f;
     uint32_t width    = 0;   // +x
     uint32_t height   = 0;   // +y (vertical)

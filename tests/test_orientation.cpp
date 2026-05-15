@@ -1,8 +1,12 @@
 #include "test_framework.h"
 
+#include "bromath/vec.h"
+
 #include <cmath>
 
 using namespace broflora;
+using bromath::Vec3;
+using bromath::vnorm;
 
 // A heavy neighbour sphere placed on +X next to the parent should push
 // the gradient descent to orient the new module away from +X. The
@@ -73,7 +77,7 @@ TEST(orientation_avoids_neighbour) {
     Vec3 a = {1.0f, 1.0f, 0.0f};  // root → terminal in proto
     Vec3 a1 = { cy * a.x + sy * a.z, a.y, -sy * a.x + cy * a.z };
     Vec3 a2 = { a1.x, cp * a1.y - sp * a1.z, sp * a1.y + cp * a1.z };
-    Vec3 axis = v3_normalize(a2);
+    Vec3 axis = vnorm(a2);
 
     // With the blocker on +X, settle should have rotated the axis away
     // from +X — its x component should be no larger than the seed pose's
@@ -125,7 +129,7 @@ TEST(orientation_aligns_with_tropism_when_unblocked) {
     Vec3 a = {1.0f, 0.2f, 0.0f};
     Vec3 a1 = { cy * a.x + sy * a.z, a.y, -sy * a.x + cy * a.z };
     Vec3 a2 = { a1.x, cp * a1.y - sp * a1.z, sp * a1.y + cp * a1.z };
-    Vec3 axis = v3_normalize(a2);
+    Vec3 axis = vnorm(a2);
 
     // Initial axis y is 0.2/sqrt(1.04) ≈ 0.196; settled axis should be
     // visibly more vertical.

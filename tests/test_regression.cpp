@@ -145,7 +145,7 @@ TEST(sphere_containment_uses_smaller_volume) {
     world.shadow.origin = {-8.0f, -8.0f, -8.0f};
     world.shadow.qg.assign(64, 1.0f);
 
-    auto makePlant = [&](const BranchModulePrototype* proto, Vec3 origin) {
+    auto makePlant = [&](const BranchModulePrototype* proto, bromath::Vec3 origin) {
         Plant p;
         p.species = {};
         p.species.shadeTolerance = 0.0f;

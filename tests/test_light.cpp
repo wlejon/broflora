@@ -19,7 +19,7 @@ TEST(overlapping_modules_reduce_light) {
     world.shadow.qg.assign(4 * 4 * 4, 1.0f);
 
     // Two plants whose modules will share a bounding sphere.
-    auto makePlant = [&](Vec3 origin) {
+    auto makePlant = [&](bromath::Vec3 origin) {
         Plant p;
         p.species = {};
         p.species.shadeTolerance = 0.0f;  // any shadow propagates straight through
