@@ -15,13 +15,19 @@
 
 #include "broflora/plant.h"
 #include "broflora/world.h"
+#include "bromath/spatial_hash.h"
 
 #include <cstdint>
 
 namespace broflora {
 
 // Spawn modules onto a single plant. `world` is needed for the prototype
-// Voronoi and for neighbour spheres in the collision penalty.
-void spawnModules(Plant& plant, WorldState& world, uint64_t& rng);
+// Voronoi. `index` is the per-tick spatial hash from world.cpp::step;
+// newly-settled siblings are inserted back into it so subsequent
+// siblings' gradient descent sees them as collision neighbours.
+void spawnModules(Plant& plant,
+                  WorldState& world,
+                  bromath::SpatialHash3D& index,
+                  uint64_t& rng);
 
 } // namespace broflora

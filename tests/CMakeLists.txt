@@ -9,6 +9,7 @@ add_executable(broflora_test
     test_orientation.cpp
     test_mesh_emit.cpp
     test_regression.cpp
+    test_spatial_hash.cpp
 )
 
 target_link_libraries(broflora_test PRIVATE broflora)

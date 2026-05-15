@@ -12,12 +12,20 @@
 
 #include "broflora/plant.h"
 #include "broflora/world.h"
+#include "bromath/spatial_hash.h"
 
 namespace broflora {
 
 // Recompute module bounding spheres, evaluate collisions + light, and
 // stamp shadows into `world.shadow`. Resets shadow.qg to 1.0 at the
 // start of each tick — caller does not need to clear it.
-void evaluateLightAndCollisions(WorldState& world);
+//
+// `index` is a uniform-grid spatial hash built by the caller from every
+// module's current bbox sphere, with the entry id packed as
+// (plantIndex << 20) | moduleIndex. Used to broad-phase the f_collisions
+// sum down from O(N²) to O(N · k) where k is the average occupied
+// neighbourhood.
+void evaluateLightAndCollisions(WorldState& world,
+                                const bromath::SpatialHash3D& index);
 
 } // namespace broflora

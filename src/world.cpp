@@ -5,6 +5,8 @@
 #include "broflora/development.h"
 #include "broflora/spawning.h"
 #include "broflora/senescence.h"
+#include "bromath/spatial_hash.h"
+#include "internal_spatial.h"
 
 #include <utility>
 
@@ -31,9 +33,49 @@ Plant& addPlant(WorldState& world, Plant plant) {
     return world.plants.back();
 }
 
+// Cell-size heuristic: mean bbox radius across every module, doubled, with
+// a floor of 0.5. Doubling matches the typical broad-phase tuning where a
+// query of radius r touches ~(2r/cell + 1)^3 cells — a cell ≈ mean radius
+// keeps the dilation footprint small while leaving cells large enough
+// that the hash map doesn't churn.
+static float pickCellSize(const WorldState& world) {
+    double sum = 0.0;
+    size_t count = 0;
+    for (const auto& pl : world.plants) {
+        for (const auto& m : pl.modules) {
+            if (m.bboxRadius > 0.0f) { sum += m.bboxRadius; ++count; }
+        }
+    }
+    if (count == 0) return 1.0f;
+    float mean = static_cast<float>(sum / static_cast<double>(count));
+    return mean > 0.25f ? 2.0f * mean : 0.5f;
+}
+
+static bromath::SpatialHash3D buildSpatialIndex(const WorldState& world) {
+    bromath::SpatialHash3D index(pickCellSize(world));
+    for (size_t p = 0; p < world.plants.size(); ++p) {
+        const auto& pl = world.plants[p];
+        for (size_t i = 0; i < pl.modules.size(); ++i) {
+            const auto& m = pl.modules[i];
+            if (m.bboxRadius > 0.0f) {
+                index.insert(bromath::Sphere{m.bboxCenter, m.bboxRadius},
+                             internal::packEntryId(static_cast<uint32_t>(p),
+                                                   static_cast<uint32_t>(i)));
+            }
+        }
+    }
+    return index;
+}
+
 void step(WorldState& world, float dt) {
+    // Build the per-tick spatial index from current module bboxes. Both
+    // the light pass (f_collisions) and the spawn pass (gradient-descent
+    // neighbour penalty) read from it; spawning also inserts newly-
+    // settled siblings so subsequent siblings see them.
+    bromath::SpatialHash3D index = buildSpatialIndex(world);
+
     // A. Light + collisions (paper §3.1).
-    evaluateLightAndCollisions(world);
+    evaluateLightAndCollisions(world, index);
 
     // B. Vigor passes per plant (paper §3.2).
     for (auto& plant : world.plants) {
@@ -47,7 +89,7 @@ void step(WorldState& world, float dt) {
 
     // D. Spawn new modules per plant (paper §3.4).
     for (auto& plant : world.plants) {
-        spawnModules(plant, world, world.rngState);
+        spawnModules(plant, world, index, world.rngState);
     }
 
     // E. Ecosystem-wide senescence + seeding (paper §3.5).

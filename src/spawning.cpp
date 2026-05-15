@@ -2,10 +2,12 @@
 
 #include "bromath/rng.h"
 #include "bromath/scalar.h"
+#include "bromath/spatial_hash.h"
 #include "bromath/sphere.h"
 #include "bromath/vec.h"
 #include "internal_geom.h"
 #include "internal_select.h"
+#include "internal_spatial.h"
 
 #include <algorithm>
 #include <cmath>
@@ -43,8 +45,6 @@ const BranchModulePrototype* internal::pickPrototype(const WorldState& world,
 }
 
 namespace {
-
-struct NeighbourSphere { Vec3 c; float r; };
 
 // Prediction of a freshly-attached module's bbox + growth axis given a
 // candidate (θ, ψ). Uses the prototype's *static* node positions so the
@@ -91,14 +91,22 @@ OrientationHypothesis predictHypothesis(const BranchModulePrototype& proto,
 }
 
 float evalDistribution(const BranchModulePrototype& proto,
+                       const WorldState& world,
+                       const bromath::SpatialHash3D& index,
                        Vec3 attachWorld, float theta, float psi,
-                       const std::vector<NeighbourSphere>& neighbours,
                        Vec3 tropismUp, float cosTarget,
-                       float w1, float w2) {
+                       float w1, float w2,
+                       std::vector<int32_t>& scratch) {
     OrientationHypothesis h = predictHypothesis(proto, attachWorld, theta, psi);
+    scratch.clear();
+    index.radiusQuery(h.centre, h.radius, scratch);
     float fc = 0.0f;
-    for (const auto& nb : neighbours) {
-        fc += sintersectVolume(Sphere{h.centre, h.radius}, Sphere{nb.c, nb.r});
+    for (int32_t nid : scratch) {
+        uint32_t np, nmi;
+        internal::unpackEntryId(nid, np, nmi);
+        const auto& n = world.plants[np].modules[nmi];
+        fc += sintersectVolume(Sphere{h.centre, h.radius},
+                               Sphere{n.bboxCenter, n.bboxRadius});
     }
     float cosU = vdot(h.axis, tropismUp);
     float ft   = std::fabs(cosTarget - cosU);
@@ -112,12 +120,14 @@ float evalDistribution(const BranchModulePrototype& proto,
 // objective is dominated by a few coarse features (overlap with a
 // neighbour vs. clear sky).
 void settleOrientation(const BranchModulePrototype& proto,
+                       const WorldState& world,
+                       const bromath::SpatialHash3D& index,
                        Vec3 attachWorld,
-                       const std::vector<NeighbourSphere>& neighbours,
                        Vec3 tropismUp, float cosTarget, float w1, float w2,
-                       float& theta, float& psi) {
-    float bestObj = evalDistribution(proto, attachWorld, theta, psi,
-                                     neighbours, tropismUp, cosTarget, w1, w2);
+                       float& theta, float& psi,
+                       std::vector<int32_t>& scratch) {
+    float bestObj = evalDistribution(proto, world, index, attachWorld, theta, psi,
+                                     tropismUp, cosTarget, w1, w2, scratch);
     float step = 0.4f;
     for (int iter = 0; iter < 8 && step > 1e-3f; ++iter) {
         bool improved = false;
@@ -126,8 +136,8 @@ void settleOrientation(const BranchModulePrototype& proto,
         for (int d = 0; d < 4; ++d) {
             float t = theta + dts[d];
             float p = psi   + dps[d];
-            float o = evalDistribution(proto, attachWorld, t, p,
-                                       neighbours, tropismUp, cosTarget, w1, w2);
+            float o = evalDistribution(proto, world, index, attachWorld, t, p,
+                                       tropismUp, cosTarget, w1, w2, scratch);
             if (o < bestObj - 1e-6f) {
                 bestObj = o;
                 theta = t;
@@ -142,7 +152,10 @@ void settleOrientation(const BranchModulePrototype& proto,
 
 } // namespace
 
-void spawnModules(Plant& plant, WorldState& world, uint64_t& rng) {
+void spawnModules(Plant& plant,
+                  WorldState& world,
+                  bromath::SpatialHash3D& index,
+                  uint64_t& rng) {
     auto& mods = plant.modules;
     if (mods.empty()) return;
 
@@ -166,17 +179,11 @@ void spawnModules(Plant& plant, WorldState& world, uint64_t& rng) {
         }
     }
 
-    // Snapshot every existing module's bounding sphere across the whole
-    // world as collision targets for the gradient descent. Mutated below
-    // as each new sibling settles so subsequent siblings see it.
-    std::vector<NeighbourSphere> neighbours;
-    for (const auto& pl : world.plants) {
-        for (const auto& m : pl.modules) {
-            if (m.bboxRadius > 0.0f) {
-                neighbours.push_back({m.bboxCenter, m.bboxRadius});
-            }
-        }
-    }
+    // We don't need to snapshot neighbours — the per-tick spatial hash
+    // built by world.cpp already indexes every module's bbox sphere.
+    // We do insert each freshly-settled sibling back into the same hash
+    // so subsequent siblings (and subsequent plants' spawn pass within
+    // this tick) treat it as an existing neighbour.
 
     const Vec3  tropismUp = vnorm(sp.tropismDir * -1.0f);
     const float cosTarget = sp.tropismCosTarget;
@@ -185,6 +192,15 @@ void spawnModules(Plant& plant, WorldState& world, uint64_t& rng) {
 
     std::vector<BranchModuleInstance> spawns;
     const uint32_t modCount = static_cast<uint32_t>(mods.size());
+
+    // Plants live in a contiguous vector, so the plant's index is a
+    // pointer offset — needed to pack ids for freshly-settled siblings
+    // when we insert them back into the spatial hash.
+    const uint32_t plantIdx =
+        static_cast<uint32_t>(&plant - world.plants.data());
+
+    // Scratch buffer reused by every radiusQuery in settleOrientation.
+    std::vector<int32_t> queryScratch;
 
     for (uint32_t i = 0; i < modCount; ++i) {
         auto& u = mods[i];
@@ -233,8 +249,9 @@ void spawnModules(Plant& plant, WorldState& world, uint64_t& rng) {
                   / static_cast<float>(terms.size())
                 : 0.0f;
             psi += jitter * randSigned(rng);
-            settleOrientation(*proto, attachWorld, neighbours,
-                              tropismUp, cosTarget, w1, w2, theta, psi);
+            settleOrientation(*proto, world, index, attachWorld,
+                              tropismUp, cosTarget, w1, w2, theta, psi,
+                              queryScratch);
 
             BranchModuleInstance child;
             child.prototype = proto;
@@ -254,10 +271,15 @@ void spawnModules(Plant& plant, WorldState& world, uint64_t& rng) {
             occupied.insert(key(i, termNode));
 
             // Make this child visible to subsequent siblings' descent so
-            // they don't all converge onto the same favoured pose.
+            // they don't all converge onto the same favoured pose. The
+            // module index here matches where this child will land once
+            // `spawns` is appended to `mods` at the end of the function.
             OrientationHypothesis h = predictHypothesis(*proto, attachWorld, theta, psi);
             if (h.radius > 0.0f) {
-                neighbours.push_back({h.centre, h.radius});
+                const uint32_t futureModIdx =
+                    modCount + static_cast<uint32_t>(spawns.size()) - 1;
+                index.insert(Sphere{h.centre, h.radius},
+                             internal::packEntryId(plantIdx, futureModIdx));
             }
         }
     }
