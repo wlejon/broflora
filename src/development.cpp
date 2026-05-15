@@ -26,25 +26,93 @@ Vec3 rotateYawPitch(Vec3 v, float yaw, float pitch) {
     return r2;
 }
 
+} // namespace
+
+// Recompute the per-node positions in module-local frame for the current
+// module age (paper §3.3, branch length growth):
+//
+//   a_b      = max(0, a_u - a_n)
+//   l_b      = min(l_max, β · a_b)            // also clipped to the
+//   |proto|  // prototype's edge length so growth never overshoots layout
+//
+// Walks the prototype tree from the root in topological order — the
+// `parent index < child index` invariant on prototype edges guarantees
+// the parent has been positioned by the time we reach a child.
+void refreshModuleNodePositions(BranchModuleInstance& m) {
+    if (!m.prototype) { m.nodePositions.clear(); return; }
+    const auto& proto = *m.prototype;
+    const size_t n = proto.nodes.size();
+    m.nodePositions.assign(n, Vec3{});
+    if (n == 0) return;
+
+    std::vector<uint32_t> parent(n, UINT32_MAX);
+    for (const auto& e : proto.edges) {
+        uint32_t pa = e.a, ch = e.b;
+        if (pa > ch) std::swap(pa, ch);
+        if (ch < n) parent[ch] = pa;
+    }
+
+    const uint32_t rootIdx = proto.rootNode < n ? proto.rootNode : 0u;
+    m.nodePositions[rootIdx] = proto.nodes[rootIdx].position;
+
+    for (uint32_t i = 0; i < n; ++i) {
+        if (i == rootIdx) continue;
+        uint32_t p = parent[i];
+        if (p == UINT32_MAX) {
+            // Disconnected — fall back to static layout.
+            m.nodePositions[i] = proto.nodes[i].position;
+            continue;
+        }
+        const auto& nodeI = proto.nodes[i];
+        Vec3 protoDir = v3_sub(proto.nodes[i].position, proto.nodes[p].position);
+        float protoLen = v3_len(protoDir);
+        Vec3 dir = (protoLen > 1e-6f) ? v3_scale(protoDir, 1.0f / protoLen) : Vec3{};
+
+        float ab = std::max(0.0f, m.age - nodeI.ageAtBirth);
+        float l  = std::min(nodeI.lengthMax, nodeI.thickening * ab);
+        l = std::min(l, protoLen);  // never overshoot the static layout
+
+        m.nodePositions[i] = v3_add(m.nodePositions[p], v3_scale(dir, l));
+    }
+}
+
 // Local-space position of `prototype.nodes[idx]` after applying the
-// module's orientation.
+// module's orientation. Reads the grown position cache so segments
+// that haven't reached their target length are reflected.
 Vec3 localNodePos(const BranchModuleInstance& m, uint32_t nodeIdx) {
     if (!m.prototype || nodeIdx >= m.prototype->nodes.size()) return {};
-    Vec3 p = m.prototype->nodes[nodeIdx].position;
+    Vec3 p = (nodeIdx < m.nodePositions.size())
+        ? m.nodePositions[nodeIdx]
+        : m.prototype->nodes[nodeIdx].position;
     return rotateYawPitch(p, m.orientation.psi, m.orientation.theta);
 }
 
-// Max distance from the prototype's root node to any other node — used
-// as the module's nominal radius at full size.
-float prototypeRadius(const BranchModulePrototype& proto) {
-    if (proto.nodes.empty()) return 0.0f;
-    Vec3 r = proto.nodes[proto.rootNode].position;
-    float maxD2 = 0.0f;
-    for (const auto& n : proto.nodes) {
-        Vec3 d = v3_sub(n.position, r);
-        maxD2 = std::max(maxD2, v3_len2(d));
+namespace {
+
+// Bounding sphere over the module's current (grown, rotated) node
+// positions translated by `worldPos`. Falls back to a zero sphere
+// when the node cache is empty.
+void computeBbox(BranchModuleInstance& m) {
+    if (!m.prototype || m.nodePositions.empty()) {
+        m.bboxCenter = m.worldPos;
+        m.bboxRadius = 0.0f;
+        return;
     }
-    return std::sqrt(maxD2);
+    Vec3 sum = {0.0f, 0.0f, 0.0f};
+    size_t count = 0;
+    for (size_t i = 0; i < m.nodePositions.size(); ++i) {
+        Vec3 r = rotateYawPitch(m.nodePositions[i], m.orientation.psi, m.orientation.theta);
+        sum = v3_add(sum, r);
+        ++count;
+    }
+    Vec3 centre = v3_scale(sum, 1.0f / static_cast<float>(count));
+    float maxD2 = 0.0f;
+    for (size_t i = 0; i < m.nodePositions.size(); ++i) {
+        Vec3 r = rotateYawPitch(m.nodePositions[i], m.orientation.psi, m.orientation.theta);
+        maxD2 = std::max(maxD2, v3_len2(v3_sub(r, centre)));
+    }
+    m.bboxCenter = v3_add(m.worldPos, centre);
+    m.bboxRadius = std::sqrt(maxD2);
 }
 
 } // namespace
@@ -66,6 +134,11 @@ void developModules(Plant& plant, float dt) {
     }
     plant.age += dt;
 
+    // --- Refresh per-node grown positions for every module first; the
+    // worldPos pass below needs the parent's grown terminal location to
+    // attach children at the right (possibly partially-grown) spot.
+    for (auto& m : mods) refreshModuleNodePositions(m);
+
     // --- World position pass (parents are guaranteed earlier in `mods`).
     for (size_t i = 0; i < mods.size(); ++i) {
         auto& m = mods[i];
@@ -74,7 +147,10 @@ void developModules(Plant& plant, float dt) {
         } else {
             const auto& parent = mods[m.parent];
             // Attach at parent's terminal node, transformed by parent's
-            // orientation, then translated to parent's world pos.
+            // orientation, then translated to parent's world pos. The
+            // attach point comes from the parent's grown node cache, so
+            // immature parents hand off attach points closer to their
+            // own origin rather than at full prototype extent.
             Vec3 localTerm = {};
             if (parent.prototype && m.parentAttachTerminal < parent.prototype->nodes.size()) {
                 localTerm = localNodePos(parent, m.parentAttachTerminal);
@@ -93,28 +169,7 @@ void developModules(Plant& plant, float dt) {
             m.worldPos = v3_add(m.worldPos, v3_scale(g, k));
         }
 
-        // --- Bbox. Radius scales with vigor-driven growth; capped at
-        // the prototype's natural radius.
-        const float natural = m.prototype ? prototypeRadius(*m.prototype) : 0.0f;
-        float growth = (vRange > 0.0f)
-            ? smoothstep01((m.vigor - sp.minVigor) / vRange)
-            : 1.0f;
-        // Modules are never bigger than their prototype; ramp from 0 to
-        // natural as age approaches moduleMatureAge.
-        float ageFrac = sp.moduleMatureAge > 0.0f
-            ? std::min(1.0f, m.age / sp.moduleMatureAge)
-            : 1.0f;
-        const float scale = std::max(growth, ageFrac);
-        m.bboxRadius = natural * scale;
-        // Centre at the midpoint between root and farthest node, but
-        // scale the offset by the same growth factor so a juvenile
-        // module's sphere doesn't float at the full-grown offset.
-        Vec3 mid = m.prototype
-            ? localNodePos(m, m.prototype->terminalNodes.empty()
-                ? m.prototype->rootNode
-                : m.prototype->terminalNodes.front())
-            : Vec3{};
-        m.bboxCenter = v3_add(m.worldPos, v3_scale(mid, 0.5f * scale));
+        computeBbox(m);
     }
 
     // --- Pipe-model diameters: reverse topo order, terminal → root.

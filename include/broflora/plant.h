@@ -61,6 +61,16 @@ struct Species {
     // Tip diameter assigned to terminal modules — base case of the
     // recursive d_b sum.
     float leafDiameter = 0.02f;
+
+    // Spawn-time orientation gradient descent (paper §3.4):
+    //   f_distribution(u) = ω1·f_collisions(u) + ω2·f_tropism(u)
+    //   f_tropism(u_α)    = |cos(α_tropism) - cos(u_α)|
+    // cos(u_α) is the dot of the candidate module's growth axis with
+    // the species' up axis (= -tropismDir). cos(α_tropism) is the
+    // species ideal — 1.0 means "grow perfectly upward".
+    float distributionWeightCollisions = 1.0f;   // ω1
+    float distributionWeightTropism    = 0.5f;   // ω2
+    float tropismCosTarget             = 1.0f;   // cos(α_tropism)
 };
 
 // One plant instance.

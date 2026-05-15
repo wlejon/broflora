@@ -20,8 +20,8 @@ namespace broflora {
 struct ModuleNode {
     Vec3  position    = {0.0f, 0.0f, 0.0f};
     float ageAtBirth  = 0.0f;   // a_n — physiological age when this node appears
-    float lengthMax   = 1.0f;   // l_max — max branch length out of this node
-    float thickening  = 1.0f;   // β — pipe-model thickening factor
+    float lengthMax   = 1.0f;   // l_max — max length of the segment entering this node
+    float thickening  = 1.0f;   // β — segment length growth rate: l_b = min(l_max, β·a_b)
 };
 
 // Prototype edge — undirected pair into `nodes`. Topologically ordered so
@@ -97,6 +97,13 @@ struct BranchModuleInstance {
     // Index of the terminal node on the parent that this module attaches to.
     // Unused for the plant's root module.
     uint32_t parentAttachTerminal = 0;
+
+    // Per-node positions in module-local frame (pre-rotation), refreshed
+    // each development tick from the prototype graph and the current
+    // branch ages: each segment grows from 0 up to its prototype length
+    // as l_b = min(l_max, β·a_b). Indexed by prototype node index.
+    // Empty until the first development pass populates it.
+    std::vector<Vec3> nodePositions;
 
     // Marks this module as the parent's "main" meristem (paper §3.2): the
     // λ-weighted child in the acropetal vigor split. The other children

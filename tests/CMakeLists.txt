@@ -5,6 +5,9 @@ add_executable(broflora_test
     test_light.cpp
     test_spawning.cpp
     test_seeding.cpp
+    test_branch_length.cpp
+    test_orientation.cpp
+    test_mesh_emit.cpp
     test_regression.cpp
 )
 

@@ -22,6 +22,7 @@ add_library(broflora STATIC
     src/development.cpp
     src/spawning.cpp
     src/senescence.cpp
+    src/mesh_emit.cpp
 )
 add_library(broflora::broflora ALIAS broflora)
 
@@ -42,6 +43,9 @@ endif()
 # it via BROFLORA_HAS_BROMESH. Core library never depends on bromesh.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../bromesh/CMakeLists.txt")
     target_compile_definitions(broflora PUBLIC BROFLORA_HAS_BROMESH=1)
+    target_include_directories(broflora PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../bromesh/include>
+    )
     message(STATUS "broflora: sibling ../bromesh detected; mesh-emit boundary enabled")
 else()
     message(STATUS "broflora: ../bromesh not found; mesh-emit will be no-op")
