@@ -47,10 +47,25 @@ struct MeshData {
 
 // Emit a faceted cylinder-strip mesh for a single plant — one tapered
 // cylinder per branch segment within each module, sided by `sides`.
-// Diameter comes from the module's pipe-model `diameter`; segment
-// endpoints come from each module's grown `nodePositions` cache, so
-// branches that haven't reached their target length emit shorter
-// cylinders. Returns an empty mesh when the plant has no modules.
+// Per-edge radius is interpolated by node depth from the prototype's
+// root, anchored at the module's pipe-model `diameter` (stem) and the
+// species' `leafDiameter` (tip). Segment endpoints come from each
+// module's grown `nodePositions` cache, so branches that haven't
+// reached their target length emit shorter cylinders. Returns an
+// empty mesh when the plant has no modules.
+//
+// Known limitations (intentional; revisit when the rendering side of
+// `bro` is in place):
+//   - No vertex sharing across module boundaries — parent's tip ring
+//     and child's root ring are independent vertex sets even when
+//     coincident, and the two rings use different radii (leaf tip vs.
+//     child stem) so a small geometric step is visible at junctions.
+//   - No end caps on cylinders — branch tips are open ended on the
+//     assumption that foliage geometry will cover them.
+//   - Normals are radial-only; the cone half-angle from tapering is
+//     ignored. The lighting error is small at typical taper ratios.
+//   - The Euler roll φ on `BranchModuleInstance::orientation.phi` is
+//     not applied — branch placement and the mesh stay in (θ, ψ).
 MeshData emitPlantMesh(const Plant& plant, uint32_t sides = 6);
 
 // Same, but appends every plant in the world into a single mesh.

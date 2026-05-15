@@ -58,3 +58,12 @@ if(BROFLORA_TESTS AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# --- Examples ---
+# A user-shaped reference for building a world end-to-end. Off by
+# default when broflora is consumed as a subdirectory.
+option(BROFLORA_EXAMPLES "Build broflora example drivers" ${PROJECT_IS_TOP_LEVEL})
+if(BROFLORA_EXAMPLES AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    add_executable(broflora_grove examples/grove.cpp)
+    target_link_libraries(broflora_grove PRIVATE broflora)
+endif()

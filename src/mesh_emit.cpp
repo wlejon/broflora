@@ -1,26 +1,19 @@
 #include "broflora/mesh_emit.h"
 
 #include "broflora/vec_math.h"
+#include "internal_geom.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace broflora {
 
-namespace {
+using internal::rotateYawPitch;
 
-// Yaw+pitch rotation, same convention used by development.cpp /
-// spawning.cpp. Kept duplicated rather than exporting from one of the
-// other TUs because the rotation is implementation detail of the
-// branch-placement contract.
-Vec3 rotateYP(Vec3 v, float yaw, float pitch) {
-    float cy = std::cos(yaw),   sy = std::sin(yaw);
-    float cp = std::cos(pitch), sp = std::sin(pitch);
-    Vec3 r1 = { cy * v.x + sy * v.z, v.y, -sy * v.x + cy * v.z };
-    return { r1.x, cp * r1.y - sp * r1.z, sp * r1.y + cp * r1.z };
-}
+namespace {
 
 // Build an orthonormal frame around `axis` (unit). `axis` becomes +y of
 // the frame so we can lay a ring of points around the cylinder body in
@@ -91,31 +84,67 @@ Vec3 worldNodePos(const BranchModuleInstance& m, uint32_t nodeIdx) {
     Vec3 local = (nodeIdx < m.nodePositions.size())
         ? m.nodePositions[nodeIdx]
         : m.prototype->nodes[nodeIdx].position;
-    return v3_add(m.worldPos, rotateYP(local, m.orientation.psi, m.orientation.theta));
+    return v3_add(m.worldPos, rotateYawPitch(local, m.orientation.psi, m.orientation.theta));
+}
+
+// Depth of every prototype node from `rootNode`, measured in edge hops.
+// UINT32_MAX for disconnected nodes (they fall back to the static layout
+// in the rest of the pipeline; here we just give them root depth so a
+// cylinder still emits with sensible radius). Mirrors the BFS walk that
+// development.cpp already does implicitly via the edge ordering, but
+// this TU needs it explicitly to interpolate per-edge radius.
+std::vector<uint32_t> nodeDepths(const BranchModulePrototype& proto) {
+    const size_t n = proto.nodes.size();
+    std::vector<uint32_t> depth(n, std::numeric_limits<uint32_t>::max());
+    if (n == 0) return depth;
+    const uint32_t root = proto.rootNode < n ? proto.rootNode : 0u;
+    depth[root] = 0;
+    // Edges are topologically ordered (parent index < child index by
+    // contract on ModuleEdge), so a single forward pass suffices.
+    for (const auto& e : proto.edges) {
+        uint32_t a = e.a, b = e.b;
+        if (a > b) std::swap(a, b);
+        if (a >= n || b >= n) continue;
+        if (depth[a] != std::numeric_limits<uint32_t>::max() &&
+            depth[b] == std::numeric_limits<uint32_t>::max()) {
+            depth[b] = depth[a] + 1;
+        }
+    }
+    for (auto& d : depth) {
+        if (d == std::numeric_limits<uint32_t>::max()) d = 0;
+    }
+    return depth;
 }
 
 void emitPlantInto(const Plant& plant, MeshData& mesh, uint32_t sides) {
     for (const auto& m : plant.modules) {
         if (!m.prototype) continue;
-        // Tip radius — same constant we use as the pipe-model base case.
+
+        // Stem and tip radii for *this module*. Interpolate per-edge by
+        // depth-from-prototype-root so multi-edge modules taper smoothly
+        // instead of stepping at internal nodes.
         const float tipR  = 0.5f * plant.species.leafDiameter;
         const float rootR = std::max(tipR, 0.5f * m.diameter);
+
+        const auto depth = nodeDepths(*m.prototype);
+        uint32_t maxDepth = 0;
+        for (uint32_t d : depth) if (d > maxDepth) maxDepth = d;
+        const float invMaxDepth = (maxDepth > 0)
+            ? 1.0f / static_cast<float>(maxDepth) : 0.0f;
+
+        auto radiusForNode = [&](uint32_t idx) -> float {
+            if (idx >= depth.size() || maxDepth == 0) return rootR;
+            const float t = static_cast<float>(depth[idx]) * invMaxDepth;
+            return rootR + (tipR - rootR) * t;
+        };
 
         for (const auto& e : m.prototype->edges) {
             Vec3 pa = worldNodePos(m, e.a);
             Vec3 pb = worldNodePos(m, e.b);
-            // Within a module, segment closer to the prototype root keeps
-            // the module's stem diameter; segment ending at a terminal
-            // tapers to the leaf radius. Quick heuristic that avoids
-            // emitting per-edge pipe-model state.
-            bool aIsTerm = false, bIsTerm = false;
-            for (uint32_t t : m.prototype->terminalNodes) {
-                if (t == e.a) aIsTerm = true;
-                if (t == e.b) bIsTerm = true;
-            }
-            float ra = aIsTerm ? tipR : rootR;
-            float rb = bIsTerm ? tipR : rootR;
-            emitCylinder(mesh, pa, pb, ra, rb, sides);
+            emitCylinder(mesh, pa, pb,
+                         radiusForNode(e.a),
+                         radiusForNode(e.b),
+                         sides);
         }
     }
 }
