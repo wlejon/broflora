@@ -104,14 +104,17 @@ void developModules(Plant& plant, float dt) {
         float ageFrac = sp.moduleMatureAge > 0.0f
             ? std::min(1.0f, m.age / sp.moduleMatureAge)
             : 1.0f;
-        m.bboxRadius = natural * std::max(growth, ageFrac);
-        // Centre the sphere at the midpoint between root and farthest node.
+        const float scale = std::max(growth, ageFrac);
+        m.bboxRadius = natural * scale;
+        // Centre at the midpoint between root and farthest node, but
+        // scale the offset by the same growth factor so a juvenile
+        // module's sphere doesn't float at the full-grown offset.
         Vec3 mid = m.prototype
             ? localNodePos(m, m.prototype->terminalNodes.empty()
                 ? m.prototype->rootNode
                 : m.prototype->terminalNodes.front())
             : Vec3{};
-        m.bboxCenter = v3_add(m.worldPos, v3_scale(mid, 0.5f));
+        m.bboxCenter = v3_add(m.worldPos, v3_scale(mid, 0.5f * scale));
     }
 
     // --- Pipe-model diameters: reverse topo order, terminal → root.

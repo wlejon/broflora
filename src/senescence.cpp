@@ -5,9 +5,16 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace broflora {
+
+// Declared in spawning.cpp — same juvenile (D, λ) Voronoi lookup used at
+// spawn time. Reused here so seedlings start from a prototype consistent
+// with the species' juvenile parameters instead of `voronoi.front()`.
+const BranchModulePrototype* pickPrototype(const WorldState& world,
+                                           float dPrime, float lambda);
 
 namespace {
 
@@ -47,14 +54,17 @@ bool soilBlockedAt(const SoilMap& s, Vec3 world) {
     return false;
 }
 
-// Build a single-module seedling using the first valid prototype found
-// in the Voronoi library. Returns false if no prototype available.
+// Build a single-module seedling. Picks the prototype using the species'
+// juvenile (D, λ) — the same Voronoi lookup spawnModules does — so the
+// first module a seedling grows is consistent with the species character.
 bool makeSeedling(const WorldState& world, const Species& species, Vec3 origin,
                   Plant& out) {
-    const BranchModulePrototype* proto = nullptr;
-    for (const auto& site : world.voronoi) {
-        if (site.prototype) { proto = site.prototype; break; }
-    }
+    // For a seedling the parent vigor at instantiation is rootVigorMax —
+    // hand that into the dPrime formula so dPrime = D (the juvenile pole).
+    const float vmax = species.maxVigor > 0.0f ? species.maxVigor : 1.0f;
+    const float dPrime = species.rootVigorMax * species.determinacy / vmax;
+    const BranchModulePrototype* proto =
+        pickPrototype(world, dPrime, species.apicalControl);
     if (!proto) return false;
 
     out.species = species;
@@ -99,13 +109,35 @@ void ecosystemTick(WorldState& world, float dt, uint64_t& rng) {
         // --- Shed modules whose vigor has fallen below the threshold.
         // Skip freshly-spawned modules (age 0) so a not-yet-developed
         // node isn't immediately culled.
+        //
+        // Critical: dropping a module also kills every descendant — a
+        // branch can't survive its parent. After marking, we compact in
+        // place and remap the surviving `parent` indices via an
+        // old → new index table. Without the cascade + remap, surviving
+        // children would silently point at the wrong slot.
         const float vmin = sp.minVigor;
-        plant.modules.erase(
-            std::remove_if(plant.modules.begin(), plant.modules.end(),
-                [vmin](const BranchModuleInstance& m) {
-                    return m.vigor < vmin && m.age > 0.0f;
-                }),
-            plant.modules.end());
+        auto& mods = plant.modules;
+        std::vector<uint8_t> shed(mods.size(), 0);
+        for (size_t i = 0; i < mods.size(); ++i) {
+            const auto& m = mods[i];
+            bool selfShed = (m.vigor < vmin && m.age > 0.0f);
+            bool parentShed = (m.parent != UINT32_MAX) && shed[m.parent];
+            if (selfShed || parentShed) shed[i] = 1;
+        }
+        // Remap table: old index → new index (UINT32_MAX if shed).
+        std::vector<uint32_t> remap(mods.size(), std::numeric_limits<uint32_t>::max());
+        uint32_t writeIdx = 0;
+        for (size_t i = 0; i < mods.size(); ++i) {
+            if (!shed[i]) {
+                remap[i] = writeIdx;
+                if (writeIdx != i) mods[writeIdx] = mods[i];
+                if (mods[writeIdx].parent != UINT32_MAX) {
+                    mods[writeIdx].parent = remap[mods[writeIdx].parent];
+                }
+                ++writeIdx;
+            }
+        }
+        mods.resize(writeIdx);
 
         // --- First-flowering switch.
         if (!plant.flowering && plant.age > sp.floweringAge) {

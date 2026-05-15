@@ -5,6 +5,7 @@ add_executable(broflora_test
     test_light.cpp
     test_spawning.cpp
     test_seeding.cpp
+    test_regression.cpp
 )
 
 target_link_libraries(broflora_test PRIVATE broflora)

@@ -59,9 +59,17 @@ struct BranchModuleInstance {
     // Vigor v̄(u) — flowing-resource budget after acropetal pass (paper §3.2).
     float vigor = 0.0f;
 
-    // Light exposure Q(u) after basipetal accumulation. Raw, not yet
-    // shade-tolerance-corrected.
+    // Local effective light Q_eff(u) stamped by evaluateLightAndCollisions —
+    // post-collision, post-shadow, post-shade-tolerance lerp. This is the
+    // "Q at u" the paper refers to when distributing per-terminal vigor in
+    // spawning (paper §3.4): q(n_i) = Q(u) / #n. Unchanged by the
+    // basipetal pass — use `subtreeLight` for accumulated subtree totals.
     float light = 1.0f;
+
+    // Subtree light total — sum of `light` over this module and every
+    // descendant, produced by the basipetal pass (paper §3.2). Used by
+    // the acropetal vigor split. Equals `light` for leaf modules.
+    float subtreeLight = 0.0f;
 
     // Bounding sphere B_u (centre + radius), maintained as nodes move
     // under tropism deformation. Used by f_collisions.
@@ -89,6 +97,13 @@ struct BranchModuleInstance {
     // Index of the terminal node on the parent that this module attaches to.
     // Unused for the plant's root module.
     uint32_t parentAttachTerminal = 0;
+
+    // Marks this module as the parent's "main" meristem (paper §3.2): the
+    // λ-weighted child in the acropetal vigor split. The other children
+    // are "lateral" and share (1 - λ). Set at spawn time from the
+    // prototype's terminal order — child attached to terminalNodes[0] is
+    // main. Spawn order independence relies on this flag.
+    bool isMainChild = false;
 };
 
 } // namespace broflora
