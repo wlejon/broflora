@@ -93,23 +93,52 @@ void evaluateLightAndCollisions(WorldState& world,
         }
     }
 
-    // --- 2. Global shadow stamping. Each module attenuates Q_G of every
-    // cell strictly *below* its own cell in the shadow grid. Attenuation
-    // factor is exp(-bboxRadius²·k) — a coarse stand-in for a real beam
-    // integration. The paper's formulation is plant-specific (each
-    // species reads with its own s_tol); we do the read in step 3.
-    const float shadowK = 0.5f;  // tuneable falloff
+    // --- 2. Global shadow stamping — Beer-Lambert beam integration along
+    // the sun direction (paper §3.1). Sun is treated as a parallel beam
+    // from +Y (straight down) for now; supporting an arbitrary sunDir on
+    // GlobalClimate is a separate scope. Each module deposits an optical
+    // depth κ_u = shadowK·r² into every shadow cell its xz-projection
+    // covers at a lower y than the module itself. Final Q_G = exp(-Στ) so
+    // stacked canopy composes correctly (multiplicative transmission /
+    // additive optical depth), and a module wider than one shadow cell
+    // shades the cells around it instead of only its own column.
+    const float shadowK = 0.5f;  // leaf-area-density proxy
+    std::vector<float> tau(world.shadow.qg.size(), 0.0f);
+    const float cellSize = world.shadow.cellSize;
+    const int W = static_cast<int>(world.shadow.width);
+    const int D = static_cast<int>(world.shadow.depth);
     for (const auto& pl : world.plants) {
         for (const auto& m : pl.modules) {
+            if (m.bboxRadius <= 0.0f) continue;
             uint32_t cx, cy, cz;
             if (!shadowCellOf(world.shadow, m.bboxCenter, cx, cy, cz)) continue;
-            float occ = 1.0f - std::exp(-shadowK * m.bboxRadius * m.bboxRadius);
-            float attenuate = 1.0f - occ;
-            for (uint32_t y = 0; y < cy; ++y) {
-                uint32_t idx = shadowIndex(world.shadow, cx, y, cz);
-                world.shadow.qg[idx] *= attenuate;
+            if (cy == 0) continue;  // nothing below to shade
+
+            const float opticalDepth = shadowK * m.bboxRadius * m.bboxRadius;
+            const float rCells       = m.bboxRadius / cellSize;
+            const int   rxz          = static_cast<int>(std::ceil(rCells));
+            const float r2Cells      = rCells * rCells;
+
+            for (int dx = -rxz; dx <= rxz; ++dx) {
+                const int nx = static_cast<int>(cx) + dx;
+                if (nx < 0 || nx >= W) continue;
+                for (int dz = -rxz; dz <= rxz; ++dz) {
+                    if (dx * dx + dz * dz > r2Cells) continue;
+                    const int nz = static_cast<int>(cz) + dz;
+                    if (nz < 0 || nz >= D) continue;
+                    for (uint32_t y = 0; y < cy; ++y) {
+                        uint32_t idx = shadowIndex(world.shadow,
+                                                   static_cast<uint32_t>(nx),
+                                                   y,
+                                                   static_cast<uint32_t>(nz));
+                        tau[idx] += opticalDepth;
+                    }
+                }
             }
         }
+    }
+    for (size_t i = 0; i < world.shadow.qg.size(); ++i) {
+        world.shadow.qg[i] = std::exp(-tau[i]);
     }
 
     // --- 3. Effective light per module: Q_eff = lerp(s_tol, 1, Q · Q_G).
