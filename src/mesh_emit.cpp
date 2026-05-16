@@ -16,6 +16,7 @@ using bromath::Vec3;
 using bromath::vlen;
 using bromath::vnorm;
 using internal::rotateYawPitch;
+using internal::nodeOffsetFromRoot;
 
 namespace {
 
@@ -79,15 +80,15 @@ void emitCylinder(MeshData& mesh,
     }
 }
 
-// World-space position of a module-local prototype-node index, applying
-// the module's yaw+pitch rotation and worldPos offset. Mirrors the
-// localNodePos walk used by development.cpp.
-Vec3 worldNodePos(const BranchModuleInstance& m, uint32_t nodeIdx) {
+// World-space position of a module-local prototype-node index, including
+// the module's yaw+pitch rotation, the per-node tropism curvature, and
+// the module's worldPos. Routes through the same internal helper that
+// development.cpp uses to build bboxes and that spawning.cpp uses to
+// pick attach points, so the mesh matches the simulator's geometry
+// exactly.
+Vec3 worldNodePos(const Species& sp, const BranchModuleInstance& m, uint32_t nodeIdx) {
     if (!m.prototype || nodeIdx >= m.prototype->nodes.size()) return m.worldPos;
-    Vec3 local = (nodeIdx < m.nodePositions.size())
-        ? m.nodePositions[nodeIdx]
-        : m.prototype->nodes[nodeIdx].position;
-    return m.worldPos + rotateYawPitch(local, m.orientation.psi, m.orientation.theta);
+    return m.worldPos + nodeOffsetFromRoot(sp, m, nodeIdx);
 }
 
 // Depth of every prototype node from `rootNode`, measured in edge hops.
@@ -142,8 +143,8 @@ void emitPlantInto(const Plant& plant, MeshData& mesh, uint32_t sides) {
         };
 
         for (const auto& e : m.prototype->edges) {
-            Vec3 pa = worldNodePos(m, e.a);
-            Vec3 pb = worldNodePos(m, e.b);
+            Vec3 pa = worldNodePos(plant.species, m, e.a);
+            Vec3 pb = worldNodePos(plant.species, m, e.b);
             emitCylinder(mesh, pa, pb,
                          radiusForNode(e.a),
                          radiusForNode(e.b),

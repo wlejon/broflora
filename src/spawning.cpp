@@ -27,6 +27,7 @@ using bromath::Sphere;
 using bromath::sintersectVolume;
 using bromath::randSigned;
 using internal::rotateYawPitch;
+using internal::nodeOffsetFromRoot;
 
 // Defined in this TU; declared in internal_select.h so senescence.cpp
 // (and any future caller) can share the same juvenile (D, λ) lookup.
@@ -226,15 +227,11 @@ void spawnModules(Plant& plant,
             if (!proto) continue;
 
             // Where this child will attach in world space — parent's
-            // worldPos plus the parent's grown terminal-node offset.
-            Vec3 attachWorld = u.worldPos;
-            if (u.prototype && termNode < u.prototype->nodes.size()) {
-                Vec3 localTerm = (termNode < u.nodePositions.size())
-                    ? u.nodePositions[termNode]
-                    : u.prototype->nodes[termNode].position;
-                Vec3 rot = rotateYawPitch(localTerm, u.orientation.psi, u.orientation.theta);
-                attachWorld = u.worldPos + rot;
-            }
+            // worldPos plus the parent's grown, tropism-curved terminal
+            // offset. nodeOffsetFromRoot folds in both the orientation
+            // and the per-node tropism so the descent reasons about
+            // where the terminal actually sits, not its rigid pose.
+            Vec3 attachWorld = u.worldPos + nodeOffsetFromRoot(sp, u, termNode);
 
             // Seed orientation: fanned yaw per terminal slot for sibling
             // separation, mild outward pitch, plus a small rng-driven

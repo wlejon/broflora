@@ -18,6 +18,7 @@ using bromath::vlen2;
 using bromath::vnorm;
 using bromath::smoothstep01;
 using internal::rotateYawPitch;
+using internal::nodeOffsetFromRoot;
 
 // Recompute the per-node positions in module-local frame for the current
 // module age (paper §3.3, branch length growth):
@@ -67,23 +68,12 @@ void refreshModuleNodePositions(BranchModuleInstance& m) {
     }
 }
 
-// Local-space position of `prototype.nodes[idx]` after applying the
-// module's orientation. Reads the grown position cache so segments
-// that haven't reached their target length are reflected.
-Vec3 localNodePos(const BranchModuleInstance& m, uint32_t nodeIdx) {
-    if (!m.prototype || nodeIdx >= m.prototype->nodes.size()) return {};
-    Vec3 p = (nodeIdx < m.nodePositions.size())
-        ? m.nodePositions[nodeIdx]
-        : m.prototype->nodes[nodeIdx].position;
-    return rotateYawPitch(p, m.orientation.psi, m.orientation.theta);
-}
-
 namespace {
 
-// Bounding sphere over the module's current (grown, rotated) node
-// positions translated by `worldPos`. Falls back to a zero sphere
-// when the node cache is empty.
-void computeBbox(BranchModuleInstance& m) {
+// Bounding sphere over the module's current (grown, rotated, tropism-
+// curved) node positions translated by `worldPos`. Falls back to a zero
+// sphere when the node cache is empty.
+void computeBbox(const Species& sp, BranchModuleInstance& m) {
     if (!m.prototype || m.nodePositions.empty()) {
         m.bboxCenter = m.worldPos;
         m.bboxRadius = 0.0f;
@@ -92,14 +82,13 @@ void computeBbox(BranchModuleInstance& m) {
     Vec3 sum = {0.0f, 0.0f, 0.0f};
     size_t count = 0;
     for (size_t i = 0; i < m.nodePositions.size(); ++i) {
-        Vec3 r = rotateYawPitch(m.nodePositions[i], m.orientation.psi, m.orientation.theta);
-        sum += r;
+        sum += nodeOffsetFromRoot(sp, m, static_cast<uint32_t>(i));
         ++count;
     }
     Vec3 centre = sum * (1.0f / static_cast<float>(count));
     float maxD2 = 0.0f;
     for (size_t i = 0; i < m.nodePositions.size(); ++i) {
-        Vec3 r = rotateYawPitch(m.nodePositions[i], m.orientation.psi, m.orientation.theta);
+        Vec3 r = nodeOffsetFromRoot(sp, m, static_cast<uint32_t>(i));
         maxD2 = std::max(maxD2, vlen2(r - centre));
     }
     m.bboxCenter = m.worldPos + centre;
@@ -131,36 +120,20 @@ void developModules(Plant& plant, float dt) {
     for (auto& m : mods) refreshModuleNodePositions(m);
 
     // --- World position pass (parents are guaranteed earlier in `mods`).
+    // m.worldPos is the un-tropism attach point handed down from the
+    // parent's terminal node; per-node tropism is applied inside
+    // `nodeOffsetFromRoot`, which both the bbox below and the mesh
+    // emitter consume.
     for (size_t i = 0; i < mods.size(); ++i) {
         auto& m = mods[i];
         if (m.parent == UINT32_MAX) {
             m.worldPos = plant.origin;
         } else {
             const auto& parent = mods[m.parent];
-            // Attach at parent's terminal node, transformed by parent's
-            // orientation, then translated to parent's world pos. The
-            // attach point comes from the parent's grown node cache, so
-            // immature parents hand off attach points closer to their
-            // own origin rather than at full prototype extent.
-            Vec3 localTerm = {};
-            if (parent.prototype && m.parentAttachTerminal < parent.prototype->nodes.size()) {
-                localTerm = localNodePos(parent, m.parentAttachTerminal);
-            }
-            m.worldPos = parent.worldPos + localTerm;
+            m.worldPos = parent.worldPos
+                       + nodeOffsetFromRoot(sp, parent, m.parentAttachTerminal);
         }
-
-        // --- Tropism offset τ(a_b) = g1 · ĝ · g2 / (a_b + g1).
-        // Applied to module's world position; effectively bends the
-        // child away from the prototype-rigid attachment.
-        const float ab = std::max(0.0f, m.age);
-        const float denom = ab + sp.tropismG1;
-        if (denom > 1e-6f) {
-            float k = sp.tropismG1 * sp.tropismG2 / denom;
-            Vec3 g = vnorm(sp.tropismDir);
-            m.worldPos = m.worldPos + g * k;
-        }
-
-        computeBbox(m);
+        computeBbox(sp, m);
     }
 
     // --- Pipe-model diameters: reverse topo order, terminal → root.
