@@ -171,4 +171,105 @@ MeshData emitWorldMesh(const WorldState& world, uint32_t sides) {
     return mesh;
 }
 
+namespace {
+
+// Append this plant's segments to `out` and update `moduleAttachSeg` —
+// indexed by module-in-this-plant, value is the index into `out` of the
+// segment that terminates at the module's attach terminal (i.e. the
+// segment a child module's root edge should set as its parent). Returns
+// the number of segments appended.
+size_t emitPlantSegmentsInto(const Plant& plant,
+                             std::vector<bromesh::BranchSegment>& out) {
+    const size_t startSize = out.size();
+
+    // Per-module: prototype-node-index → segment-index-in-`out` of the
+    // segment terminating at that node. Built incrementally as each
+    // module's edges emit.
+    std::vector<std::vector<int32_t>> nodeToSeg(plant.modules.size());
+
+    for (size_t mi = 0; mi < plant.modules.size(); ++mi) {
+        const auto& m = plant.modules[mi];
+        if (!m.prototype) continue;
+
+        const auto depth = nodeDepths(*m.prototype);
+        uint32_t maxDepth = 0;
+        for (uint32_t d : depth) if (d > maxDepth) maxDepth = d;
+        const float invMaxDepth = (maxDepth > 0)
+            ? 1.0f / static_cast<float>(maxDepth) : 0.0f;
+
+        const float tipR  = 0.5f * plant.species.leafDiameter;
+        const float rootR = std::max(tipR, 0.5f * m.diameter);
+
+        auto radiusForNode = [&](uint32_t idx) -> float {
+            if (idx >= depth.size() || maxDepth == 0) return rootR;
+            const float t = static_cast<float>(depth[idx]) * invMaxDepth;
+            return rootR + (tipR - rootR) * t;
+        };
+
+        // Pre-size the per-module lookup; -1 means "no segment terminates
+        // here yet." Multiple edges may terminate at the same node only
+        // for malformed prototypes; we just overwrite, last-write-wins.
+        nodeToSeg[mi].assign(m.prototype->nodes.size(), -1);
+
+        // Resolve the parent module's segment that this module's root
+        // edges attach to. UINT32_MAX module-parent means plant root.
+        int32_t moduleParentSeg = -1;
+        if (m.parent != UINT32_MAX && m.parent < plant.modules.size()) {
+            const auto& pm = plant.modules[m.parent];
+            if (pm.prototype && m.parentAttachTerminal < pm.prototype->terminalNodes.size()) {
+                const uint32_t attachNode = pm.prototype->terminalNodes[m.parentAttachTerminal];
+                if (attachNode < nodeToSeg[m.parent].size()) {
+                    moduleParentSeg = nodeToSeg[m.parent][attachNode];
+                }
+            }
+        }
+
+        for (const auto& e : m.prototype->edges) {
+            bromesh::BranchSegment seg;
+            seg.from   = worldNodePos(plant.species, m, e.a);
+            seg.to     = worldNodePos(plant.species, m, e.b);
+            seg.radius = radiusForNode(e.b);
+
+            // Parent: prefer an earlier segment within this module that
+            // terminates at e.a. If none (i.e. e.a is the module's root
+            // node), fall back to the parent module's attach segment.
+            int32_t parentSeg = -1;
+            if (e.a < nodeToSeg[mi].size() && nodeToSeg[mi][e.a] >= 0) {
+                parentSeg = nodeToSeg[mi][e.a];
+            } else if (e.a == m.prototype->rootNode) {
+                parentSeg = moduleParentSeg;
+            }
+            seg.parent = parentSeg;
+            seg.depth  = (parentSeg >= 0)
+                ? static_cast<int>(out[parentSeg].depth) + 1
+                : 0;
+
+            const int32_t idx = static_cast<int32_t>(out.size());
+            out.push_back(seg);
+
+            if (e.b < nodeToSeg[mi].size()) {
+                nodeToSeg[mi][e.b] = idx;
+            }
+        }
+    }
+
+    return out.size() - startSize;
+}
+
+} // namespace
+
+std::vector<bromesh::BranchSegment> emitPlantSegments(const Plant& plant) {
+    std::vector<bromesh::BranchSegment> out;
+    emitPlantSegmentsInto(plant, out);
+    return out;
+}
+
+std::vector<bromesh::BranchSegment> emitWorldSegments(const WorldState& world) {
+    std::vector<bromesh::BranchSegment> out;
+    for (const auto& plant : world.plants) {
+        emitPlantSegmentsInto(plant, out);
+    }
+    return out;
+}
+
 } // namespace broflora
