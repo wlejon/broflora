@@ -79,6 +79,19 @@ void addVoronoiSite(WorldState& world,
 // this world (typically registered first via `addPrototype`).
 Plant& addPlant(WorldState& world, Plant plant);
 
+// Remove a plant by index. Uses swap-and-pop: the plant at the end of
+// `world.plants` is moved into the vacated slot (unless `plantIndex` is
+// already the last slot). Returns true on success, false if the index
+// is out of range.
+//
+// Plant indices are NOT stable across `removePlant` or `step` — the
+// senescence pass in `step` already erases fully-dead plants and
+// appends new seedlings, so calling code must not cache plant indices
+// across either operation. Modules inside plants only reference
+// prototypes (by pointer) and other modules inside the same plant (by
+// index), so a swap is safe: no cross-plant pointers exist.
+bool removePlant(WorldState& world, uint32_t plantIndex);
+
 // Look up a prototype by index. Returns nullptr for out-of-range.
 inline const BranchModulePrototype* prototypeAt(const WorldState& world,
                                                 uint32_t index) {

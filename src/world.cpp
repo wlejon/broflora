@@ -36,6 +36,16 @@ Plant& addPlant(WorldState& world, Plant plant) {
     return world.plants.back();
 }
 
+bool removePlant(WorldState& world, uint32_t plantIndex) {
+    if (plantIndex >= world.plants.size()) return false;
+    const size_t last = world.plants.size() - 1;
+    if ((size_t)plantIndex != last) {
+        world.plants[plantIndex] = std::move(world.plants[last]);
+    }
+    world.plants.pop_back();
+    return true;
+}
+
 // Cell-size heuristic: mean bbox radius across every module, doubled, with
 // a floor of 0.5. Doubling matches the typical broad-phase tuning where a
 // query of radius r touches ~(2r/cell + 1)^3 cells — a cell ≈ mean radius
