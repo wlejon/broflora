@@ -144,6 +144,42 @@ std::vector<bromesh::BranchSegment> emitPlantSegments(const Plant& plant);
 // `placeLeavesOnBranches` call can be made over the whole world.
 std::vector<bromesh::BranchSegment> emitWorldSegments(const WorldState& world);
 
+// Bloom / fruit anchor — a world-space candidate position for placing
+// a flower (`bromesh::flower`) or a fruit cluster on a plant's terminal
+// twigs. Emitted only for plants that have entered the flowering regime
+// (`plant.flowering == true`); pre-flowering plants produce no anchors.
+//
+// One anchor per terminal node of each terminal module. A terminal
+// module is one with no child modules in the plant's module-tree (same
+// definition `FoliageSample::isTerminal` uses); a terminal node is one
+// of the prototype's `terminalNodes` — the tip points where blooms
+// naturally appear in real plants.
+//
+// Anchors carry the same life-state scalars FoliageSample exposes so
+// callers can drive bloom→fruit transitions, color variation, and per-
+// flower size attenuation from the simulation state without re-deriving
+// any of it. The plant-level `senescence01` is in particular what a
+// "promote blooms to fruit past peak" policy keys off.
+struct BloomAnchor {
+    // World-space anchor position — `worldNodePos` of the terminal node
+    // (post-tropism, post-rotation). Matches the cylinder endpoints
+    // emitPlantMesh draws so flowers and twig tips align exactly.
+    bromath::Vec3 position{};
+
+    // Unit outward direction at the anchor — the normalised vector from
+    // the terminal node's incoming neighbour toward the terminal node
+    // itself. Points "along the twig, outward toward the tip," so a
+    // consumer rotating a flower mesh's local +Y onto this normal gets
+    // the bloom facing the same way the twig is growing. Falls back to
+    // +Y when the incoming edge is degenerate (e.g. zero-length).
+    bromath::Vec3 normal = {0.0f, 1.0f, 0.0f};
+
+    // Same as FoliageSample fields, see mesh_emit.h above.
+    float age01        = 0.0f;
+    float vigor01      = 0.0f;
+    float senescence01 = 0.0f;
+};
+
 // Per-segment foliage state for the same segment order `emitPlantSegments`
 // produces. Length and index alignment with `emitPlantSegments(plant)` are
 // invariants: the i-th sample describes the i-th segment. Returns an empty
@@ -154,5 +190,18 @@ std::vector<FoliageSample> emitPlantFoliage(const Plant& plant);
 // plants in the same order, so concatenating per-plant samples in plant
 // order produces identical output.
 std::vector<FoliageSample> emitWorldFoliage(const WorldState& world);
+
+// Emit bloom / fruit anchor candidates for a single plant. Returns an
+// empty vector when the plant has not yet flowered or has no terminal
+// modules with terminal nodes. Order is module-topological with
+// per-module terminal nodes in declaration order.
+std::vector<BloomAnchor> emitPlantBloomAnchors(const Plant& plant);
+
+// Same across the whole world, concatenated in plant order. The
+// returned anchors are intended to be fed to `bromesh::packAnchors`
+// (with the world's branch capsule field as `avoid` and any foliage
+// keep-out spheres) to thin the candidates down to a non-overlapping
+// subset before instancing flower meshes at each survivor.
+std::vector<BloomAnchor> emitWorldBloomAnchors(const WorldState& world);
 
 } // namespace broflora

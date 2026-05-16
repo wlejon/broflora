@@ -388,3 +388,129 @@ TEST(foliage_senescence_ramp_engages_past_max_age) {
            "mid-window: senescence ≈ 0.5");
     ASSERT(past.senescence01 == 1.0f, "past window: senescence saturates at 1");
 }
+
+// emitPlantBloomAnchors — empty plant should yield no anchors.
+TEST(bloom_empty_plant_returns_empty) {
+    Plant plant;
+    auto anchors = emitPlantBloomAnchors(plant);
+    ASSERT(anchors.empty(), "no modules ⇒ no anchors");
+}
+
+// Non-flowering plant: even with mature terminal modules, no anchors.
+// Flowering gate is a hard prerequisite.
+TEST(bloom_non_flowering_plant_yields_no_anchors) {
+    static BranchModulePrototype proto;
+    proto.nodes.push_back({{ 0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{ 0.3f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{-0.3f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.edges.push_back({0, 2});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1, 2};
+
+    Plant plant;
+    plant.species = {};
+    plant.species.moduleMatureAge = 0.5f;
+    plant.flowering = false;          // hard gate
+    plant.effectiveRootVigorMax = plant.species.rootVigorMax;
+
+    BranchModuleInstance m;
+    m.prototype = &proto;
+    m.parent = UINT32_MAX;
+    m.age = 2.0f;
+    m.vigor = 0.8f;
+    m.light = 1.0f;
+    plant.modules.push_back(m);
+
+    auto anchors = emitPlantBloomAnchors(plant);
+    ASSERT(anchors.empty(), "!flowering ⇒ no anchors");
+}
+
+// Flowering Y plant: one terminal module with two terminal nodes —
+// expect two anchors, one per terminal. Positions should match the
+// terminal-node world positions exactly (same worldNodePos consumer as
+// the segment emitter).
+TEST(bloom_flowering_y_module_emits_per_terminal_node) {
+    static BranchModulePrototype proto;
+    proto.nodes.push_back({{ 0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{ 0.3f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{-0.3f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.edges.push_back({0, 2});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1, 2};
+
+    Plant plant;
+    plant.species = {};
+    plant.species.moduleMatureAge = 0.5f;
+    plant.flowering = true;
+    plant.effectiveRootVigorMax = plant.species.rootVigorMax;
+
+    BranchModuleInstance m;
+    m.prototype = &proto;
+    m.parent = UINT32_MAX;
+    m.age = 2.0f;
+    m.vigor = 0.8f;
+    m.light = 1.0f;
+    plant.modules.push_back(m);
+
+    auto anchors = emitPlantBloomAnchors(plant);
+    ASSERT(anchors.size() == 2u, "2 terminal nodes ⇒ 2 anchors");
+
+    // Default species has gravity tropism = -Y. With age 2 the τ
+    // displacement is non-trivial, so anchors won't be at the static
+    // prototype positions exactly, but the two anchors should still be
+    // on opposite sides in X.
+    ASSERT(anchors[0].position.x > 0.0f && anchors[1].position.x < 0.0f,
+           "Y terminals land on opposite X sides");
+    ASSERT(anchors[0].vigor01 > 0.0f && anchors[1].vigor01 > 0.0f,
+           "vigor scalar populated");
+
+    // Normal must be unit-length and point "outward" — y-component
+    // positive since both terminals are above the root.
+    auto isUnit = [](const bromath::Vec3& v) {
+        const float len = std::sqrt(v.x*v.x + v.y*v.y + v.z*v.z);
+        return std::fabs(len - 1.0f) < 1e-3f;
+    };
+    ASSERT(isUnit(anchors[0].normal),    "normal is unit-length");
+    ASSERT(isUnit(anchors[1].normal),    "normal is unit-length");
+    ASSERT(anchors[0].normal.y > 0.0f,   "outward normal points up-ish");
+    ASSERT(anchors[1].normal.y > 0.0f,   "outward normal points up-ish");
+}
+
+// Two-module plant: parent (non-terminal) has terminals, but no anchors
+// should land on its terminal nodes — only on the child (terminal)
+// module's terminals.
+TEST(bloom_non_terminal_module_skipped) {
+    static BranchModulePrototype proto;
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Plant plant;
+    plant.species = {};
+    plant.species.moduleMatureAge = 0.5f;
+    plant.flowering = true;
+    plant.effectiveRootVigorMax = plant.species.rootVigorMax;
+
+    BranchModuleInstance parent;
+    parent.prototype = &proto;
+    parent.parent = UINT32_MAX;
+    parent.age = 2.0f;
+    parent.vigor = 0.8f;
+    parent.light = 1.0f;
+    plant.modules.push_back(parent);
+
+    BranchModuleInstance child;
+    child.prototype = &proto;
+    child.parent = 0;
+    child.age = 2.0f;
+    child.vigor = 0.8f;
+    child.light = 1.0f;
+    plant.modules.push_back(child);
+
+    auto anchors = emitPlantBloomAnchors(plant);
+    ASSERT(anchors.size() == 1u, "only the terminal child contributes");
+}

@@ -379,4 +379,86 @@ std::vector<FoliageSample> emitWorldFoliage(const WorldState& world) {
     return out;
 }
 
+namespace {
+
+// Index of the prototype edge whose `b` endpoint is `terminalNode`, or
+// SIZE_MAX if no such edge exists (malformed prototype, or `terminalNode`
+// isn't actually a leaf of the prototype graph). Used to compute the
+// outward direction at an anchor — the direction along the incoming
+// segment.
+size_t incomingEdgeIndex(const BranchModulePrototype& proto, uint32_t terminalNode) {
+    for (size_t i = 0; i < proto.edges.size(); ++i) {
+        if (proto.edges[i].b == terminalNode) return i;
+    }
+    return SIZE_MAX;
+}
+
+size_t emitPlantBloomAnchorsInto(const Plant& plant,
+                                 std::vector<BloomAnchor>& out) {
+    const size_t startSize = out.size();
+    if (!plant.flowering || plant.modules.empty()) return 0;
+
+    const auto childCounts = moduleChildCounts(plant);
+    const float senescence = senescenceRamp(plant);
+
+    for (size_t mi = 0; mi < plant.modules.size(); ++mi) {
+        const auto& m = plant.modules[mi];
+        if (!m.prototype) continue;
+        if (childCounts[mi] != 0u) continue;  // non-terminal module — no blooms
+
+        const auto& sp = plant.species;
+        // Per-module life-state scalars — same definitions as the
+        // FoliageSample policy. Centralising would require pulling
+        // sampleForModule into a header; the trade-off favors duplication
+        // here over surface-area growth.
+        const float age01 = (sp.moduleMatureAge > 0.0f)
+            ? std::min(2.0f, std::max(0.0f, m.age / sp.moduleMatureAge))
+            : 0.0f;
+        const float vigor01 = (sp.maxVigor > 0.0f)
+            ? clamp01(m.vigor / sp.maxVigor)
+            : 0.0f;
+
+        for (uint32_t terminalNode : m.prototype->terminalNodes) {
+            if (terminalNode >= m.prototype->nodes.size()) continue;
+
+            BloomAnchor a;
+            a.position     = worldNodePos(plant.species, m, terminalNode);
+            a.age01        = age01;
+            a.vigor01      = vigor01;
+            a.senescence01 = senescence;
+
+            const size_t edgeIdx = incomingEdgeIndex(*m.prototype, terminalNode);
+            if (edgeIdx != SIZE_MAX) {
+                const auto& e = m.prototype->edges[edgeIdx];
+                const bromath::Vec3 fromPos = worldNodePos(plant.species, m, e.a);
+                const bromath::Vec3 dir = a.position - fromPos;
+                const float len = bromath::vlen(dir);
+                if (len > 1e-6f) {
+                    a.normal = dir * (1.0f / len);
+                }
+                // else: leave default +Y normal
+            }
+
+            out.push_back(a);
+        }
+    }
+    return out.size() - startSize;
+}
+
+} // namespace
+
+std::vector<BloomAnchor> emitPlantBloomAnchors(const Plant& plant) {
+    std::vector<BloomAnchor> out;
+    emitPlantBloomAnchorsInto(plant, out);
+    return out;
+}
+
+std::vector<BloomAnchor> emitWorldBloomAnchors(const WorldState& world) {
+    std::vector<BloomAnchor> out;
+    for (const auto& plant : world.plants) {
+        emitPlantBloomAnchorsInto(plant, out);
+    }
+    return out;
+}
+
 } // namespace broflora
