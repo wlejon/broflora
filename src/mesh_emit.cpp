@@ -44,7 +44,7 @@ void frameAround(Vec3 axis, Vec3& outX, Vec3& outZ) {
 
 void emitCylinder(MeshData& mesh,
                   Vec3 a, Vec3 b, float radiusA, float radiusB,
-                  uint32_t sides) {
+                  uint32_t sides, float rollPhi) {
     if (sides < 3) sides = 3;
     Vec3 axis = b - a;
     float len = vlen(axis);
@@ -57,7 +57,8 @@ void emitCylinder(MeshData& mesh,
     const uint32_t baseIdx = static_cast<uint32_t>(mesh.positions.size() / 3);
 
     for (uint32_t i = 0; i < sides; ++i) {
-        float t = bromath::TWO_PI * static_cast<float>(i) / static_cast<float>(sides);
+        float t = bromath::TWO_PI * static_cast<float>(i) / static_cast<float>(sides)
+                  + rollPhi;
         float cx = std::cos(t), cz = std::sin(t);
         // Outward radial direction in world space.
         Vec3 radial = fx * cx + fz * cz;
@@ -148,7 +149,8 @@ void emitPlantInto(const Plant& plant, MeshData& mesh, uint32_t sides) {
             emitCylinder(mesh, pa, pb,
                          radiusForNode(e.a),
                          radiusForNode(e.b),
-                         sides);
+                         sides,
+                         m.orientation.phi);
         }
     }
 }

@@ -65,7 +65,13 @@ struct MeshData {
 //   - Normals are radial-only; the cone half-angle from tapering is
 //     ignored. The lighting error is small at typical taper ratios.
 //   - The Euler roll φ on `BranchModuleInstance::orientation.phi` is
-//     not applied — branch placement and the mesh stay in (θ, ψ).
+//     applied as a phase offset to the ring vertices of every cylinder
+//     in the module. The cylinder body is rotationally symmetric so the
+//     surface looks identical for any φ, but the per-vertex tangent
+//     frame (and therefore any UV/texture seam, or leaf attachment
+//     direction a downstream renderer derives from these vertices) is a
+//     deterministic function of φ. Branch placement itself still stays
+//     in (θ, ψ) — see orientation.h.
 MeshData emitPlantMesh(const Plant& plant, uint32_t sides = 6);
 
 // Same, but appends every plant in the world into a single mesh.
