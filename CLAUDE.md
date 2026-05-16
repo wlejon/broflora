@@ -72,11 +72,6 @@ in `world.cpp` reads top-down through the paper's algorithm.
   Euler angles stored as `(φ, θ, ψ)` per the paper.
 - **Topological order on bones / modules.** Parents precede children
   in any vector — basipetal/acropetal passes rely on this.
-- **No bromesh dependency in core.** The mesh-emit module
-  (`include/broflora/mesh_emit.h`, when added) is gated by an
-  `EXISTS` check on `../bromesh/` and compiles to an empty
-  `MeshData` no-op when absent. Same optional-by-submodule
-  pattern bromesh itself uses for its third-party deps.
 - **Deterministic.** All randomness (attractor sampling, seed
   placement) takes an explicit `uint64_t seed` — no global rngs.
 

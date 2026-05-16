@@ -91,11 +91,10 @@ order so the split is insertion-order independent.
 ## Boundaries
 
 - `include/broflora/mesh_emit.h` is the only place broflora meets
-  bromesh. Gated by the `BROFLORA_HAS_BROMESH` define set in
-  `CMakeLists.txt` when `../bromesh/` is present; falls back to a
-  field-compatible `MeshData` stand-in otherwise. Emits one tapered
-  cylinder per branch edge, sized by the module's pipe-model
-  diameter and the segment's grown endpoints.
+  bromesh. bromesh is a hard sibling dependency wired in
+  `CMakeLists.txt`; emit writes straight into `bromesh::MeshData`.
+  Emits one tapered cylinder per branch edge, sized by the module's
+  pipe-model diameter and the segment's grown endpoints.
 - Determinism: every randomness source (`Plant`'s `rng` thread,
   attractor sampling, seed placement) takes an explicit `uint64_t&`
   state — see `include/broflora/rng.h`.

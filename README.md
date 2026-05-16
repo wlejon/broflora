@@ -24,9 +24,10 @@ cmake --build build --config Release
 ./build/tests/broflora_test             # single-config generators
 ```
 
-CMake 3.24+, C++20 (MSVC 2022, GCC 12+, Clang 15+). No external deps in the
-core library — the optional `bromesh` mesh-emit boundary is gated by an
-`EXISTS` check on a sibling `../bromesh/` checkout.
+CMake 3.24+, C++20 (MSVC 2022, GCC 12+, Clang 15+). Depends on sibling
+`../bromath` (header-only) and `../bromesh` (geometry emit target); both
+are added via `add_subdirectory` when not already provided by the
+enclosing build.
 
 ## What this implements
 

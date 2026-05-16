@@ -4,8 +4,10 @@
 //
 // This is the canonical "how do I use broflora?" reference for code
 // integrating into the `bro` runtime. It deliberately avoids any
-// dependency on bromesh or rendering — everything here is reachable
-// from the public headers under include/broflora/.
+// rendering dependency — geometry comes out as a `bromesh::MeshData`
+// (re-exported as `broflora::MeshData`) which we serialise to OBJ
+// here, and everything else is reachable from the public headers
+// under include/broflora/.
 
 #include "broflora/broflora.h"
 

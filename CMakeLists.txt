@@ -40,27 +40,32 @@ else()
 endif()
 
 # --- Required bromath dependency (sibling header-only library) ---
-set(BROMATH_DIR "${CMAKE_SOURCE_DIR}/../bromath" CACHE PATH "bromath sibling")
-if(EXISTS "${BROMATH_DIR}/CMakeLists.txt")
-    add_subdirectory("${BROMATH_DIR}" "${CMAKE_BINARY_DIR}/bromath" EXCLUDE_FROM_ALL)
-    target_link_libraries(broflora PUBLIC bromath::bromath)
-    message(STATUS "broflora: using sibling bromath at ${BROMATH_DIR}")
-else()
-    message(FATAL_ERROR "bromath not found at ${BROMATH_DIR}")
+# Guard against double-add — bro adds bromath before broflora, as does
+# bromesh below. First-loader wins.
+if(NOT TARGET bromath)
+    set(BROMATH_DIR "${CMAKE_SOURCE_DIR}/../bromath" CACHE PATH "bromath sibling")
+    if(EXISTS "${BROMATH_DIR}/CMakeLists.txt")
+        add_subdirectory("${BROMATH_DIR}" "${CMAKE_BINARY_DIR}/bromath" EXCLUDE_FROM_ALL)
+        message(STATUS "broflora: using sibling bromath at ${BROMATH_DIR}")
+    else()
+        message(FATAL_ERROR "bromath not found at ${BROMATH_DIR}")
+    endif()
 endif()
+target_link_libraries(broflora PUBLIC bromath::bromath)
 
-# --- Optional bromesh boundary ---
-# When a sibling ../bromesh checkout exists, gate the mesh-emit module on
-# it via BROFLORA_HAS_BROMESH. Core library never depends on bromesh.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../bromesh/CMakeLists.txt")
-    target_compile_definitions(broflora PUBLIC BROFLORA_HAS_BROMESH=1)
-    target_include_directories(broflora PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../bromesh/include>
-    )
-    message(STATUS "broflora: sibling ../bromesh detected; mesh-emit boundary enabled")
-else()
-    message(STATUS "broflora: ../bromesh not found; mesh-emit will be no-op")
+# --- Required bromesh dependency (sibling library) ---
+# broflora emits geometry as bromesh::MeshData and is meaningless without
+# bromesh in the picture. Same double-add guard pattern as bromath.
+if(NOT TARGET bromesh)
+    set(BROMESH_DIR "${CMAKE_SOURCE_DIR}/../bromesh" CACHE PATH "bromesh sibling")
+    if(EXISTS "${BROMESH_DIR}/CMakeLists.txt")
+        add_subdirectory("${BROMESH_DIR}" "${CMAKE_BINARY_DIR}/bromesh" EXCLUDE_FROM_ALL)
+        message(STATUS "broflora: using sibling bromesh at ${BROMESH_DIR}")
+    else()
+        message(FATAL_ERROR "bromesh not found at ${BROMESH_DIR}")
+    endif()
 endif()
+target_link_libraries(broflora PUBLIC bromesh)
 
 # --- Tests ---
 option(BROFLORA_TESTS "Build broflora tests" ${PROJECT_IS_TOP_LEVEL})
