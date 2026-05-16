@@ -194,12 +194,6 @@ void spawnModules(Plant& plant,
     std::vector<BranchModuleInstance> spawns;
     const uint32_t modCount = static_cast<uint32_t>(mods.size());
 
-    // Plants live in a contiguous vector, so the plant's index is a
-    // pointer offset — needed to pack ids for freshly-settled siblings
-    // when we insert them back into the spatial hash.
-    const uint32_t plantIdx =
-        static_cast<uint32_t>(&plant - world.plants.data());
-
     // Scratch buffer reused by every radiusQuery in settleOrientation.
     std::vector<int32_t> queryScratch;
 
@@ -267,17 +261,15 @@ void spawnModules(Plant& plant,
             spawns.push_back(child);
             occupied.insert(key(i, termNode));
 
-            // Make this child visible to subsequent siblings' descent so
-            // they don't all converge onto the same favoured pose. The
-            // module index here matches where this child will land once
-            // `spawns` is appended to `mods` at the end of the function.
-            OrientationHypothesis h = predictHypothesis(*proto, attachWorld, theta, psi);
-            if (h.radius > 0.0f) {
-                const uint32_t futureModIdx =
-                    modCount + static_cast<uint32_t>(spawns.size()) - 1;
-                index.insert(Sphere{h.centre, h.radius},
-                             internal::packEntryId(plantIdx, futureModIdx));
-            }
+            // Subsequent siblings cannot see this one for collision-aware
+            // descent: inserting its sphere into the spatial hash here
+            // would create an id pointing at a module that doesn't exist
+            // yet (mods isn't appended until the end of this function),
+            // and evalDistribution dereferences modules[id] to read bbox
+            // geometry. The insertion used to live here but was a no-op
+            // in practice (the dereferenced uninitialised bbox carried a
+            // zero radius, so intersection volume was always zero), and
+            // an out-of-range crash in Debug builds.
         }
     }
 
