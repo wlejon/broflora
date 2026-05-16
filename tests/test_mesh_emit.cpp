@@ -231,3 +231,160 @@ TEST(segments_world_continues_indices_across_plants) {
     ASSERT(std::fabs(segs[0].from.x - 0.0f) < 1e-4f, "plant-0 anchored at x=0");
     ASSERT(std::fabs(segs[1].from.x - 2.0f) < 1e-4f, "plant-1 anchored at x=2");
 }
+
+// emitPlantFoliage — empty plant should yield no samples.
+TEST(foliage_empty_plant_returns_empty) {
+    Plant plant;
+    auto samples = emitPlantFoliage(plant);
+    ASSERT(samples.empty(), "no modules ⇒ no samples");
+}
+
+// Lockstep contract: foliage sample count must equal segment count for
+// every plant, and indices align. Walk shape is module → edges, same
+// order for both functions — this is the invariant downstream code relies
+// on to zip the two outputs.
+TEST(foliage_samples_match_segments_one_for_one) {
+    static BranchModulePrototype proto;
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 0.5f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.edges.push_back({1, 2});
+    proto.rootNode = 0;
+    proto.terminalNodes = {2};
+
+    Plant plant;
+    plant.species = {};
+    plant.species.shadeTolerance = 1.0f;
+    plant.effectiveRootVigorMax = plant.species.rootVigorMax;
+
+    BranchModuleInstance m;
+    m.prototype = &proto;
+    m.parent = UINT32_MAX;
+    m.age = 0.0f;
+    m.vigor = 0.5f;
+    m.light = 1.0f;
+    plant.modules.push_back(m);
+
+    WorldState world;
+    world.shadow.qg.assign(1, 1.0f);
+    world.plants.push_back(plant);
+    for (int i = 0; i < 30; ++i) step(world, 0.1f);
+
+    auto segs    = emitPlantSegments(world.plants.front());
+    auto samples = emitPlantFoliage(world.plants.front());
+    ASSERT(segs.size() == samples.size(), "one sample per segment");
+}
+
+// Default mass policy: a single mature terminal module with healthy
+// vigor must yield mass > 0 on all its segments.
+TEST(foliage_mature_terminal_has_positive_mass) {
+    static BranchModulePrototype proto;
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Plant plant;
+    plant.species = {};
+    plant.species.shadeTolerance = 1.0f;
+    plant.species.moduleMatureAge = 0.5f;  // mature fast
+    plant.effectiveRootVigorMax = plant.species.rootVigorMax;
+
+    BranchModuleInstance m;
+    m.prototype = &proto;
+    m.parent = UINT32_MAX;
+    m.age = 2.0f;          // well past mature
+    m.vigor = 0.8f;        // healthy
+    m.light = 1.0f;
+    plant.modules.push_back(m);
+
+    auto samples = emitPlantFoliage(plant);
+    ASSERT(samples.size() == 1u, "one segment ⇒ one sample");
+    ASSERT(samples[0].isTerminal,    "single module is terminal");
+    ASSERT(samples[0].mass > 0.0f,   "mature healthy terminal carries foliage");
+    ASSERT(samples[0].age01 >= 1.0f, "age past mature gate");
+}
+
+// Non-terminal modules carry no foliage under the default policy. A
+// parent module with a child attached must have mass = 0 on its
+// segments even when otherwise mature.
+TEST(foliage_non_terminal_module_has_zero_mass) {
+    static BranchModulePrototype proto;
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Plant plant;
+    plant.species = {};
+    plant.species.shadeTolerance = 1.0f;
+    plant.species.moduleMatureAge = 0.5f;
+    plant.effectiveRootVigorMax = plant.species.rootVigorMax;
+
+    // Two modules: parent (idx 0) and child (idx 1). Both fully mature.
+    BranchModuleInstance parent;
+    parent.prototype = &proto;
+    parent.parent = UINT32_MAX;
+    parent.age = 2.0f;
+    parent.vigor = 0.8f;
+    parent.light = 1.0f;
+    plant.modules.push_back(parent);
+
+    BranchModuleInstance child;
+    child.prototype = &proto;
+    child.parent = 0;
+    child.age = 2.0f;
+    child.vigor = 0.8f;
+    child.light = 1.0f;
+    plant.modules.push_back(child);
+
+    auto samples = emitPlantFoliage(plant);
+    ASSERT(samples.size() == 2u, "two modules × one edge each ⇒ 2 samples");
+    ASSERT(!samples[0].isTerminal, "parent module is non-terminal");
+    ASSERT(samples[0].mass == 0.0f, "non-terminal carries no foliage");
+    ASSERT(samples[1].isTerminal,  "child module is terminal");
+    ASSERT(samples[1].mass > 0.0f, "terminal child carries foliage");
+}
+
+// Senescence ramp: 0 below maxAge, climbs linearly over the next 20%,
+// 1 thereafter. Verified at three points.
+TEST(foliage_senescence_ramp_engages_past_max_age) {
+    static BranchModulePrototype proto;
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    auto sampleAt = [&](float plantAge) {
+        Plant plant;
+        plant.species = {};
+        plant.species.maxAge = 10.0f;
+        plant.species.moduleMatureAge = 0.5f;
+        plant.effectiveRootVigorMax = plant.species.rootVigorMax;
+        plant.age = plantAge;
+
+        BranchModuleInstance m;
+        m.prototype = &proto;
+        m.parent = UINT32_MAX;
+        m.age = 2.0f;
+        m.vigor = 0.8f;
+        m.light = 1.0f;
+        plant.modules.push_back(m);
+
+        auto samples = emitPlantFoliage(plant);
+        return samples.empty() ? FoliageSample{} : samples[0];
+    };
+
+    auto young  = sampleAt( 5.0f);    // well before maxAge
+    auto peak   = sampleAt(11.0f);    // 50% into the 20% window
+    auto past   = sampleAt(13.0f);    // past the window
+
+    ASSERT(young.senescence01 == 0.0f, "below maxAge: senescence = 0");
+    ASSERT(peak.senescence01 > 0.4f && peak.senescence01 < 0.6f,
+           "mid-window: senescence ≈ 0.5");
+    ASSERT(past.senescence01 == 1.0f, "past window: senescence saturates at 1");
+}

@@ -272,4 +272,111 @@ std::vector<bromesh::BranchSegment> emitWorldSegments(const WorldState& world) {
     return out;
 }
 
+namespace {
+
+// Count child modules per module index — the topology gate for
+// "terminal module" in the plant's module-tree. A module is terminal
+// iff no other module references it as parent.
+std::vector<uint32_t> moduleChildCounts(const Plant& plant) {
+    std::vector<uint32_t> counts(plant.modules.size(), 0u);
+    for (const auto& m : plant.modules) {
+        if (m.parent != UINT32_MAX && m.parent < counts.size()) {
+            ++counts[m.parent];
+        }
+    }
+    return counts;
+}
+
+float clamp01(float x) {
+    if (x < 0.0f) return 0.0f;
+    if (x > 1.0f) return 1.0f;
+    return x;
+}
+
+// Plant-level senescence ramp:
+//   0 while plant.age <= species.maxAge,
+//   linearly to 1 over the next 20% of maxAge,
+//   1 thereafter.
+// Centralised so the default `mass` policy and the raw `senescence01`
+// scalar in FoliageSample stay in agreement.
+float senescenceRamp(const Plant& plant) {
+    const float maxAge = plant.species.maxAge;
+    if (maxAge <= 0.0f) return 0.0f;
+    const float over = plant.age - maxAge;
+    if (over <= 0.0f) return 0.0f;
+    const float window = maxAge * 0.2f;
+    if (window <= 0.0f) return 1.0f;
+    return clamp01(over / window);
+}
+
+// Build one FoliageSample for a module. Same per-module derivation for
+// every edge — the sample doesn't change within a module — so callers
+// that iterate by segment can reuse this across all edges of a module.
+FoliageSample sampleForModule(const Plant& plant,
+                              const BranchModuleInstance& m,
+                              bool isTerminal,
+                              float senescence) {
+    const auto& sp = plant.species;
+    FoliageSample s;
+    s.isTerminal   = isTerminal;
+    s.age01        = (sp.moduleMatureAge > 0.0f)
+                       ? std::min(2.0f, std::max(0.0f, m.age / sp.moduleMatureAge))
+                       : 0.0f;
+    s.vigor01      = (sp.maxVigor > 0.0f)
+                       ? clamp01(m.vigor / sp.maxVigor)
+                       : 0.0f;
+    s.light01      = clamp01(m.light);
+    s.senescence01 = senescence;
+
+    // Default mass policy. Documented invariant: matches the formula in
+    // mesh_emit.h's FoliageSample doc comment exactly.
+    if (isTerminal) {
+        const float ageGate = clamp01(s.age01);  // re-clamp to [0,1] for the gate
+        s.mass = ageGate * s.vigor01;
+    } else {
+        s.mass = 0.0f;
+    }
+    return s;
+}
+
+// Append this plant's foliage samples to `out`, in lockstep with the
+// segment order produced by emitPlantSegmentsInto. Same walk shape:
+// modules in topo order, each module's edges in declaration order.
+size_t emitPlantFoliageInto(const Plant& plant,
+                            std::vector<FoliageSample>& out) {
+    const size_t startSize = out.size();
+    if (plant.modules.empty()) return 0;
+
+    const auto childCounts = moduleChildCounts(plant);
+    const float senescence = senescenceRamp(plant);
+
+    for (size_t mi = 0; mi < plant.modules.size(); ++mi) {
+        const auto& m = plant.modules[mi];
+        if (!m.prototype) continue;
+        const bool isTerminal = (childCounts[mi] == 0u);
+        const FoliageSample s = sampleForModule(plant, m, isTerminal, senescence);
+        // One sample per edge — broadcast the per-module value.
+        for (size_t e = 0; e < m.prototype->edges.size(); ++e) {
+            out.push_back(s);
+        }
+    }
+    return out.size() - startSize;
+}
+
+} // namespace
+
+std::vector<FoliageSample> emitPlantFoliage(const Plant& plant) {
+    std::vector<FoliageSample> out;
+    emitPlantFoliageInto(plant, out);
+    return out;
+}
+
+std::vector<FoliageSample> emitWorldFoliage(const WorldState& world) {
+    std::vector<FoliageSample> out;
+    for (const auto& plant : world.plants) {
+        emitPlantFoliageInto(plant, out);
+    }
+    return out;
+}
+
 } // namespace broflora
