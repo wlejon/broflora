@@ -11,6 +11,7 @@ add_executable(broflora_test
     test_regression.cpp
     test_spatial_hash.cpp
     test_step_observer.cpp
+    test_terrain.cpp
 )
 
 target_link_libraries(broflora_test PRIVATE broflora)

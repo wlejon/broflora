@@ -6,8 +6,11 @@
 #include "broflora/spawning.h"
 #include "broflora/senescence.h"
 #include "bromath/spatial_hash.h"
+#include "internal_env.h"
 #include "internal_spatial.h"
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace broflora {
@@ -68,6 +71,49 @@ static bromath::SpatialHash3D buildSpatialIndex(const WorldState& world) {
 }
 
 void stepWithObserver(WorldState& world, float dt, const StepObserver& obs) {
+    // --- Terrain coupling (broflora extension to paper §3).
+    //
+    // Snap every plant's origin Y to the terrain heightfield. Out-of-
+    // footprint plants keep their previous Y (terrainHeightAt falls
+    // back). This handles dynamic terrain (sculpt tools, erosion)
+    // without requiring `bro` to chase plant positions itself.
+    //
+    // Then, for species with terrainAnchorWeight > 0, blend the root
+    // module's orientation toward the terrain normal at the plant
+    // origin. Yaw ψ rotates around +Y so we want enough tilt that the
+    // root's growth axis = rotateYawPitch({0,1,0}, ψ, θ) aligns with
+    // the surface normal. With our yaw-then-pitch convention:
+    //     normal = (-sin ψ · sin θ,   cos θ,   -cos ψ · sin θ)
+    //   (rotateYawPitch applied to +Y), so for a normal (nx, ny, nz):
+    //     θ_target = acos(ny)
+    //     ψ_target = atan2(-nx, -nz)
+    // Apply linearly weighted toward the default (θ_default = 0,
+    // ψ_default = original). Root only — children inherit the tilt
+    // implicitly through the parent's frame.
+    for (auto& plant : world.plants) {
+        plant.origin.y = internal::terrainHeightAt(world.terrain, plant.origin,
+                                                   plant.origin.y);
+        const float w = plant.species.terrainAnchorWeight;
+        if (w > 0.0f && !plant.modules.empty()) {
+            bromath::Vec3 n = internal::terrainNormalAt(world.terrain, plant.origin);
+            float ny = std::max(-1.0f, std::min(1.0f, n.y));
+            float thetaTarget = std::acos(ny);
+            float psiTarget   = std::atan2(-n.x, -n.z);
+            auto& root = plant.modules.front();
+            // Blend from current toward target. ψ wraps; blend the
+            // shortest arc by going through atan2 of weighted unit
+            // vectors rather than naively lerping the angle.
+            float c0 = std::cos(root.orientation.psi);
+            float s0 = std::sin(root.orientation.psi);
+            float c1 = std::cos(psiTarget);
+            float s1 = std::sin(psiTarget);
+            float cx = (1.0f - w) * c0 + w * c1;
+            float sx = (1.0f - w) * s0 + w * s1;
+            root.orientation.psi   = std::atan2(sx, cx);
+            root.orientation.theta = (1.0f - w) * root.orientation.theta + w * thetaTarget;
+        }
+    }
+
     // Build the per-tick spatial index from current module bboxes. Both
     // the light pass (f_collisions) and the spawn pass (gradient-descent
     // neighbour penalty) read from it; spawning also inserts newly-

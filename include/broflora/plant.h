@@ -62,6 +62,19 @@ struct Species {
     // recursive d_b sum.
     float leafDiameter = 0.02f;
 
+    // Terrain anchoring (broflora extension, not in the paper).
+    //
+    // terrainAnchorWeight in [0,1] blends the root module's per-tick
+    // orientation toward the terrain surface normal at the plant's
+    // origin. 0 = no terrain influence (the orientation set when the
+    // module was created is left alone); 1 = root grows exactly along
+    // the surface normal. Used to make trunks tilt on slopes.
+    // maxSeedingSlope (radians) rejects seeding candidates whose
+    // terrain slope exceeds this value — the angle is measured from
+    // +Y, so π/2 (the default) accepts any non-overhang slope.
+    float terrainAnchorWeight = 0.0f;
+    float maxSeedingSlope     = 1.5707963f;  // π/2 — accept everything
+
     // Spawn-time orientation gradient descent (paper §3.4):
     //   f_distribution(u) = ω1·f_collisions(u) + ω2·f_tropism(u)
     //   f_tropism(u_α)    = |cos(α_tropism) - cos(u_α)|
