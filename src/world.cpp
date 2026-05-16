@@ -67,7 +67,7 @@ static bromath::SpatialHash3D buildSpatialIndex(const WorldState& world) {
     return index;
 }
 
-void step(WorldState& world, float dt) {
+void stepWithObserver(WorldState& world, float dt, const StepObserver& obs) {
     // Build the per-tick spatial index from current module bboxes. Both
     // the light pass (f_collisions) and the spawn pass (gradient-descent
     // neighbour penalty) read from it; spawning also inserts newly-
@@ -76,26 +76,37 @@ void step(WorldState& world, float dt) {
 
     // A. Light + collisions (paper §3.1).
     evaluateLightAndCollisions(world, index);
+    if (obs.postLight) obs.postLight(world);
 
     // B. Vigor passes per plant (paper §3.2).
     for (auto& plant : world.plants) {
         runVigorPasses(plant);
     }
+    if (obs.postVigor) obs.postVigor(world);
 
     // C. Develop modules per plant (paper §3.3).
     for (auto& plant : world.plants) {
         developModules(plant, dt);
     }
+    if (obs.postDevelopment) obs.postDevelopment(world);
 
     // D. Spawn new modules per plant (paper §3.4).
+    if (obs.preSpawn) obs.preSpawn(world);
     for (auto& plant : world.plants) {
         spawnModules(plant, world, index, world.rngState);
     }
+    if (obs.postSpawn) obs.postSpawn(world);
 
     // E. Ecosystem-wide senescence + seeding (paper §3.5).
     ecosystemTick(world, dt, world.rngState);
+    if (obs.postSenescence) obs.postSenescence(world);
 
     world.simTime += dt;
+}
+
+void step(WorldState& world, float dt) {
+    static const StepObserver none{};
+    stepWithObserver(world, dt, none);
 }
 
 } // namespace broflora

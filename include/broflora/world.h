@@ -11,6 +11,7 @@
 #include "broflora/plant.h"
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace broflora {
@@ -84,17 +85,42 @@ inline const BranchModulePrototype* prototypeAt(const WorldState& world,
     return index < world.prototypes.size() ? &world.prototypes[index] : nullptr;
 }
 
+// Optional per-phase observer for callers (typically `bro`) that want
+// to snapshot intermediate state for visualisation, recording, or
+// debugging. Every callback is optional — leave the unused ones null.
+// Callbacks run synchronously inside `stepWithObserver` between the
+// numbered phases of paper §3. State passed in is the world at the
+// moment of the callback (e.g. `postVigor` runs after the acropetal
+// pass but before development), so reading module.vigor / module.age /
+// etc. from it observes that exact slice. Do not mutate `world` from
+// inside a callback — the simulation is mid-step.
+struct StepObserver {
+    std::function<void(const WorldState&)> postLight;
+    std::function<void(const WorldState&)> postVigor;
+    std::function<void(const WorldState&)> postDevelopment;
+    std::function<void(const WorldState&)> preSpawn;
+    std::function<void(const WorldState&)> postSpawn;
+    std::function<void(const WorldState&)> postSenescence;
+};
+
 // Advance the world by `dt` (seconds, or whatever your time unit is —
 // the paper uses dimensionless "frames"; downstream you pick the
 // mapping). Runs steps A–E of paper §3 in order:
 //
-//   A. evaluateLightAndCollisions
-//   B. vigorPasses           (basipetal + acropetal)
-//   C. developModules        (age, geometry, tropism)
-//   D. spawnModules          (mature terminals → new modules)
-//   E. ecosystemTick         (senescence, climate, seeding)
-//
-// Currently a skeleton — see TODO markers inside the per-step headers.
+//   A. evaluateLightAndCollisions     → observer.postLight
+//   B. vigorPasses    (basipetal + acropetal)
+//                                     → observer.postVigor
+//   C. developModules (age, geometry, tropism)
+//                                     → observer.postDevelopment
+//                                     → observer.preSpawn
+//   D. spawnModules   (mature terminals → new modules)
+//                                     → observer.postSpawn
+//   E. ecosystemTick  (senescence, climate, seeding)
+//                                     → observer.postSenescence
 void step(WorldState& world, float dt);
+
+// As above, but invokes the given observer callbacks between phases.
+// `step(w, dt)` is equivalent to `stepWithObserver(w, dt, {})`.
+void stepWithObserver(WorldState& world, float dt, const StepObserver& observer);
 
 } // namespace broflora
