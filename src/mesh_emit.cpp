@@ -228,7 +228,12 @@ size_t emitPlantSegmentsInto(const Plant& plant,
             bromesh::BranchSegment seg;
             seg.from   = worldNodePos(plant.species, m, e.a);
             seg.to     = worldNodePos(plant.species, m, e.b);
-            seg.radius = radiusForNode(e.b);
+            // Representative thickness for the whole segment: the mean of
+            // the (thicker) parent-side and (thinner) tip-side radii. Using
+            // only e.b would report the tip radius for every segment — every
+            // edge's b-node is a max-depth terminal — collapsing the trunk to
+            // leaf thickness for any consumer that scatters by seg.radius.
+            seg.radius = 0.5f * (radiusForNode(e.a) + radiusForNode(e.b));
 
             // Parent: prefer an earlier segment within this module that
             // terminates at e.a. If none (i.e. e.a is the module's root
