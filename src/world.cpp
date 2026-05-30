@@ -33,7 +33,14 @@ void addVoronoiSite(WorldState& world,
 
 Plant& addPlant(WorldState& world, Plant plant) {
     world.plants.push_back(std::move(plant));
-    return world.plants.back();
+    Plant& added = world.plants.back();
+    // Seed the root module's world position from the plant origin so any
+    // emit before the first step() places the plant correctly. The first
+    // development pass recomputes this (and every child's) anyway.
+    if (!added.modules.empty()) {
+        added.modules.front().worldPos = added.origin;
+    }
+    return added;
 }
 
 bool removePlant(WorldState& world, uint32_t plantIndex) {

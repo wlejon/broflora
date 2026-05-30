@@ -59,6 +59,7 @@ bool makeSeedling(const WorldState& world, const Species& species, Vec3 origin,
     root.age = 0.0f;
     root.vigor = species.minVigor * 2.0f;  // just above shed threshold
     root.light = 1.0f;
+    root.worldPos = origin;  // so emit before the first develop pass is placed
     out.modules = {root};
     return true;
 }

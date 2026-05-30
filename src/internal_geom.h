@@ -42,13 +42,23 @@ inline bromath::Vec3 nodeOffsetFromRoot(const broflora::Species& sp,
         ? m.nodePositions[rootIdx] : proto.nodes[rootIdx].position;
     bromath::Vec3 rel = local - rootLocal;
     bromath::Vec3 rotated = rotateYawPitch(rel, m.orientation.psi, m.orientation.theta);
-    const float nodeAb = proto.nodes[nodeIdx].ageAtBirth;
-    const float ab    = std::max(0.0f, m.age - nodeAb);
-    const float denom = ab + sp.tropismG1;
-    if (denom <= 1e-6f) return rotated;
-    const float k = sp.tropismG1 * sp.tropismG2 / denom;
-    if (k == 0.0f) return rotated;
-    return rotated + bromath::vnorm(sp.tropismDir) * k;
+
+    // Per-node gravitropic bend along tropismDir. τ(a_b) = g1·g2/(a_b+g1)
+    // is the paper's per-node magnitude — largest for the youngest nodes,
+    // relaxing as they age. We subtract the root node's term so the
+    // *root* node always maps to a zero offset: the module's worldPos is
+    // its attach point and must not drift, otherwise every module (and the
+    // whole plant) translates bodily along tropismDir — which sank plants
+    // ~g2 metres underground at birth and detached children from parents.
+    auto tropism = [&](uint32_t idx) -> bromath::Vec3 {
+        const float ab    = std::max(0.0f, m.age - proto.nodes[idx].ageAtBirth);
+        const float denom = ab + sp.tropismG1;
+        if (denom <= 1e-6f) return {0.0f, 0.0f, 0.0f};
+        const float k = sp.tropismG1 * sp.tropismG2 / denom;
+        if (k == 0.0f) return {0.0f, 0.0f, 0.0f};
+        return bromath::vnorm(sp.tropismDir) * k;
+    };
+    return rotated + tropism(nodeIdx) - tropism(rootIdx);
 }
 
 } // namespace broflora::internal
