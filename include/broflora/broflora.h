@@ -4,6 +4,7 @@
 
 #include "broflora/orientation.h"
 #include "broflora/module.h"
+#include "broflora/prototypes.h"
 #include "broflora/plant.h"
 #include "broflora/environment.h"
 #include "broflora/world.h"

@@ -8,6 +8,7 @@ add_executable(broflora_test
     test_branch_length.cpp
     test_orientation.cpp
     test_mesh_emit.cpp
+    test_prototypes.cpp
     test_regression.cpp
     test_spatial_hash.cpp
     test_step_observer.cpp
