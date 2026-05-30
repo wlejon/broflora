@@ -77,13 +77,20 @@ struct Species {
 
     // Spawn-time orientation gradient descent (paper §3.4):
     //   f_distribution(u) = ω1·f_collisions(u) + ω2·f_tropism(u)
-    //   f_tropism(u_α)    = |cos(α_tropism) - cos(u_α)|
-    // cos(u_α) is the dot of the candidate module's growth axis with
-    // the species' up axis (= -tropismDir). cos(α_tropism) is the
-    // species ideal — 1.0 means "grow perfectly upward".
+    //   f_tropism(u)      = 1 - cos(growthAxis(u), growthTarget(u))
+    // Each child's growthTarget continues the *arm it sprouts from* —
+    // the world-space direction of the parent terminal it attaches to —
+    // lifted toward the species' up axis (= -tropismDir) by `orthotropy`.
+    // This is what makes a crown: a child off an outward-leaning arm keeps
+    // leaning outward (it does not reset to vertical), so the whorl's arms
+    // broaden into a candelabra instead of every meristem poling straight
+    // up. Targeting an absolute direction instead leaves the azimuth
+    // unconstrained and collapses the plant into a single leaning column.
+    //   orthotropy = 0 : branches hold their arm direction (max spread)
+    //   orthotropy = 1 : every branch turns straight up (columnar)
     float distributionWeightCollisions = 1.0f;   // ω1
     float distributionWeightTropism    = 0.5f;   // ω2
-    float tropismCosTarget             = 1.0f;   // cos(α_tropism)
+    float orthotropy                   = 0.3f;   // arm-dir → up lift, [0,1]
 };
 
 // One plant instance.

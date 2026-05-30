@@ -84,7 +84,7 @@ TEST(prototypes_whorl_grows_fuller_than_fork) {
         Plant pl;
         pl.species = {};
         pl.species.moduleMatureAge = 0.5f;
-        pl.species.tropismCosTarget = 0.45f;  // allow lateral spread
+        pl.species.orthotropy = 0.3f;  // let arms spread rather than rise straight
         pl.origin = {0, 0, 0};
         pl.effectiveRootVigorMax = pl.species.rootVigorMax;
         BranchModuleInstance root;

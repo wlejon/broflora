@@ -83,9 +83,26 @@ OrientationHypothesis predictHypothesis(const BranchModulePrototype& proto,
     h.centre = attachWorld + mean;
     h.radius = std::sqrt(maxD2);
 
-    uint32_t term = proto.terminalNodes.empty() ? proto.rootNode : proto.terminalNodes.front();
-    if (term < proto.nodes.size()) {
-        Vec3 axisLoc = proto.nodes[term].position - root;
+    // Growth axis = the module's *central* direction: the mean of all
+    // terminal positions relative to the root. Using a single terminal
+    // (e.g. terminalNodes.front()) injects that arm's off-centre offset
+    // into the axis, which for a radially-symmetric whorl is horizontal.
+    // Rotating an off-centre axis by yaw ψ then couples ψ into
+    // cos(axis, up), so the f_tropism objective gains a spurious preferred
+    // ψ and the descent drives every module toward the *same* world yaw —
+    // shearing the whole canopy off in one direction. Averaging the
+    // terminals cancels the radial offsets (the whorl's mean is its
+    // vertical trunk axis), restoring a ψ-independent tropism term.
+    Vec3 axisLoc = {0.0f, 0.0f, 0.0f};
+    if (!proto.terminalNodes.empty()) {
+        for (uint32_t t : proto.terminalNodes) {
+            if (t < proto.nodes.size()) axisLoc += proto.nodes[t].position - root;
+        }
+        axisLoc = axisLoc * (1.0f / static_cast<float>(proto.terminalNodes.size()));
+    }
+    // Degenerate fallback: a module whose terminals' mean coincides with
+    // the root has no usable axis — keep the default up vector.
+    if (vlen2(axisLoc) > 1e-12f) {
         h.axis = vnorm(rotateYawPitch(axisLoc, psi, theta));
     }
     return h;
@@ -95,7 +112,7 @@ float evalDistribution(const BranchModulePrototype& proto,
                        const WorldState& world,
                        const bromath::SpatialHash3D& index,
                        Vec3 attachWorld, float theta, float psi,
-                       Vec3 tropismUp, float cosTarget,
+                       Vec3 growthTarget,
                        float w1, float w2,
                        std::vector<int32_t>& scratch) {
     OrientationHypothesis h = predictHypothesis(proto, attachWorld, theta, psi);
@@ -109,8 +126,9 @@ float evalDistribution(const BranchModulePrototype& proto,
         fc += sintersectVolume(Sphere{h.centre, h.radius},
                                Sphere{n.bboxCenter, n.bboxRadius});
     }
-    float cosU = vdot(h.axis, tropismUp);
-    float ft   = std::fabs(cosTarget - cosU);
+    // f_tropism: 0 when the module's growth axis points exactly along the
+    // desired growth direction, rising to 2 when antiparallel.
+    float ft = 1.0f - vdot(h.axis, growthTarget);
     return w1 * fc + w2 * ft;
 }
 
@@ -124,11 +142,11 @@ void settleOrientation(const BranchModulePrototype& proto,
                        const WorldState& world,
                        const bromath::SpatialHash3D& index,
                        Vec3 attachWorld,
-                       Vec3 tropismUp, float cosTarget, float w1, float w2,
+                       Vec3 growthTarget, float w1, float w2,
                        float& theta, float& psi,
                        std::vector<int32_t>& scratch) {
     float bestObj = evalDistribution(proto, world, index, attachWorld, theta, psi,
-                                     tropismUp, cosTarget, w1, w2, scratch);
+                                     growthTarget, w1, w2, scratch);
     float step = 0.4f;
     for (int iter = 0; iter < 8 && step > 1e-3f; ++iter) {
         bool improved = false;
@@ -138,7 +156,7 @@ void settleOrientation(const BranchModulePrototype& proto,
             float t = theta + dts[d];
             float p = psi   + dps[d];
             float o = evalDistribution(proto, world, index, attachWorld, t, p,
-                                       tropismUp, cosTarget, w1, w2, scratch);
+                                       growthTarget, w1, w2, scratch);
             if (o < bestObj - 1e-6f) {
                 bestObj = o;
                 theta = t;
@@ -186,8 +204,8 @@ void spawnModules(Plant& plant,
     // so subsequent siblings (and subsequent plants' spawn pass within
     // this tick) treat it as an existing neighbour.
 
-    const Vec3  tropismUp = vnorm(sp.tropismDir * -1.0f);
-    const float cosTarget = sp.tropismCosTarget;
+    const Vec3  up = vnorm(sp.tropismDir * -1.0f);
+    const float orthotropy = std::max(0.0f, std::min(1.0f, sp.orthotropy));
     const float w1        = sp.distributionWeightCollisions;
     const float w2        = sp.distributionWeightTropism;
 
@@ -227,21 +245,54 @@ void spawnModules(Plant& plant,
             // where the terminal actually sits, not its rigid pose.
             Vec3 attachWorld = u.worldPos + nodeOffsetFromRoot(sp, u, termNode);
 
-            // Seed orientation: fanned yaw per terminal slot for sibling
-            // separation, mild outward pitch, plus a small rng-driven
-            // jitter so re-runs with different seeds produce different
-            // ecosystems while a fixed seed remains fully deterministic.
-            // Jitter is small (≈3°) relative to the descent's first
-            // probe step (≈23°) so the optimiser stays in the same basin.
+            // Growth target: continue the direction of the *twig* this
+            // child sprouts from — the parent terminal's own incoming edge
+            // (fork → tip), not the chord from the module root, which would
+            // fold in the module's vertical trunk and pull every arm back
+            // toward vertical. The twig direction carries the whorl's true
+            // outward spread, so children inherit a distinct, genuinely
+            // splayed heading per terminal; lifting it toward up by
+            // `orthotropy` then sets how strongly the crown rises vs.
+            // spreads. A child off an outward twig keeps growing outward —
+            // building a crown instead of a vertical whip.
+            uint32_t termParent = u.prototype->rootNode;
+            for (const auto& e : u.prototype->edges) {
+                uint32_t a = e.a, b = e.b;
+                if (a > b) std::swap(a, b);
+                if (b == termNode) { termParent = a; break; }
+            }
+            Vec3 armOff = nodeOffsetFromRoot(sp, u, termNode)
+                        - nodeOffsetFromRoot(sp, u, termParent);
+            Vec3 armDir = (vlen2(armOff) > 1e-8f) ? vnorm(armOff) : up;
+            Vec3 growthTarget = vnorm(armDir + (up - armDir) * orthotropy);
+
+            // Shoots are negatively gravitropic: they never *aim* below the
+            // horizon. An outward arm on a steeply-tilted module can point
+            // downward, and continuing it would drive the branch into the
+            // ground. Clamp the target into the upper hemisphere (relative
+            // to the species' up axis); the per-node gravitropic bend still
+            // lets mature branches droop slightly, but new growth always
+            // heads up-and-out. Falls back to straight up if the arm was
+            // pointing straight down.
+            const float upDot = vdot(growthTarget, up);
+            if (upDot < 0.0f) {
+                growthTarget = growthTarget - up * upDot;   // project onto horizon
+                growthTarget = (vlen2(growthTarget) > 1e-6f) ? vnorm(growthTarget) : up;
+            }
+
+            // Seed (θ, ψ) directly from the target direction so the descent
+            // starts aligned (the child prototype's mean axis is ~vertical,
+            // so rotateYawPitch({0,1,0}, ψ, θ) = (sinψ sinθ, cosθ, cosψ sinθ)
+            // inverts to θ = acos(target.y), ψ = atan2(target.x, target.z)).
+            // A small rng jitter keeps re-seeds varied while a fixed seed
+            // stays deterministic.
             const float jitter = 0.05f;
-            float theta = 0.15f + jitter * randSigned(rng);
-            float psi   = (terms.size() > 0)
-                ? bromath::TWO_PI * static_cast<float>(k)
-                  / static_cast<float>(terms.size())
-                : 0.0f;
-            psi += jitter * randSigned(rng);
+            const float gy = std::max(-1.0f, std::min(1.0f, growthTarget.y));
+            float theta = std::acos(gy) + jitter * randSigned(rng);
+            float psi   = std::atan2(growthTarget.x, growthTarget.z)
+                          + jitter * randSigned(rng);
             settleOrientation(*proto, world, index, attachWorld,
-                              tropismUp, cosTarget, w1, w2, theta, psi,
+                              growthTarget, w1, w2, theta, psi,
                               queryScratch);
 
             BranchModuleInstance child;

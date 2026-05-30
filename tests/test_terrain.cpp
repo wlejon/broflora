@@ -122,11 +122,12 @@ TEST(terrain_anchor_tilts_root_orientation) {
     // terrainNormalAt central-diffs over ±cellSize and forms
     // (-dhx, 2·cs, -dhz). With slope 1/unit and cs=1 that's (-2,2,0),
     // normalized (-1,1,0)/√2 → ny = 1/√2, nx = -1/√2.
-    // θ_target = acos(1/√2) = π/4. ψ_target = atan2(-nx, -nz) =
-    // atan2(1/√2, 0) = π/2.
+    // θ_target = acos(1/√2) = π/4. With the pitch-then-yaw convention
+    // (axis = (sinψ·sinθ, cosθ, cosψ·sinθ)), aligning the axis to the
+    // normal needs ψ_target = atan2(nx, nz) = atan2(-1/√2, 0) = -π/2.
     const auto& root = world.plants.front().modules.front();
-    float expectedTheta = 0.7853982f;  // π/4
-    float expectedPsi   = 1.5707963f;  // π/2
+    float expectedTheta = 0.7853982f;   // π/4
+    float expectedPsi   = -1.5707963f;  // -π/2
     ASSERT(std::fabs(root.orientation.theta - expectedTheta) < 1e-3f,
            "root pitch follows terrain slope");
     ASSERT(std::fabs(root.orientation.psi - expectedPsi) < 1e-3f,

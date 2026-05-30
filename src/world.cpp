@@ -99,11 +99,11 @@ void stepWithObserver(WorldState& world, float dt, const StepObserver& obs) {
     // module's orientation toward the terrain normal at the plant
     // origin. Yaw ψ rotates around +Y so we want enough tilt that the
     // root's growth axis = rotateYawPitch({0,1,0}, ψ, θ) aligns with
-    // the surface normal. With our yaw-then-pitch convention:
-    //     normal = (-sin ψ · sin θ,   cos θ,   -cos ψ · sin θ)
+    // the surface normal. With our pitch-then-yaw convention:
+    //     normal = (sin ψ · sin θ,   cos θ,   cos ψ · sin θ)
     //   (rotateYawPitch applied to +Y), so for a normal (nx, ny, nz):
     //     θ_target = acos(ny)
-    //     ψ_target = atan2(-nx, -nz)
+    //     ψ_target = atan2(nx, nz)
     // Apply linearly weighted toward the default (θ_default = 0,
     // ψ_default = original). Root only — children inherit the tilt
     // implicitly through the parent's frame.
@@ -115,7 +115,7 @@ void stepWithObserver(WorldState& world, float dt, const StepObserver& obs) {
             bromath::Vec3 n = internal::terrainNormalAt(world.terrain, plant.origin);
             float ny = std::max(-1.0f, std::min(1.0f, n.y));
             float thetaTarget = std::acos(ny);
-            float psiTarget   = std::atan2(-n.x, -n.z);
+            float psiTarget   = std::atan2(n.x, n.z);
             auto& root = plant.modules.front();
             // Blend from current toward target. ψ wraps; blend the
             // shortest arc by going through atan2 of weighted unit
