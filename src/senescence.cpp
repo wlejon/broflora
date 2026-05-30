@@ -145,7 +145,31 @@ void ecosystemTick(WorldState& world, float dt, uint64_t& rng) {
                         origin.y = terrainHeightAt(world.terrain, origin, plant.origin.y);
                         bool slopeOk = (sp.maxSeedingSlope >= 1.5707963f)
                             || (terrainSlopeAt(world.terrain, origin) <= sp.maxSeedingSlope);
-                        if (slopeOk && !soilBlockedAt(world.soil, origin)) {
+
+                        // Containment: a seed outside the shadow-grid
+                        // footprint would grow in permanent full sun (no
+                        // shadow cells exist there to occlude it) and
+                        // never thin, so the population would diverge
+                        // outward without bound. Keep seeding inside the
+                        // simulated region.
+                        bool inFootprint = internal::withinShadowXZ(world.shadow, origin);
+
+                        // Recruitment: a seed only establishes where enough
+                        // light reaches the ground. Shade-intolerant species
+                        // need a bright gap; tolerant ones germinate deeper
+                        // in shade. This is what bounds *density*: once the
+                        // canopy closes, Q_G at the floor drops below the
+                        // germination light and recruitment shuts off, so the
+                        // stand converges to a stable population (and reopens
+                        // as old plants die and gaps form).
+                        const float qgFloor =
+                            internal::shadowAt(world.shadow,
+                                               {origin.x, origin.y + 0.5f, origin.z}, 1.0f);
+                        const float germLight = 1.0f - sp.shadeTolerance;
+                        bool litEnough = qgFloor >= germLight;
+
+                        if (slopeOk && inFootprint && litEnough
+                            && !soilBlockedAt(world.soil, origin)) {
                             Plant seedling;
                             if (makeSeedling(world, sp, origin, seedling)) {
                                 newPlants.push_back(std::move(seedling));

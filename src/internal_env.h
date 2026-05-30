@@ -65,6 +65,34 @@ inline bromath::Vec3 terrainNormalAt(const TerrainMap& t, bromath::Vec3 world) {
     return bromath::vnorm(n);
 }
 
+// Nearest-cell Q_G at a world position. Returns `fallback` when the
+// position is outside the grid (or there is no grid). Mirrors the
+// shadow-cell lookup in light.cpp; lives here so the seeding pass can
+// read canopy light for recruitment without reaching into light.cpp.
+inline float shadowAt(const ShadowGrid& g, bromath::Vec3 p, float fallback) {
+    if (g.cellSize <= 0.0f || g.width == 0 || g.height == 0 || g.depth == 0)
+        return fallback;
+    float fx = (p.x - g.origin.x) / g.cellSize;
+    float fy = (p.y - g.origin.y) / g.cellSize;
+    float fz = (p.z - g.origin.z) / g.cellSize;
+    if (fx < 0.0f || fy < 0.0f || fz < 0.0f) return fallback;
+    uint32_t x = static_cast<uint32_t>(fx);
+    uint32_t y = static_cast<uint32_t>(fy);
+    uint32_t z = static_cast<uint32_t>(fz);
+    if (x >= g.width || y >= g.height || z >= g.depth) return fallback;
+    return g.qg[shadowIndex(g, x, y, z)];
+}
+
+// Is the xz of `p` inside the shadow grid footprint? When there is no
+// grid the concept doesn't apply, so we return true (no containment).
+inline bool withinShadowXZ(const ShadowGrid& g, bromath::Vec3 p) {
+    if (g.cellSize <= 0.0f || g.width == 0 || g.depth == 0) return true;
+    float fx = (p.x - g.origin.x) / g.cellSize;
+    float fz = (p.z - g.origin.z) / g.cellSize;
+    return fx >= 0.0f && fz >= 0.0f
+        && fx < static_cast<float>(g.width) && fz < static_cast<float>(g.depth);
+}
+
 // Angle between the terrain normal at `world` and +Y, in radians. 0 on
 // flat ground, π/2 on a vertical cliff.
 inline float terrainSlopeAt(const TerrainMap& t, bromath::Vec3 world) {
