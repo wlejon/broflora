@@ -308,9 +308,12 @@ TEST(foliage_mature_terminal_has_positive_mass) {
 }
 
 // Non-terminal modules carry no foliage under the default policy. A
-// parent module with a child attached must have mass = 0 on its
-// segments even when otherwise mature.
-TEST(foliage_non_terminal_module_has_zero_mass) {
+// Foliage is gated by branch thickness, not by topology: leaves grow on
+// twigs throughout the crown (so plants read as full, not bare poles with
+// leaf-balls on the tips), but the thick structural bole stays bare. A
+// thin non-terminal module must carry foliage; a trunk-thick module must
+// not — even when both are otherwise mature and healthy.
+TEST(foliage_thin_branch_leafs_thick_bole_bare) {
     static BranchModulePrototype proto;
     proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
     proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
@@ -323,30 +326,34 @@ TEST(foliage_non_terminal_module_has_zero_mass) {
     plant.species.shadeTolerance = 1.0f;
     plant.species.moduleMatureAge = 0.5f;
     plant.effectiveRootVigorMax = plant.species.rootVigorMax;
+    const float leafD = plant.species.leafDiameter;  // 0.02
 
-    // Two modules: parent (idx 0) and child (idx 1). Both fully mature.
-    BranchModuleInstance parent;
-    parent.prototype = &proto;
-    parent.parent = UINT32_MAX;
-    parent.age = 2.0f;
-    parent.vigor = 0.8f;
-    parent.light = 1.0f;
-    plant.modules.push_back(parent);
+    // Two modules: a thick bole (idx 0, has a child so non-terminal) and a
+    // thin twig (idx 1, terminal). Both mature and healthy. Diameters are
+    // set explicitly since this test doesn't run the develop pipe-model.
+    BranchModuleInstance bole;
+    bole.prototype = &proto;
+    bole.parent = UINT32_MAX;
+    bole.age = 2.0f;
+    bole.vigor = 0.8f;
+    bole.light = 1.0f;
+    bole.diameter = leafD * 12.0f;  // well past the leaf-grade cutoff (~6×)
+    plant.modules.push_back(bole);
 
-    BranchModuleInstance child;
-    child.prototype = &proto;
-    child.parent = 0;
-    child.age = 2.0f;
-    child.vigor = 0.8f;
-    child.light = 1.0f;
-    plant.modules.push_back(child);
+    BranchModuleInstance twig;
+    twig.prototype = &proto;
+    twig.parent = 0;
+    twig.age = 2.0f;
+    twig.vigor = 0.8f;
+    twig.light = 1.0f;
+    twig.diameter = leafD;  // leaf thickness — fully leafy
+    plant.modules.push_back(twig);
 
     auto samples = emitPlantFoliage(plant);
     ASSERT(samples.size() == 2u, "two modules × one edge each ⇒ 2 samples");
-    ASSERT(!samples[0].isTerminal, "parent module is non-terminal");
-    ASSERT(samples[0].mass == 0.0f, "non-terminal carries no foliage");
-    ASSERT(samples[1].isTerminal,  "child module is terminal");
-    ASSERT(samples[1].mass > 0.0f, "terminal child carries foliage");
+    ASSERT(!samples[0].isTerminal, "bole module is non-terminal");
+    ASSERT(samples[0].mass == 0.0f, "trunk-thick bole carries no foliage");
+    ASSERT(samples[1].mass > 0.0f,  "thin twig carries foliage");
 }
 
 // Senescence ramp: 0 below maxAge, climbs linearly over the next 20%,

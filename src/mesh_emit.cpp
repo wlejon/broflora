@@ -2,6 +2,7 @@
 
 #include "bromath/scalar.h"
 #include "bromath/vec.h"
+#include "internal_foliage.h"
 #include "internal_geom.h"
 
 #include <algorithm>
@@ -333,14 +334,12 @@ FoliageSample sampleForModule(const Plant& plant,
     s.light01      = clamp01(m.light);
     s.senescence01 = senescence;
 
-    // Default mass policy. Documented invariant: matches the formula in
-    // mesh_emit.h's FoliageSample doc comment exactly.
-    if (isTerminal) {
-        const float ageGate = clamp01(s.age01);  // re-clamp to [0,1] for the gate
-        s.mass = ageGate * s.vigor01;
-    } else {
-        s.mass = 0.0f;
-    }
+    // Default mass policy (matches the FoliageSample doc in mesh_emit.h).
+    // Foliage is distributed through the whole crown, not just terminal
+    // tips: leaf-area proxy (thin, mature, vigorous branches) modulated by
+    // the module's effective light and thinned as the plant senesces.
+    // `isTerminal` is still reported but no longer hard-gates mass.
+    s.mass = internal::leafAreaProxy(sp, m) * s.light01 * (1.0f - clamp01(senescence));
     return s;
 }
 

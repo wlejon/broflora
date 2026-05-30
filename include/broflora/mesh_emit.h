@@ -61,15 +61,17 @@ MeshData emitWorldMesh(const WorldState& world, uint32_t sides = 6);
 // into vertex attributes or scatter density without further normalisation.
 struct FoliageSample {
     // Default density multiplier for the segment: 0 means "no foliage
-    // here," 1 means "full." Computed as
-    //   `isTerminal ? age01_clamped * vigor01 : 0`
-    // — i.e. foliage grows on terminal modules whose age has reached
-    // species.moduleMatureAge and whose vigor is healthy. Light is
-    // intentionally not factored in here because vigor already
-    // integrates light (Q_eff drives vigor in the basipetal pass), and
-    // senescence is also out — it manifests as a vigor drop. Callers
-    // wanting a richer policy should ignore `mass` and combine the raw
-    // scalars themselves.
+    // here," 1 means "full." Foliage is distributed through the whole
+    // crown — not just terminal tips — so plants read as full rather than
+    // bare twigs with leaf-balls on the ends. Computed as
+    //   `leafGrade(diameter) · maturity · vigor01 · light01 · (1 - senescence01)`
+    // where `leafGrade` is 1 on twigs at leaf thickness and falls to 0 on
+    // branches thicker than ~6× the leaf diameter (leaves grow on shoots,
+    // not the trunk), and `maturity` ramps 0→1 as module.age reaches
+    // species.moduleMatureAge. The same leaf-area term drives the canopy
+    // shadow the simulation casts, so emitted foliage and simulated shade
+    // agree. Callers wanting a different policy can ignore `mass` and
+    // combine the raw scalars below themselves.
     float mass = 0.0f;
 
     // module.age / species.moduleMatureAge, clamped to [0, 2]. Stays

@@ -4,6 +4,7 @@
 #include "bromath/sphere.h"
 #include "bromath/spatial_hash.h"
 #include "bromath/vec.h"
+#include "internal_foliage.h"
 #include "internal_geom.h"
 #include "internal_spatial.h"
 
@@ -102,7 +103,14 @@ void evaluateLightAndCollisions(WorldState& world,
     // stacked canopy composes correctly (multiplicative transmission /
     // additive optical depth), and a module wider than one shadow cell
     // shades the cells around it instead of only its own column.
-    const float shadowK = 0.5f;  // leaf-area-density proxy
+    // Optical depth per module has a small woody term from the branch
+    // bbox (so even a bare crown casts some shade) plus the dominant leaf-
+    // area term — foliage is what closes a canopy. The leaf term reuses
+    // the leaf-area proxy that drives the emitted FoliageSample mass, so
+    // simulated shade and rendered leaves agree, and overlapping leafy
+    // crowns compound into a shaded understory.
+    const float shadowK     = 0.5f;  // woody (branch) extinction
+    const float leafShadowK = 1.5f;  // leaf-area extinction (canopy closer)
     std::vector<float> tau(world.shadow.qg.size(), 0.0f);
     const float cellSize = world.shadow.cellSize;
     const int W = static_cast<int>(world.shadow.width);
@@ -114,7 +122,8 @@ void evaluateLightAndCollisions(WorldState& world,
             if (!shadowCellOf(world.shadow, m.bboxCenter, cx, cy, cz)) continue;
             if (cy == 0) continue;  // nothing below to shade
 
-            const float opticalDepth = shadowK * m.bboxRadius * m.bboxRadius;
+            const float opticalDepth = shadowK * m.bboxRadius * m.bboxRadius
+                + leafShadowK * internal::leafAreaProxy(pl.species, m);
             const float rCells       = m.bboxRadius / cellSize;
             const int   rxz          = static_cast<int>(std::ceil(rCells));
             const float r2Cells      = rCells * rCells;
