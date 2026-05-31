@@ -67,6 +67,16 @@ struct BranchModuleInstance {
     // basipetal pass — use `subtreeLight` for accumulated subtree totals.
     float light = 1.0f;
 
+    // Raw illumination Q·Q_G stamped alongside `light` — the actual light
+    // reaching the module (collision self-shading × global canopy shadow)
+    // BEFORE the shade-tolerance lerp that produces `light` (Q_eff). Unlike
+    // `light`, which a shade-tolerant species floors near 1.0, this carries
+    // the true shadow gradient: ~1 in full sun, →0 deep in a closed canopy.
+    // Drives nothing in the sim (Q_eff does) — it's exposed purely so a
+    // renderer can carve foliage density by real shade. Defaults to 1 so a
+    // module emitted before the first light pass reads as fully lit.
+    float lightExposure = 1.0f;
+
     // Subtree light total — sum of `light` over this module and every
     // descendant, produced by the basipetal pass (paper §3.2). Used by
     // the acropetal vigor split. Equals `light` for leaf modules.

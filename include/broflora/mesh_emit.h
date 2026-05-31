@@ -89,6 +89,14 @@ struct FoliageSample {
     // shade-tolerance lerp, no further clamp needed.
     float light01 = 0.0f;
 
+    // module.lightExposure — the RAW illumination Q·Q_G before the shade-
+    // tolerance lerp, clamped to [0, 1]. Unlike `light01` (which a shade-
+    // tolerant species floors near 1.0), this carries the true shadow
+    // gradient: ~1 in full sun, →0 deep in a closed canopy. Use this — not
+    // `light01` — to carve foliage density by actual shade, so an interior
+    // twig in deep shadow goes bare even for a shade-tolerant species.
+    float lightExposure01 = 1.0f;
+
     // Plant-level senescence ramp:
     //   0 while plant.age <= species.maxAge,
     //   linearly to 1 over the next 20% of maxAge,
@@ -177,9 +185,13 @@ struct BloomAnchor {
     bromath::Vec3 normal = {0.0f, 1.0f, 0.0f};
 
     // Same as FoliageSample fields, see mesh_emit.h above.
-    float age01        = 0.0f;
-    float vigor01      = 0.0f;
-    float senescence01 = 0.0f;
+    float age01           = 0.0f;
+    float vigor01         = 0.0f;
+    float senescence01    = 0.0f;
+    // Raw illumination Q·Q_G at the anchor (see FoliageSample.lightExposure01)
+    // — lets a consumer keep blooms on the lit canopy surface and skip ones
+    // buried in deep interior shade.
+    float lightExposure01 = 1.0f;
 };
 
 // Per-segment foliage state for the same segment order `emitPlantSegments`

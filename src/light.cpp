@@ -159,7 +159,11 @@ void evaluateLightAndCollisions(WorldState& world,
             if (shadowCellOf(world.shadow, m.bboxCenter, cx, cy, cz)) {
                 qg = world.shadow.qg[shadowIndex(world.shadow, cx, cy, cz)];
             }
-            m.light = lerp(sTol, 1.0f, m.light * qg);
+            // Raw illumination (collision self-shading × global shadow) before
+            // the shade-tolerance lerp — stashed for renderers that want the
+            // true shadow gradient; the sim keeps using the lerped Q_eff.
+            m.lightExposure = m.light * qg;
+            m.light = lerp(sTol, 1.0f, m.lightExposure);
         }
     }
 }

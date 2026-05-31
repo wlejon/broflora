@@ -331,8 +331,9 @@ FoliageSample sampleForModule(const Plant& plant,
     s.vigor01      = (sp.maxVigor > 0.0f)
                        ? clamp01(m.vigor / sp.maxVigor)
                        : 0.0f;
-    s.light01      = clamp01(m.light);
-    s.senescence01 = senescence;
+    s.light01         = clamp01(m.light);
+    s.lightExposure01 = clamp01(m.lightExposure);
+    s.senescence01    = senescence;
 
     // Default mass policy (matches the FoliageSample doc in mesh_emit.h).
     // Foliage is distributed through the whole crown, not just terminal
@@ -426,10 +427,11 @@ size_t emitPlantBloomAnchorsInto(const Plant& plant,
             if (terminalNode >= m.prototype->nodes.size()) continue;
 
             BloomAnchor a;
-            a.position     = worldNodePos(plant.species, m, terminalNode);
-            a.age01        = age01;
-            a.vigor01      = vigor01;
-            a.senescence01 = senescence;
+            a.position        = worldNodePos(plant.species, m, terminalNode);
+            a.age01           = age01;
+            a.vigor01         = vigor01;
+            a.senescence01    = senescence;
+            a.lightExposure01 = clamp01(m.lightExposure);
 
             const size_t edgeIdx = incomingEdgeIndex(*m.prototype, terminalNode);
             if (edgeIdx != SIZE_MAX) {
