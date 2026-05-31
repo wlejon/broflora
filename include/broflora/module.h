@@ -87,6 +87,16 @@ struct BranchModuleInstance {
     bromath::Vec3  bboxCenter = {0.0f, 0.0f, 0.0f};
     float bboxRadius = 0.0f;
 
+    // Main-axis collision capsule: the module's dominant branch as a swept
+    // sphere from the root (`worldPos`) to `axisTip` (the mean terminal-node
+    // tip, world space), inflated by the branch radius (`diameter` * 0.5).
+    // Maintained alongside the bbox each development tick. Unlike the bbox
+    // sphere it is *directional*, so the spawn-time collision penalty can tell
+    // a branch crossing through this module from one merely sharing its
+    // bounding volume — the difference between sphere-coarse and capsule-
+    // accurate avoidance.
+    bromath::Vec3  axisTip = {0.0f, 0.0f, 0.0f};
+
     // Cached world position of this module's root node n_root, recomputed
     // each development tick by walking from the plant origin through
     // parents. Bbox centre is derived from this plus a local centroid.

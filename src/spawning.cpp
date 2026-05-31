@@ -2,6 +2,7 @@
 
 #include "bromath/rng.h"
 #include "bromath/scalar.h"
+#include "bromath/segment.h"
 #include "bromath/spatial_hash.h"
 #include "bromath/sphere.h"
 #include "bromath/vec.h"
@@ -54,7 +55,9 @@ namespace {
 struct OrientationHypothesis {
     Vec3  centre;
     float radius;
-    Vec3  axis;   // unit vector, root → first terminal in world space
+    Vec3  axis;       // unit vector, root → mean terminal, world space
+    Vec3  tipOffset;  // root → mean terminal, world space (un-normalised) —
+                      // the far end of the module's main-axis capsule
 };
 
 OrientationHypothesis predictHypothesis(const BranchModulePrototype& proto,
@@ -103,7 +106,11 @@ OrientationHypothesis predictHypothesis(const BranchModulePrototype& proto,
     // Degenerate fallback: a module whose terminals' mean coincides with
     // the root has no usable axis — keep the default up vector.
     if (vlen2(axisLoc) > 1e-12f) {
-        h.axis = vnorm(rotateYawPitch(axisLoc, psi, theta));
+        Vec3 tip = rotateYawPitch(axisLoc, psi, theta);
+        h.axis      = vnorm(tip);
+        h.tipOffset = tip;          // world-relative far end of the main axis
+    } else {
+        h.tipOffset = mean;         // degenerate: capsule collapses near root
     }
     return h;
 }
@@ -113,18 +120,29 @@ float evalDistribution(const BranchModulePrototype& proto,
                        const bromath::SpatialHash3D& index,
                        Vec3 attachWorld, float theta, float psi,
                        Vec3 growthTarget,
+                       float candRadius,
                        float w1, float w2,
                        std::vector<int32_t>& scratch) {
     OrientationHypothesis h = predictHypothesis(proto, attachWorld, theta, psi);
+    // Broad-phase by the module's bounding sphere; narrow-phase with the
+    // directional main-axis capsule. The candidate runs root → mean terminal.
     scratch.clear();
     index.radiusQuery(h.centre, h.radius, scratch);
+    const bromath::Capsule candCap{attachWorld, attachWorld + h.tipOffset, candRadius};
     float fc = 0.0f;
     for (int32_t nid : scratch) {
         uint32_t np, nmi;
         internal::unpackEntryId(nid, np, nmi);
         const auto& n = world.plants[np].modules[nmi];
-        fc += sintersectVolume(Sphere{h.centre, h.radius},
-                               Sphere{n.bboxCenter, n.bboxRadius});
+        if (n.bboxRadius <= 0.0f) continue;
+        // Penetration depth of the two branches' capsules — non-zero only
+        // when the actual swept branches overlap, so a crossing is penalised
+        // while a near-parallel neighbour the candidate merely shares a
+        // bounding sphere with is not. Squared so deep interpenetration is
+        // punished far harder than a graze.
+        const bromath::Capsule nCap{n.worldPos, n.axisTip, n.diameter * 0.5f};
+        float pen = bromath::capsulePenetration(candCap, nCap);
+        if (pen > 0.0f) fc += pen * pen;
     }
     // f_tropism: 0 when the module's growth axis points exactly along the
     // desired growth direction, rising to 2 when antiparallel.
@@ -142,11 +160,11 @@ void settleOrientation(const BranchModulePrototype& proto,
                        const WorldState& world,
                        const bromath::SpatialHash3D& index,
                        Vec3 attachWorld,
-                       Vec3 growthTarget, float w1, float w2,
+                       Vec3 growthTarget, float candRadius, float w1, float w2,
                        float& theta, float& psi,
                        std::vector<int32_t>& scratch) {
     float bestObj = evalDistribution(proto, world, index, attachWorld, theta, psi,
-                                     growthTarget, w1, w2, scratch);
+                                     growthTarget, candRadius, w1, w2, scratch);
     float step = 0.4f;
     for (int iter = 0; iter < 8 && step > 1e-3f; ++iter) {
         bool improved = false;
@@ -156,7 +174,7 @@ void settleOrientation(const BranchModulePrototype& proto,
             float t = theta + dts[d];
             float p = psi   + dps[d];
             float o = evalDistribution(proto, world, index, attachWorld, t, p,
-                                       growthTarget, w1, w2, scratch);
+                                       growthTarget, candRadius, w1, w2, scratch);
             if (o < bestObj - 1e-6f) {
                 bestObj = o;
                 theta = t;
@@ -291,8 +309,13 @@ void spawnModules(Plant& plant,
             float theta = std::acos(gy) + jitter * randSigned(rng);
             float psi   = std::atan2(growthTarget.x, growthTarget.z)
                           + jitter * randSigned(rng);
+            // Collision-capsule radius for the candidate branch — the parent's
+            // pipe-model thickness where it attaches (floored at the leaf
+            // radius so a thin twig still keeps a little clearance).
+            const float candRadius =
+                std::max(u.diameter, sp.leafDiameter) * 0.5f;
             settleOrientation(*proto, world, index, attachWorld,
-                              growthTarget, w1, w2, theta, psi,
+                              growthTarget, candRadius, w1, w2, theta, psi,
                               queryScratch);
 
             BranchModuleInstance child;

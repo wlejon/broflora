@@ -77,6 +77,7 @@ void computeBbox(const Species& sp, BranchModuleInstance& m) {
     if (!m.prototype || m.nodePositions.empty()) {
         m.bboxCenter = m.worldPos;
         m.bboxRadius = 0.0f;
+        m.axisTip    = m.worldPos;
         return;
     }
     Vec3 sum = {0.0f, 0.0f, 0.0f};
@@ -93,6 +94,21 @@ void computeBbox(const Species& sp, BranchModuleInstance& m) {
     }
     m.bboxCenter = m.worldPos + centre;
     m.bboxRadius = std::sqrt(maxD2);
+
+    // Main-axis capsule tip: mean of the terminal nodes' world offsets — the
+    // module's central growth direction (the same axis the spawn tropism term
+    // uses), so the capsule runs root → crown along the dominant branch.
+    Vec3 tipSum = {0.0f, 0.0f, 0.0f};
+    size_t tipCount = 0;
+    for (uint32_t tnode : m.prototype->terminalNodes) {
+        if (tnode < m.nodePositions.size()) {
+            tipSum += nodeOffsetFromRoot(sp, m, tnode);
+            ++tipCount;
+        }
+    }
+    m.axisTip = (tipCount > 0)
+                  ? m.worldPos + tipSum * (1.0f / static_cast<float>(tipCount))
+                  : m.bboxCenter;
 }
 
 } // namespace
