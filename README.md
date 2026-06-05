@@ -9,9 +9,15 @@ runtime as a static library.
 
 ## Status
 
-Foundation. Data structures and the simulation skeleton are in place;
-algorithmic content of the per-tick passes (vigor, development, spawning,
-senescence) is stubbed and being filled in.
+Implemented. The full per-tick loop of the paper runs — spatial light /
+shadow, two-pass Borchert-Honda vigor distribution, pipe-model
+development with tropism, prototype-Voronoi module spawning, and
+senescence / climate-driven seeding. On top of the simulation core, the
+mesh-emit boundary produces branch geometry, branch segments for leaf
+scatter, per-segment foliage state, and bloom / fruit anchors. A built-in
+prototype library (straight / fork / whorl) and an optional per-phase
+`StepObserver` round it out. See `docs/auto-flora-strategy.md` for the
+section-by-section map onto the paper.
 
 ## Building
 
@@ -42,7 +48,27 @@ broflora implements the multi-scale ecosystem model from:
 Three architectural tiers — Branch Module, Plant Architecture, Ecosystem —
 with an extended Borchert-Honda vigor distribution (basipetal + acropetal
 passes), pipe-model branch thickening, spatial light/shadow grids,
-climate-driven seeding, and senescence. See `docs/auto-flora-strategy.md`
+climate-driven seeding, and senescence. A terrain-coupling extension
+(origin snap, root tilt to the surface normal, slope-gated seeding) is
+added on top of the paper's model.
+
+Geometry leaves the simulation through `broflora/mesh_emit.h`, which emits
+straight into `bromesh::MeshData` and `bromesh::BranchSegment`:
+
+- `emitPlantMesh` / `emitWorldMesh` — faceted tapered-cylinder branch mesh.
+- `emitPlantSegments` / `emitWorldSegments` — branch skeleton as
+  `bromesh::BranchSegment`, the shape `bromesh::placeLeavesOnBranches` /
+  `scatterLeaves` consume.
+- `emitPlantFoliage` / `emitWorldFoliage` — per-segment `FoliageSample`
+  (density mass plus the raw maturity / vigor / light / senescence scalars
+  it derives from), index-aligned with the segment lists.
+- `emitPlantBloomAnchors` / `emitWorldBloomAnchors` — world-space
+  bloom / fruit `BloomAnchor` candidates on terminal twigs of flowering
+  plants.
+
+`include/broflora/prototypes.h` ships ready-made `straightModule`,
+`forkModule`, and `whorlModule` templates so callers get full crowns
+without hand-authoring node/edge graphs. See `docs/auto-flora-strategy.md`
 for the implementation map onto the paper's sections.
 
 ## Acknowledgements

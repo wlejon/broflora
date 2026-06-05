@@ -47,21 +47,74 @@ bromesh uses — register at static init, dispatch from `main()` in
 
 ### Per-tick simulation loop (paper §3)
 
-`World::step(dt)` runs:
+`step(WorldState&, float dt)` (in `src/world.cpp`) runs A → E in order:
 
-- **A.** Evaluate spatial constraints, local + global light.
-- **B.** Two-pass vigor distribution (basipetal accumulation, then
-  acropetal redistribution gated by apical control λ).
-- **C.** Module development — age increment via smooth-step on vigor,
-  pipe-model diameters `d_b^2.5 = Σ d_c^2.5`, tropism offset.
-- **D.** Spawn new modules at mature terminal nodes; pick prototype
-  via 2D Voronoi over `(D', λ)`; gradient-descent orientation to
-  minimise collision + tropism penalty.
-- **E.** Senescence (linear vigor decay past `p_max`), climate-scaled
-  seeding via 2D Gaussian over `(T, P)` vs species optima.
+- **A.** `evaluateLightAndCollisions` — spatial constraints, local +
+  global light. Stamps `module.light` (Q_eff) and `module.lightExposure`
+  (raw Q·Q_G for shade-driven foliage culling). (`src/light.cpp`)
+- **B.** `vigorPasses` — two-pass vigor distribution: basipetal
+  accumulation into `subtreeLight`, then acropetal redistribution gated
+  by apical control λ. (`src/vigor.cpp`)
+- **C.** `developModules` — age increment via smooth-step on vigor,
+  pipe-model diameters `d_b^2.5 = Σ d_c^2.5`, tropism offset; refreshes
+  `nodePositions`, `worldPos`, bbox sphere, and the directional collision
+  capsule (`axisTip`). (`src/development.cpp`)
+- **D.** `spawnModules` — spawn new modules at mature terminal nodes; pick
+  prototype via 2D Voronoi over `(D', λ)`; gradient-descent orientation to
+  minimise capsule-collision + tropism penalty (lifted toward the up axis
+  by `orthotropy` so crowns spread rather than lean into a column).
+  (`src/spawning.cpp`)
+- **E.** `ecosystemTick` — senescence (linear vigor decay past `p_max`,
+  in-place shed + parent-index remap), climate-scaled seeding via 2D
+  Gaussian over `(T, P)` vs species optima, light-gated recruitment,
+  world-bounds + slope containment. (`src/senescence.cpp`)
+
+`stepWithObserver(world, dt, observer)` runs the same loop but invokes the
+optional `StepObserver` callbacks (`postLight`, `postVigor`,
+`postDevelopment`, `preSpawn`, `postSpawn`, `postSenescence`) between
+phases — for snapshotting intermediate state from `bro`. `step` is
+`stepWithObserver(w, dt, {})`.
 
 Each step is its own header under `include/broflora/` so the loop
 in `world.cpp` reads top-down through the paper's algorithm.
+
+### Builders and removal (`world.h`)
+
+`BranchModuleInstance` holds a raw pointer to its prototype and modules
+reference siblings by index, so construction order matters. Use the
+builders rather than `push_back`-ing the `WorldState` vectors directly:
+`addPrototype` (returns a stable index), `addVoronoiSite`, and `addPlant`.
+`removePlant` swap-and-pops; plant indices are NOT stable across
+`removePlant` or `step` (senescence erases dead plants and appends
+seedlings). `validate(const WorldState&)` / `validate(const Plant&)`
+(`validate.h`) enforce the topo-order and pointer invariants.
+
+### Prototype library (`prototypes.h`)
+
+Built-in `BranchModulePrototype` factories so callers get full 3D crowns
+without authoring node/edge graphs: `straightModule` (I-pole), `forkModule`
+(planar Y), `whorlModule(arms, spread)` (candelabra, the workhorse for
+rounded crowns). All built around +Y growth; tropism and per-module
+orientation tilt them from there.
+
+### Mesh-emit boundary (`mesh_emit.h`)
+
+The only place the simulation core meets the geometry side. Emits straight
+into `bromesh` types (no copy): `emitPlantMesh` / `emitWorldMesh`
+(tapered-cylinder branch mesh), `emitPlantSegments` / `emitWorldSegments`
+(`bromesh::BranchSegment` skeleton for `placeLeavesOnBranches` /
+`scatterLeaves`), `emitPlantFoliage` / `emitWorldFoliage` (per-segment
+`FoliageSample` — density `mass` plus the raw maturity / vigor / light /
+senescence scalars), and `emitPlantBloomAnchors` / `emitWorldBloomAnchors`
+(`BloomAnchor` candidates on flowering plants' terminal twigs). The
+foliage and segment lists are index-aligned per the documented invariant.
+
+### Terrain coupling (broflora extension, not in the paper)
+
+`Species::terrainAnchorWeight` blends the root module's orientation toward
+the terrain surface normal at the plant origin (trunks tilt on slopes);
+`maxSeedingSlope` rejects seeding candidates on slopes steeper than the
+threshold.
 
 ## Conventions
 
@@ -79,5 +132,5 @@ in `world.cpp` reads top-down through the paper's algorithm.
 
 Paper PDF / supplemental: https://storage.googleapis.com/pirk.io/projects/synthetic_silviculture/index.html
 
-Strategy doc: `docs/auto-flora-strategy.md` (TODO — implementation map
-onto the paper's sections).
+Strategy doc: `docs/auto-flora-strategy.md` — section-by-section map from
+the paper's algorithmic steps onto the broflora source that realises each.
