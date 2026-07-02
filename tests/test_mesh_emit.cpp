@@ -45,6 +45,33 @@ TEST(mesh_emit_single_module_single_edge) {
     ASSERT(mesh.hasUVs(),               "welded tube carries per-vertex UVs");
     // A capped `sides`-gon sweep has strictly more than one bare ring.
     ASSERT(mesh.vertexCount() >= sides, "at least one full ring of vertices");
+
+    // Tangents complete the material set for bark normal mapping: stride 4
+    // (xyz + handedness), one per vertex, all finite, and roughly in the
+    // surface plane (near-perpendicular to the vertex normal).
+    ASSERT(mesh.hasTangents(),          "welded tube carries per-vertex tangents");
+    bool tangentsFinite = true, tangentsOrtho = true;
+    for (size_t v = 0; v < mesh.vertexCount(); ++v) {
+        const float tx = mesh.tangents[v * 4 + 0];
+        const float ty = mesh.tangents[v * 4 + 1];
+        const float tz = mesh.tangents[v * 4 + 2];
+        const float w  = mesh.tangents[v * 4 + 3];
+        if (!std::isfinite(tx) || !std::isfinite(ty) || !std::isfinite(tz) ||
+            (w != 1.0f && w != -1.0f)) {
+            tangentsFinite = false; break;
+        }
+        const float nx = mesh.normals[v * 3 + 0];
+        const float ny = mesh.normals[v * 3 + 1];
+        const float nz = mesh.normals[v * 3 + 2];
+        // Only check orthogonality where the tangent is non-degenerate.
+        const float tlen = std::sqrt(tx*tx + ty*ty + tz*tz);
+        if (tlen > 1e-4f) {
+            const float dot = (tx*nx + ty*ny + tz*nz) / tlen;
+            if (std::fabs(dot) > 0.2f) { tangentsOrtho = false; break; }
+        }
+    }
+    ASSERT(tangentsFinite, "tangents finite with ±1 handedness");
+    ASSERT(tangentsOrtho,  "tangents lie in the surface plane");
 }
 
 TEST(mesh_emit_empty_world_returns_empty_mesh) {

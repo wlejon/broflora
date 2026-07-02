@@ -2,6 +2,7 @@
 
 #include "bromath/scalar.h"
 #include "bromath/vec.h"
+#include "bromesh/manipulation/normals.h"
 #include "bromesh/procedural/branches.h"
 #include "internal_foliage.h"
 #include "internal_geom.h"
@@ -67,7 +68,12 @@ MeshData emitPlantMesh(const Plant& plant, uint32_t sides) {
     // sweeps each single-child chain as one continuous parallel-transport
     // tube — smooth welded joints, UVs, and end caps — instead of the
     // faceted, unwelded, UV-less per-edge cylinders this used to emit.
-    return bromesh::meshBranches(emitPlantSegments(plant), static_cast<int>(sides));
+    MeshData mesh = bromesh::meshBranches(emitPlantSegments(plant), static_cast<int>(sides));
+    // The swept tube carries UVs + normals, so complete the material set
+    // with tangents — bark normal maps need them, and nothing downstream
+    // could recover them once the segment topology is gone.
+    bromesh::generateTangents(mesh);
+    return mesh;
 }
 
 MeshData emitWorldMesh(const WorldState& world, uint32_t sides) {
@@ -75,7 +81,9 @@ MeshData emitWorldMesh(const WorldState& world, uint32_t sides) {
     // indices, and each plant's root segments carry parent == -1, so a
     // single meshBranches call over the whole list meshes all plants at
     // once with no cross-plant chain bleed.
-    return bromesh::meshBranches(emitWorldSegments(world), static_cast<int>(sides));
+    MeshData mesh = bromesh::meshBranches(emitWorldSegments(world), static_cast<int>(sides));
+    bromesh::generateTangents(mesh);
+    return mesh;
 }
 
 namespace {
