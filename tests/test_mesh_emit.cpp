@@ -4,8 +4,9 @@
 
 using namespace broflora;
 
-// One module, one edge: expect a single cylinder of `sides` segments —
-// 2·sides vertices and 2·sides triangles.
+// One module, one edge: the branch mesh is now a welded, capped, UV'd
+// sweep through bromesh::meshBranches (not the old per-edge open cylinder),
+// so assert the swept-tube contract rather than an exact 2·sides layout.
 TEST(mesh_emit_single_module_single_edge) {
     static BranchModulePrototype proto;
     proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
@@ -36,9 +37,14 @@ TEST(mesh_emit_single_module_single_edge) {
 
     const uint32_t sides = 6;
     MeshData mesh = emitPlantMesh(world.plants.front(), sides);
-    ASSERT(mesh.vertexCount() == 2u * sides,    "2·sides vertices");
-    ASSERT(mesh.triangleCount() == 2u * sides,  "2·sides triangles");
-    ASSERT(mesh.normals.size() == mesh.positions.size(), "normal per vertex");
+    ASSERT(!mesh.empty(),               "single edge emits geometry");
+    ASSERT(mesh.triangleCount() > 0u,   "non-empty triangle list");
+    ASSERT(mesh.hasNormals(),           "normal per vertex");
+    // The swept tube carries the UVs the old cylinder emitter never wrote —
+    // this is what lets bark be textured downstream.
+    ASSERT(mesh.hasUVs(),               "welded tube carries per-vertex UVs");
+    // A capped `sides`-gon sweep has strictly more than one bare ring.
+    ASSERT(mesh.vertexCount() >= sides, "at least one full ring of vertices");
 }
 
 TEST(mesh_emit_empty_world_returns_empty_mesh) {
@@ -47,12 +53,13 @@ TEST(mesh_emit_empty_world_returns_empty_mesh) {
     ASSERT(mesh.empty(), "no plants ⇒ empty mesh");
 }
 
-// φ on BranchModuleInstance::orientation rotates the cylinder ring as a
-// phase offset around the segment axis. The two meshes should have the
-// same vertex count and the same set of radii, but a non-zero φ must
-// produce at least one ring vertex that differs from the φ=0 mesh — i.e.
-// the renderer-visible tangent frame actually moves with φ.
-TEST(mesh_emit_phi_rotates_ring_around_axis) {
+// The welded-tube branch mesh frames each chain's rings by parallel
+// transport along the swept path, independent of the simulator's Euler
+// roll φ. φ still steers branch *placement* in (θ, ψ) upstream, but for a
+// straight on-axis module it moves no node positions, so the emitted mesh
+// is φ-invariant — unlike the old per-edge cylinder emitter, which phased
+// the ring vertices by φ. Assert the mesh no longer moves with φ.
+TEST(mesh_emit_phi_does_not_change_branch_mesh) {
     static BranchModulePrototype proto;
     proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
     proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
@@ -93,7 +100,7 @@ TEST(mesh_emit_phi_rotates_ring_around_axis) {
             anyDiff = true; break;
         }
     }
-    ASSERT(anyDiff, "non-zero φ must rotate ring vertices");
+    ASSERT(!anyDiff, "φ no longer phases ring vertices — branch mesh is φ-invariant");
 }
 
 // emitPlantSegments — empty plant should yield no segments.

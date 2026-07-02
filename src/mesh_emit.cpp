@@ -2,6 +2,7 @@
 
 #include "bromath/scalar.h"
 #include "bromath/vec.h"
+#include "bromesh/procedural/branches.h"
 #include "internal_foliage.h"
 #include "internal_geom.h"
 
@@ -14,73 +15,9 @@
 namespace broflora {
 
 using bromath::Vec3;
-using bromath::vlen;
-using bromath::vnorm;
-using internal::rotateYawPitch;
 using internal::nodeOffsetFromRoot;
 
 namespace {
-
-// Build an orthonormal frame around `axis` (unit). `axis` becomes +y of
-// the frame so we can lay a ring of points around the cylinder body in
-// the (x,z)-of-frame plane. Stable for any non-degenerate axis.
-void frameAround(Vec3 axis, Vec3& outX, Vec3& outZ) {
-    Vec3 up = (std::fabs(axis.y) < 0.9f) ? Vec3{0.0f, 1.0f, 0.0f}
-                                         : Vec3{1.0f, 0.0f, 0.0f};
-    // x = normalize(up × axis); z = axis × x.
-    Vec3 x = {
-        up.y * axis.z - up.z * axis.y,
-        up.z * axis.x - up.x * axis.z,
-        up.x * axis.y - up.y * axis.x,
-    };
-    x = vnorm(x);
-    Vec3 z = {
-        axis.y * x.z - axis.z * x.y,
-        axis.z * x.x - axis.x * x.z,
-        axis.x * x.y - axis.y * x.x,
-    };
-    outX = x;
-    outZ = vnorm(z);
-}
-
-void emitCylinder(MeshData& mesh,
-                  Vec3 a, Vec3 b, float radiusA, float radiusB,
-                  uint32_t sides, float rollPhi) {
-    if (sides < 3) sides = 3;
-    Vec3 axis = b - a;
-    float len = vlen(axis);
-    if (len < 1e-5f || (radiusA <= 0.0f && radiusB <= 0.0f)) return;
-    axis = axis * (1.0f / len);
-
-    Vec3 fx, fz;
-    frameAround(axis, fx, fz);
-
-    const uint32_t baseIdx = static_cast<uint32_t>(mesh.positions.size() / 3);
-
-    for (uint32_t i = 0; i < sides; ++i) {
-        float t = bromath::TWO_PI * static_cast<float>(i) / static_cast<float>(sides)
-                  + rollPhi;
-        float cx = std::cos(t), cz = std::sin(t);
-        // Outward radial direction in world space.
-        Vec3 radial = fx * cx + fz * cz;
-        Vec3 pa = a + radial * radiusA;
-        Vec3 pb = b + radial * radiusB;
-
-        mesh.positions.push_back(pa.x); mesh.positions.push_back(pa.y); mesh.positions.push_back(pa.z);
-        mesh.normals.push_back(radial.x); mesh.normals.push_back(radial.y); mesh.normals.push_back(radial.z);
-        mesh.positions.push_back(pb.x); mesh.positions.push_back(pb.y); mesh.positions.push_back(pb.z);
-        mesh.normals.push_back(radial.x); mesh.normals.push_back(radial.y); mesh.normals.push_back(radial.z);
-    }
-
-    for (uint32_t i = 0; i < sides; ++i) {
-        uint32_t i0 = baseIdx + 2 * i;
-        uint32_t i1 = baseIdx + 2 * i + 1;
-        uint32_t i2 = baseIdx + 2 * ((i + 1) % sides);
-        uint32_t i3 = baseIdx + 2 * ((i + 1) % sides) + 1;
-        mesh.indices.push_back(i0); mesh.indices.push_back(i1); mesh.indices.push_back(i3);
-        mesh.indices.push_back(i0); mesh.indices.push_back(i3); mesh.indices.push_back(i2);
-    }
-}
 
 // World-space position of a module-local prototype-node index, including
 // the module's yaw+pitch rotation, the per-node tropism curvature, and
@@ -122,54 +59,23 @@ std::vector<uint32_t> nodeDepths(const BranchModulePrototype& proto) {
     return depth;
 }
 
-void emitPlantInto(const Plant& plant, MeshData& mesh, uint32_t sides) {
-    for (const auto& m : plant.modules) {
-        if (!m.prototype) continue;
-
-        // Stem and tip radii for *this module*. Interpolate per-edge by
-        // depth-from-prototype-root so multi-edge modules taper smoothly
-        // instead of stepping at internal nodes.
-        const float tipR  = 0.5f * plant.species.leafDiameter;
-        const float rootR = std::max(tipR, 0.5f * m.diameter);
-
-        const auto depth = nodeDepths(*m.prototype);
-        uint32_t maxDepth = 0;
-        for (uint32_t d : depth) if (d > maxDepth) maxDepth = d;
-        const float invMaxDepth = (maxDepth > 0)
-            ? 1.0f / static_cast<float>(maxDepth) : 0.0f;
-
-        auto radiusForNode = [&](uint32_t idx) -> float {
-            if (idx >= depth.size() || maxDepth == 0) return rootR;
-            const float t = static_cast<float>(depth[idx]) * invMaxDepth;
-            return rootR + (tipR - rootR) * t;
-        };
-
-        for (const auto& e : m.prototype->edges) {
-            Vec3 pa = worldNodePos(plant.species, m, e.a);
-            Vec3 pb = worldNodePos(plant.species, m, e.b);
-            emitCylinder(mesh, pa, pb,
-                         radiusForNode(e.a),
-                         radiusForNode(e.b),
-                         sides,
-                         m.orientation.phi);
-        }
-    }
-}
-
 } // namespace
 
 MeshData emitPlantMesh(const Plant& plant, uint32_t sides) {
-    MeshData mesh;
-    emitPlantInto(plant, mesh, sides);
-    return mesh;
+    // The branch skeleton emitSegments already produces is exactly the
+    // BranchSegment input bromesh::meshBranches wants. Meshing through it
+    // sweeps each single-child chain as one continuous parallel-transport
+    // tube — smooth welded joints, UVs, and end caps — instead of the
+    // faceted, unwelded, UV-less per-edge cylinders this used to emit.
+    return bromesh::meshBranches(emitPlantSegments(plant), static_cast<int>(sides));
 }
 
 MeshData emitWorldMesh(const WorldState& world, uint32_t sides) {
-    MeshData mesh;
-    for (const auto& plant : world.plants) {
-        emitPlantInto(plant, mesh, sides);
-    }
-    return mesh;
+    // emitWorldSegments concatenates every plant with absolute parent
+    // indices, and each plant's root segments carry parent == -1, so a
+    // single meshBranches call over the whole list meshes all plants at
+    // once with no cross-plant chain bleed.
+    return bromesh::meshBranches(emitWorldSegments(world), static_cast<int>(sides));
 }
 
 namespace {
