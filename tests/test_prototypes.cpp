@@ -39,8 +39,10 @@ TEST(prototypes_whorl_arm_count_and_clamp) {
     auto p3 = whorlModule(3);
     assertWellFormed(p3, "whorl3");
     ASSERT(p3.terminalNodes.size() == 3u, "whorl(3) has 3 arm terminals");
-    // root + fork + 3 arms, each arm a two-node curved chain (mid + tip)
-    ASSERT(p3.nodes.size() == 8u, "whorl(3) has 8 nodes");
+    // Coarse = root + fork + 3 tips (5 nodes, 4 edges); curveModule
+    // subdivides every edge into 5 sub-edges (4 interior nodes each),
+    // so 5 + 4*4 = 21 nodes.
+    ASSERT(p3.nodes.size() == 21u, "whorl(3) has 21 nodes after curve subdivision");
 
     auto p1 = whorlModule(1);   // clamps up to 2
     ASSERT(p1.terminalNodes.size() == 2u, "whorl arms clamp to >= 2");
