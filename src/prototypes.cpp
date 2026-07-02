@@ -57,10 +57,25 @@ BranchModulePrototype whorlModule(uint32_t arms, float spread, const char* name)
                         / static_cast<float>(arms);
         const float x = std::cos(a) * radius;
         const float z = std::sin(a) * radius;
-        const uint32_t idx = static_cast<uint32_t>(p.nodes.size());
-        p.nodes.push_back({{x, trunkLen + rise, z}, 0.3f, 1.0f, 1.0f});
-        p.edges.push_back({1, idx});
-        p.terminalNodes.push_back(idx);
+
+        // Each arm is a two-segment curved chain rather than a single straight
+        // edge: a mid node bowed up off the fork→tip chord gives the arm a
+        // gentle upward arc so it reads as a branch, not a rod. The tip keeps
+        // its original position, so the crown silhouette and where child
+        // modules attach are unchanged — only the straightness is broken, and
+        // the extra node also thickens the emitted growth.
+        const float tipY = trunkLen + rise;
+        const float armLen = std::sqrt(x * x + rise * rise + z * z);
+        const float bow = armLen * 0.16f;
+        const uint32_t midIdx = static_cast<uint32_t>(p.nodes.size());
+        p.nodes.push_back({{x * 0.5f, trunkLen + rise * 0.5f + bow, z * 0.5f},
+                           0.2f, 1.0f, 1.0f});
+        p.edges.push_back({1, midIdx});
+
+        const uint32_t tipIdx = static_cast<uint32_t>(p.nodes.size());
+        p.nodes.push_back({{x, tipY, z}, 0.3f, 1.0f, 1.0f});
+        p.edges.push_back({midIdx, tipIdx});
+        p.terminalNodes.push_back(tipIdx);
     }
     return p;
 }
