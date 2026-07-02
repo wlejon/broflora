@@ -106,10 +106,19 @@ struct FoliageSample {
     float senescence01 = 0.0f;
 
     // True iff the owning module has no child modules in the plant —
-    // the topology gate that distinguishes leaf-bearing twigs from
-    // structural branches. The default `mass` formula uses this as a
-    // hard gate.
+    // a coarse topology gate distinguishing leaf-bearing twigs from
+    // structural branches. Coarser than `twigGrade01` (module-granularity
+    // vs. continuous diameter), and not itself folded into `mass`.
     bool isTerminal = false;
+
+    // leafGrade(module.diameter) alone, in [0,1]: 1 at leaf thickness,
+    // falling linearly to 0 on branches thicker than ~6x the species
+    // leaf diameter. This is the "off the trunk" component of `mass`,
+    // exposed raw so a caller building its own density policy (e.g.
+    // shadow-carved exposure instead of the plain light01 `mass` uses)
+    // doesn't lose the twig/trunk distinction by reconstructing `mass`
+    // from the other raw scalars.
+    float twigGrade01 = 0.0f;
 };
 
 // Emit the plant's branch skeleton as a flat list of `bromesh::BranchSegment`

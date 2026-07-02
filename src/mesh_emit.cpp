@@ -248,6 +248,7 @@ FoliageSample sampleForModule(const Plant& plant,
     s.light01         = clamp01(m.light);
     s.lightExposure01 = clamp01(m.lightExposure);
     s.senescence01    = senescence;
+    s.twigGrade01     = internal::leafGrade(sp, m.diameter);
 
     // Default mass policy (matches the FoliageSample doc in mesh_emit.h).
     // Foliage is distributed through the whole crown, not just terminal
