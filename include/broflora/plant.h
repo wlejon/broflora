@@ -91,6 +91,17 @@ struct Species {
     float distributionWeightCollisions = 1.0f;   // ω1
     float distributionWeightTropism    = 0.5f;   // ω2
     float orthotropy                   = 0.3f;   // arm-dir → up lift, [0,1]
+
+    // Per-plant phenotype variation (broflora extension, not in the paper).
+    // 0 = fully deterministic: every plant of a species grows into a
+    // bit-identical clone, because the sim is deterministic and its only
+    // stochastic input (a tiny spawn-orientation jitter) never cascades into
+    // topology — so a stand reads as one plant stamped N times. > 0 gives
+    // each plant a distinct but reproducible individuality: addPlant() seeds
+    // a per-plant RNG from the origin and (a) rotates the whole plant by a
+    // random azimuth and (b) offsets growthScale / moduleMatureAge /
+    // orthotropy by up to this fraction. Typical: 0.1–0.2.
+    float individualVariation          = 0.0f;
 };
 
 // One plant instance.

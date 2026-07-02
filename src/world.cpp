@@ -5,12 +5,16 @@
 #include "broflora/development.h"
 #include "broflora/spawning.h"
 #include "broflora/senescence.h"
+#include "bromath/rng.h"
+#include "bromath/scalar.h"
 #include "bromath/spatial_hash.h"
 #include "internal_env.h"
 #include "internal_spatial.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <utility>
 
 namespace broflora {
@@ -40,6 +44,45 @@ Plant& addPlant(WorldState& world, Plant plant) {
     if (!added.modules.empty()) {
         added.modules.front().worldPos = added.origin;
     }
+
+    // Per-plant phenotype variation. Without it, same-species plants grow
+    // into bit-identical clones — the sim is deterministic and its only
+    // stochastic input (spawn-orientation jitter) is too small to cascade
+    // into distinct structure, so a stand looks like one plant stamped N
+    // times. Seed a per-plant RNG from the origin (reproducible, yet
+    // distinct per individual) and give each plant its own azimuth plus a
+    // small growth-parameter offset — applied to this plant's own species
+    // copy, so the caller's Species and every sibling are untouched.
+    const float var = added.species.individualVariation;
+    if (var > 0.0f && !added.modules.empty()) {
+        const float v = std::min(1.0f, var);
+        auto hashf = [](float f, uint32_t salt) -> uint32_t {
+            uint32_t x;
+            std::memcpy(&x, &f, sizeof(x));
+            x ^= salt;
+            x ^= x >> 16; x *= 0x7feb352dU;
+            x ^= x >> 15; x *= 0x846ca68bU;
+            x ^= x >> 16;
+            return x;
+        };
+        uint64_t rng = (static_cast<uint64_t>(hashf(added.origin.x, 0x9E3779B9u)) << 32)
+                     ^  static_cast<uint64_t>(hashf(added.origin.z, 0x85EBCA6Bu))
+                     ^  0xD1B54A32D192ED03ULL;
+        if (rng == 0) rng = 0x1234567ULL;
+
+        // (a) Whole-plant azimuth so a whorl's arms don't fan at the same
+        // world angles on every plant.
+        added.modules.front().orientation.psi +=
+            bromath::randFloat01(rng) * bromath::TWO_PI;
+
+        // (b) Phenotype jitter on this plant's own species copy.
+        Species& sp = added.species;
+        sp.growthScale     *= 1.0f + v * 0.20f * bromath::randSigned(rng);
+        sp.moduleMatureAge *= 1.0f + v * 0.20f * bromath::randSigned(rng);
+        sp.orthotropy = std::min(1.0f, std::max(0.0f,
+            sp.orthotropy + v * 0.15f * bromath::randSigned(rng)));
+    }
+
     return added;
 }
 
