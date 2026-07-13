@@ -127,17 +127,35 @@ TEST(orientation_avoids_neighbour) {
     p.modules.push_back(root);
     world.plants.push_back(p);
 
+    // A heavy neighbour occupying the child's +X growth corridor. The child
+    // attaches at the parent module's grown terminal (~(0.7,0.7,0)) and, left
+    // unblocked, continues the arm toward +X/+Y. We plant a fat blocker astride
+    // that +X reach: growing toward +X drives the candidate capsule deep into
+    // the neighbour, while turning toward -X stays clear.
+    //
+    // Two things must line up, because a tick builds its spatial index from the
+    // *incoming* module bboxes but narrow-phases against the *post-develop*
+    // capsules (worldPos->axisTip, diameter*0.5):
+    //   - bboxCenter/bboxRadius (set below) must cover the child's broad-phase
+    //     radius query, and
+    //   - the developed capsule must overlap the child's path. develop overwrites
+    //     `diameter` with the species tip value, so girth comes from a large
+    //     leafDiameter on the blocker's own species; placing the origin so the
+    //     arm's midpoint lands on the corridor keeps the fat rod centred there.
+    // The blocker reuses this species' single prototype (protoIdx) — it has a
+    // Voronoi site, so the blocker's own spawn pass stays in bounds.
     Plant blocker;
     blocker.species = p.species;
-    blocker.origin = {2.0f, 1.0f, 0.0f};
+    blocker.species.leafDiameter = 1.5f;      // developed capsule radius ~0.75
+    blocker.origin = {1.05f, 1.05f, 0.0f};    // arm midpoint ~ child's +X reach
     BranchModuleInstance ghost;
     ghost.prototype = prototypeAt(world, protoIdx);
     ghost.parent = UINT32_MAX;
     ghost.age = 1.0f;
     ghost.vigor = 0.6f;
     ghost.light = 1.0f;
-    ghost.bboxCenter = {2.0f, 1.0f, 0.0f};
-    ghost.bboxRadius = 2.0f;
+    ghost.bboxCenter = {1.4f, 1.4f, 0.0f};
+    ghost.bboxRadius = 2.5f;                   // broad-phase: cover the query
     blocker.modules.push_back(ghost);
     world.plants.push_back(blocker);
 
