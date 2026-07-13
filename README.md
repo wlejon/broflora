@@ -1,5 +1,9 @@
 # broflora
 
+[![CI](https://github.com/wlejon/broflora/actions/workflows/ci.yml/badge.svg)](https://github.com/wlejon/broflora/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/wlejon/broflora/actions/workflows/codeql.yml/badge.svg)](https://github.com/wlejon/broflora/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A C++20 library for **multi-scale plant ecosystem simulation**. Stateful
 runtime sim — branch modules, plants, and ecosystems — that ticks forward
 in time and emits geometry at the boundary (via `bromesh`).
@@ -7,17 +11,16 @@ in time and emits geometry at the boundary (via `bromesh`).
 Sibling to `bromesh`, `broaudio`, `brogameagent`; consumed by the `bro`
 runtime as a static library.
 
-## Status
+## Features
 
-Implemented. The full per-tick loop of the paper runs — spatial light /
-shadow, two-pass Borchert-Honda vigor distribution, pipe-model
-development with tropism, prototype-Voronoi module spawning, and
-senescence / climate-driven seeding. On top of the simulation core, the
-mesh-emit boundary produces branch geometry, branch segments for leaf
-scatter, per-segment foliage state, and bloom / fruit anchors. A built-in
-prototype library (straight / fork / whorl) and an optional per-phase
-`StepObserver` round it out. See `docs/auto-flora-strategy.md` for the
-section-by-section map onto the paper.
+Each `step()` runs the full per-tick loop of the paper: spatial light /
+shadow, two-pass Borchert-Honda vigor distribution, pipe-model development
+with tropism, prototype-Voronoi module spawning, and senescence /
+climate-driven seeding. At the boundary, the mesh-emit layer produces
+branch geometry, branch segments for leaf scatter, per-segment foliage
+state, and bloom / fruit anchors. A built-in prototype library (straight /
+fork / whorl) and an optional per-phase `StepObserver` round it out. See
+`docs/auto-flora-strategy.md` for the section-by-section map onto the paper.
 
 ## Building
 

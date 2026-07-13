@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# broflora requires both bromath (../bromath) and bromesh (../bromesh) — the
+# CMakeLists FATAL_ERRORs without them — and bromesh in turn vendors seven
+# submodules. So every job reconstructs the sibling layout and checks bromesh
+# out with submodules:
+#
+#     $GITHUB_WORKSPACE/
+#       broflora/   <- this repo, checked out into a named path
+#       bromath/
+#       bromesh/    <- with submodules (broflora links it)
+#
+# Release, not Debug: broflora links bromesh, whose meshoptimizer Debug
+# assertions surface as a modal abort() on Windows. Default CMake generator, not
+# Ninja: bromesh's osqp dependency fetches the QDLDL solver, whose ancient
+# cmake_minimum_required trips "required internal CMake variable not set" under
+# Ninja. --parallel bounds the job count regardless.
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-gcc,    os: ubuntu-24.04, cc: gcc,   cxx: g++ }
+          - { name: linux-clang,  os: ubuntu-24.04, cc: clang, cxx: clang++ }
+          - { name: windows-msvc, os: windows-2022 }
+          - { name: macos-arm64,  os: macos-14 }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: broflora
+
+      - uses: actions/checkout@v7
+        with:
+          repository: wlejon/bromath
+          path: bromath
+
+      - uses: actions/checkout@v7
+        with:
+          repository: wlejon/bromesh
+          path: bromesh
+          submodules: recursive
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake -S broflora -B build -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  # ── Coverage ──────────────────────────────────────────────────────────────
+  #
+  # Debug + --coverage on Linux. --filter scopes the numbers to broflora's own
+  # code (include/broflora/ + src/); the siblings and their vendored submodules
+  # are excluded.
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: broflora
+
+      - uses: actions/checkout@v7
+        with:
+          repository: wlejon/bromath
+          path: bromath
+
+      - uses: actions/checkout@v7
+        with:
+          repository: wlejon/bromesh
+          path: bromesh
+          submodules: recursive
+
+      - name: Install gcovr
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gcovr
+
+      - name: Configure (instrumented)
+        run: |
+          cmake -S broflora -B build -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="--coverage" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+
+      - name: Build
+        run: cmake --build build --parallel 4
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      # pipefail: piping gcovr into tee otherwise hands the step tee's exit
+      # status, so a gcovr crash produces no report and the job still goes green.
+      - name: Report
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p coverage-html
+          gcovr --root . \
+            --filter 'broflora/include/broflora/' --filter 'broflora/src/' \
+            --exclude-unreachable-branches \
+            --gcov-ignore-errors=no_working_dir_found \
+            --print-summary \
+            --html-details coverage-html/index.html \
+            | tee coverage-summary.txt
+          test -s coverage-html/index.html
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo '## Coverage — `include/broflora/` + `src/`'
+            echo
+            echo 'The bromath/bromesh siblings and their vendored code are filtered out.'
+            echo
+            echo '```'
+            cat coverage-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-html
+          path: coverage-html/
+          retention-days: 14
