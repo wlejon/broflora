@@ -77,12 +77,7 @@ MeshData emitPlantMesh(const Plant& plant, uint32_t sides) {
 }
 
 MeshData emitWorldMesh(const WorldState& world, uint32_t sides) {
-    // emitWorldSegments concatenates every plant with absolute parent
-    // indices, and each plant's root segments carry parent == -1, so a
-    // single meshBranches call over the whole list meshes all plants at
-    // once with no cross-plant chain bleed.
     MeshData mesh = bromesh::meshBranches(emitWorldSegments(world), static_cast<int>(sides));
-    bromesh::generateTangents(mesh);
     return mesh;
 }
 

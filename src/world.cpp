@@ -185,14 +185,17 @@ void stepWithObserver(WorldState& world, float dt, const StepObserver& obs) {
     if (obs.postLight) obs.postLight(world);
 
     // B. Vigor passes per plant (paper §3.2).
-    for (auto& plant : world.plants) {
-        runVigorPasses(plant);
+    const int plantCount = static_cast<int>(world.plants.size());
+    #pragma omp parallel for schedule(static) if(plantCount > 4)
+    for (int i = 0; i < plantCount; ++i) {
+        runVigorPasses(world.plants[static_cast<size_t>(i)]);
     }
     if (obs.postVigor) obs.postVigor(world);
 
     // C. Develop modules per plant (paper §3.3).
-    for (auto& plant : world.plants) {
-        developModules(plant, dt);
+    #pragma omp parallel for schedule(static) if(plantCount > 4)
+    for (int i = 0; i < plantCount; ++i) {
+        developModules(world.plants[static_cast<size_t>(i)], dt);
     }
     if (obs.postDevelopment) obs.postDevelopment(world);
 

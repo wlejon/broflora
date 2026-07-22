@@ -111,9 +111,12 @@ void evaluateLightAndCollisions(WorldState& world,
     // crowns compound into a shaded understory.
     const float shadowK     = 0.5f;  // woody (branch) extinction
     const float leafShadowK = 1.5f;  // leaf-area extinction (canopy closer)
-    std::vector<float> tau(world.shadow.qg.size(), 0.0f);
+    const size_t totalCells = world.shadow.qg.size();
+    std::vector<float> depTau(totalCells, 0.0f);
+    std::vector<float> tau(totalCells, 0.0f);
     const float cellSize = world.shadow.cellSize;
     const int W = static_cast<int>(world.shadow.width);
+    const int H = static_cast<int>(world.shadow.height);
     const int D = static_cast<int>(world.shadow.depth);
     for (const auto& pl : world.plants) {
         for (const auto& m : pl.modules) {
@@ -127,6 +130,7 @@ void evaluateLightAndCollisions(WorldState& world,
             const float rCells       = m.bboxRadius / cellSize;
             const int   rxz          = static_cast<int>(std::ceil(rCells));
             const float r2Cells      = rCells * rCells;
+            const uint32_t topY      = cy - 1;
 
             for (int dx = -rxz; dx <= rxz; ++dx) {
                 const int nx = static_cast<int>(cx) + dx;
@@ -135,14 +139,25 @@ void evaluateLightAndCollisions(WorldState& world,
                     if (dx * dx + dz * dz > r2Cells) continue;
                     const int nz = static_cast<int>(cz) + dz;
                     if (nz < 0 || nz >= D) continue;
-                    for (uint32_t y = 0; y < cy; ++y) {
-                        uint32_t idx = shadowIndex(world.shadow,
-                                                   static_cast<uint32_t>(nx),
-                                                   y,
-                                                   static_cast<uint32_t>(nz));
-                        tau[idx] += opticalDepth;
-                    }
+                    uint32_t idx = shadowIndex(world.shadow,
+                                               static_cast<uint32_t>(nx),
+                                               topY,
+                                               static_cast<uint32_t>(nz));
+                    depTau[idx] += opticalDepth;
                 }
+            }
+        }
+    }
+    for (int nx = 0; nx < W; ++nx) {
+        for (int nz = 0; nz < D; ++nz) {
+            float accum = 0.0f;
+            for (int y = H - 1; y >= 0; --y) {
+                uint32_t idx = shadowIndex(world.shadow,
+                                           static_cast<uint32_t>(nx),
+                                           static_cast<uint32_t>(y),
+                                           static_cast<uint32_t>(nz));
+                accum += depTau[idx];
+                tau[idx] = accum;
             }
         }
     }
