@@ -34,8 +34,20 @@ target_include_directories(broflora PUBLIC
 )
 target_compile_features(broflora PUBLIC cxx_std_20)
 
+# OpenMP — the per-plant sim passes (light, vigor, development) carry
+# `#pragma omp parallel for`; without OpenMP they run serially. The step is
+# irregular tree-growth traversal, so it stays on the CPU — this is how it
+# scales across cores. Optional: absent OpenMP the pragmas are ignored.
+find_package(OpenMP QUIET)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(broflora PUBLIC OpenMP::OpenMP_CXX)
+    message(STATUS "broflora: OpenMP enabled (${OpenMP_CXX_FLAGS})")
+else()
+    message(STATUS "broflora: OpenMP not found, sim passes run serially")
+endif()
+
 if(MSVC)
-    target_compile_options(broflora PRIVATE /W4)
+    target_compile_options(broflora PRIVATE /W4 $<$<NOT:$<BOOL:${OpenMP_CXX_FOUND}>>:/wd4068>)
 else()
     target_compile_options(broflora PRIVATE -Wall -Wextra)
 endif()
