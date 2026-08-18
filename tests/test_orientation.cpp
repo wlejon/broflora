@@ -1,9 +1,11 @@
 #include "test_framework.h"
 
+#include "broflora/development.h"
 #include "broflora/orientation.h"
 #include "broflora/prototypes.h"
 #include "broflora/mesh_emit.h"
 #include "bromath/vec.h"
+#include "../src/internal_geom.h"
 
 #include <algorithm>
 #include <cmath>
@@ -262,4 +264,129 @@ TEST(orthotropy_trades_height_for_spread) {
 TEST(shoots_never_aim_below_horizon) {
     CrownStats s = growWhorl(0.3f);
     ASSERT(s.minY > -0.4f, "no shoot drives the crown below the root plane");
+}
+
+// Biomechanical tropism: mature branches maintain cantilever gravity sag
+// and do not unbend/snap back to straight lines as age grows to large values (10, 50, 100).
+TEST(tropism_mature_branches_maintain_cantilever_sag_at_large_ages) {
+    BranchModulePrototype proto;
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f}); // root
+    proto.nodes.push_back({{1.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f}); // horizontal lateral arm (span = 1.0)
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Species sp;
+    sp.tropismDir = {0.0f, -1.0f, 0.0f};
+    sp.tropismG1  = 1.0f;
+    sp.tropismG2  = 0.5f;
+
+    BranchModuleInstance m;
+    m.prototype = &proto;
+    m.parent = UINT32_MAX;
+
+    // Root node must identically maintain zero drift across all ages
+    for (float testAge : {0.0f, 1.0f, 5.0f, 10.0f, 50.0f, 100.0f}) {
+        m.age = testAge;
+        Vec3 rootOff = internal::nodeOffsetFromRoot(sp, m, 0);
+        ASSERT(vlen(rootOff) < 1e-6f, "root node always maps to exact zero offset");
+    }
+
+    // At transition age (age == tropismG1 == 1.0), phototropism balances sag
+    m.age = 1.0f;
+    Vec3 offTrans = internal::nodeOffsetFromRoot(sp, m, 1);
+    ASSERT(std::fabs(offTrans.y) < 1e-5f, "inflection point at age == tropismG1");
+
+    // Mature branches at ages 10, 50, 100 must accumulate and sustain downward sag
+    m.age = 10.0f;
+    Vec3 off10 = internal::nodeOffsetFromRoot(sp, m, 1);
+    ASSERT(off10.y < -0.35f, "mature branch at age 10 sags downward");
+
+    m.age = 50.0f;
+    Vec3 off50 = internal::nodeOffsetFromRoot(sp, m, 1);
+    ASSERT(off50.y < off10.y, "branch at age 50 sags more than at age 10");
+
+    m.age = 100.0f;
+    Vec3 off100 = internal::nodeOffsetFromRoot(sp, m, 1);
+    ASSERT(off100.y <= off50.y, "branch at age 100 maintains cantilever sag (does NOT unbend)");
+    ASSERT(std::fabs(off100.y - (-0.5f * (99.0f / 101.0f))) < 1e-3f,
+           "sag closely matches asymptotic cantilever formula");
+}
+
+// Biomechanical tropism: young shoot tips exhibit upward light-seeking phototropism.
+TEST(tropism_young_shoots_show_upward_phototropic_curvature) {
+    BranchModulePrototype proto;
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{1.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Species sp;
+    sp.tropismDir = {0.0f, -1.0f, 0.0f};
+    sp.tropismG1  = 1.0f;
+    sp.tropismG2  = 0.6f;
+
+    BranchModuleInstance shoot;
+    shoot.prototype = &proto;
+    shoot.parent = UINT32_MAX;
+
+    // Newborn young shoot (age = 0)
+    shoot.age = 0.0f;
+    Vec3 tipOff0 = internal::nodeOffsetFromRoot(sp, shoot, 1);
+    ASSERT(tipOff0.y > 0.5f, "young shoot curls upward (+Y) toward light");
+
+    // Slightly grown shoot (age = 0.25)
+    shoot.age = 0.25f;
+    Vec3 tipOff1 = internal::nodeOffsetFromRoot(sp, shoot, 1);
+    ASSERT(tipOff1.y > 0.3f, "young shoot still shows positive phototropic lift");
+    ASSERT(tipOff1.y < tipOff0.y, "phototropic lift relaxes as shoot tissue matures");
+}
+
+// S-Curve: Drooping heavy mature bough with upward-turned young apical tips.
+TEST(tropism_botanical_s_curve_and_module_attachment) {
+    BranchModulePrototype proto;
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f}); // 0: base
+    proto.nodes.push_back({{1.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f}); // 1: terminal
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Plant plant;
+    plant.species.tropismDir = {0.0f, -1.0f, 0.0f};
+    plant.species.tropismG1  = 1.0f;
+    plant.species.tropismG2  = 0.5f;
+    plant.origin = {0.0f, 10.0f, 0.0f};
+
+    // Parent module: mature heavy bough (age = 20)
+    BranchModuleInstance parent;
+    parent.prototype = &proto;
+    parent.parent = UINT32_MAX;
+    parent.age = 20.0f;
+    parent.vigor = 0.8f;
+    parent.nodePositions = {proto.nodes[0].position, proto.nodes[1].position};
+
+    // Child module: newly sprouted apical shoot (age = 0.2)
+    BranchModuleInstance child;
+    child.prototype = &proto;
+    child.parent = 0;
+    child.parentAttachTerminal = 1;
+    child.age = 0.2f;
+    child.vigor = 0.8f;
+
+    plant.modules = {parent, child};
+
+    developModules(plant, 0.0f);
+
+    const auto& mods = plant.modules;
+    // Parent bough terminal sags downward
+    Vec3 parentTerm = mods[0].worldPos + internal::nodeOffsetFromRoot(plant.species, mods[0], 1);
+    ASSERT(parentTerm.y < plant.origin.y, "mature parent bough droops below origin height");
+
+    // Child module is attached at exact parent terminal (zero drift at junction)
+    ASSERT(vlen(mods[1].worldPos - parentTerm) < 1e-5f, "child module perfectly anchored to parent terminal");
+
+    // Child tip curls upward relative to its attachment point
+    Vec3 childTip = mods[1].worldPos + internal::nodeOffsetFromRoot(plant.species, mods[1], 1);
+    ASSERT(childTip.y > mods[1].worldPos.y, "young child shoot tip curls upward creating S-curve");
 }

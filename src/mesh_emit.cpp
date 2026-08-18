@@ -230,6 +230,37 @@ size_t emitPlantSegmentsInto(const Plant& plant,
             nodeRadius[i] = std::pow(sumR_pe, invPe);
         }
 
+        // Trunk root flare / buttress swelling for the root module (m.parent == UINT32_MAX).
+        // Naturally widens the base radius at soil level (node 0) by ~1.40x (1.35x - 1.5x)
+        // and tapers smoothly upward over the first ~20% of trunk height, eliminating the
+        // stark "telephone pole" cylinder look at the terrain interface.
+        if (m.parent == UINT32_MAX && numNodes > 0) {
+            const uint32_t rootNodeIdx = proto.rootNode < numNodes ? proto.rootNode : 0u;
+            const float rootY = proto.nodes[rootNodeIdx].position.y;
+            float maxSpanY = 0.0f;
+            for (size_t i = 0; i < numNodes; ++i) {
+                maxSpanY = std::max(maxSpanY, proto.nodes[i].position.y - rootY);
+            }
+            if (maxSpanY <= 1e-4f) {
+                for (size_t i = 0; i < numNodes; ++i) {
+                    float d = bromath::vlen(proto.nodes[i].position - proto.nodes[rootNodeIdx].position);
+                    maxSpanY = std::max(maxSpanY, d);
+                }
+            }
+            const float flareBaseScale = 1.40f;
+            const float flareZone = 0.20f;
+            for (size_t i = 0; i < numNodes; ++i) {
+                float h = proto.nodes[i].position.y - rootY;
+                float u = (maxSpanY > 1e-4f) ? std::clamp(h / maxSpanY, 0.0f, 1.0f) : 0.0f;
+                if (u < flareZone) {
+                    float t = u / flareZone;
+                    float smoothT = (1.0f - t) * (1.0f - t);
+                    float flareFactor = 1.0f + (flareBaseScale - 1.0f) * smoothT;
+                    nodeRadius[i] *= flareFactor;
+                }
+            }
+        }
+
         // Pre-size the per-module lookup; -1 means "no segment terminates
         // here yet."
         nodeToSeg[mi].assign(numNodes, -1);

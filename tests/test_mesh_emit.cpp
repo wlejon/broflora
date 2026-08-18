@@ -740,3 +740,124 @@ TEST(mesh_emit_branch_collar_flare_at_junction) {
     ASSERT(segs[0].radius >= baseR * 1.04f, "junction exhibits collar flare swelling");
 }
 
+// Trunk root buttress flare swelling: thickens the trunk base and tapers smoothly
+// into standard pipe-model diameter over the first ~20% of trunk height.
+TEST(mesh_emit_trunk_root_buttress_flare_tapers_smoothly) {
+    BranchModulePrototype proto;
+    proto.nodes.clear();
+    proto.edges.clear();
+    // 6 nodes along vertical trunk: y = 0.0, 0.05, 0.10, 0.20, 0.50, 1.00
+    const std::vector<float> ys = {0.0f, 0.05f, 0.10f, 0.20f, 0.50f, 1.00f};
+    for (float y : ys) {
+        proto.nodes.push_back({{0.0f, y, 0.0f}, 0.0f, 1.0f, 1.0f});
+    }
+    for (size_t i = 0; i < ys.size() - 1; ++i) {
+        proto.edges.push_back({static_cast<uint32_t>(i), static_cast<uint32_t>(i + 1)});
+    }
+    proto.rootNode = 0;
+    proto.terminalNodes = {static_cast<uint32_t>(ys.size() - 1)};
+
+    Plant plant;
+    plant.species.leafDiameter = 0.40f; // tip radius 0.20
+    plant.species.pipeExp = 2.5f;
+
+    BranchModuleInstance rootMod;
+    rootMod.prototype = &proto;
+    rootMod.parent = UINT32_MAX;
+    rootMod.diameter = 0.40f; // rootR = 0.20
+    plant.modules.push_back(rootMod);
+
+    auto segs = emitPlantSegments(plant);
+    ASSERT(segs.size() == 5u, "5 segments emitted for 6 nodes");
+
+    const float standardR = 0.20f;
+    // Segment 0 (y = 0.05, u = 0.05): flared (~1.22x standardR)
+    ASSERT(segs[0].radius > standardR * 1.15f, "near-base segment is swelled by root buttress flare");
+    // Segment 1 (y = 0.10, u = 0.10): intermediate flare (~1.10x)
+    ASSERT(segs[1].radius > standardR * 1.05f, "lower-trunk segment has intermediate flare");
+    ASSERT(segs[0].radius > segs[1].radius, "flare tapers smoothly upward");
+
+    // Segment 2 (y = 0.20, u = 0.20): flare zone boundary
+    ASSERT(segs[1].radius > segs[2].radius, "smooth taper continuing");
+
+    // Segment 3 (y = 0.50, u = 0.50) & Segment 4 (y = 1.00, u = 1.00): beyond flare zone (u >= 0.20)
+    ASSERT(std::fabs(segs[3].radius - standardR) < 1e-4f, "mid-trunk segment is exact standard pipe diameter");
+    ASSERT(std::fabs(segs[4].radius - standardR) < 1e-4f, "top segment is exact standard pipe diameter");
+}
+
+// Canopy branch modules (m.parent != UINT32_MAX) must NOT receive root buttress flare.
+TEST(mesh_emit_canopy_branches_do_not_have_root_buttress_flare) {
+    BranchModulePrototype proto;
+    proto.nodes.clear();
+    proto.edges.clear();
+    const std::vector<float> ys = {0.0f, 0.05f, 0.50f, 1.00f};
+    for (float y : ys) proto.nodes.push_back({{0.0f, y, 0.0f}, 0.0f, 1.0f, 1.0f});
+    for (size_t i = 0; i < ys.size() - 1; ++i) {
+        proto.edges.push_back({static_cast<uint32_t>(i), static_cast<uint32_t>(i + 1)});
+    }
+    proto.rootNode = 0;
+    proto.terminalNodes = {static_cast<uint32_t>(ys.size() - 1)};
+
+    Plant plant;
+    plant.species.leafDiameter = 0.20f;
+    plant.species.pipeExp = 2.5f;
+
+    // Root trunk
+    BranchModuleInstance rootMod;
+    rootMod.prototype = &proto;
+    rootMod.parent = UINT32_MAX;
+    rootMod.diameter = 0.20f;
+
+    // Canopy branch attached to trunk terminal
+    BranchModuleInstance branchMod;
+    branchMod.prototype = &proto;
+    branchMod.parent = 0;
+    branchMod.parentAttachTerminal = proto.terminalNodes[0];
+    branchMod.diameter = 0.20f;
+
+    plant.modules = {rootMod, branchMod};
+
+    auto segs = emitPlantSegments(plant);
+    ASSERT(segs.size() == 6u, "6 segments emitted (3 per module)");
+
+    const float standardR = 0.10f;
+    // Trunk near-base segment (seg 0) HAS buttress flare
+    ASSERT(segs[0].radius > standardR * 1.10f, "trunk base has buttress flare");
+
+    // Canopy branch near-base segment (seg 3) does NOT have root buttress flare
+    ASSERT(std::fabs(segs[3].radius - standardR) < 1e-4f,
+           "canopy branch does not receive root buttress flare");
+}
+
+// Emitting mesh with root buttress flare produces valid watertight geometry.
+TEST(mesh_emit_buttress_flare_produces_valid_mesh) {
+    BranchModulePrototype proto;
+    proto.nodes.clear();
+    proto.edges.clear();
+    for (int i = 0; i <= 5; ++i) {
+        proto.nodes.push_back({{0.0f, static_cast<float>(i) * 0.2f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    }
+    for (uint32_t i = 0; i < 5; ++i) {
+        proto.edges.push_back({i, i + 1});
+    }
+    proto.rootNode = 0;
+    proto.terminalNodes = {5};
+
+    Plant plant;
+    plant.species.leafDiameter = 0.05f;
+    plant.species.pipeExp = 2.5f;
+
+    BranchModuleInstance rootMod;
+    rootMod.prototype = &proto;
+    rootMod.parent = UINT32_MAX;
+    rootMod.diameter = 0.50f;
+    plant.modules.push_back(rootMod);
+
+    MeshData mesh = emitPlantMesh(plant, 8u);
+    ASSERT(!mesh.empty(), "flared trunk mesh emitted");
+    ASSERT(mesh.vertexCount() > 0, "mesh has vertices");
+    ASSERT(mesh.triangleCount() > 0, "mesh has triangles");
+    ASSERT(mesh.hasNormals() && mesh.hasUVs() && mesh.hasTangents(),
+           "mesh has complete material attributes");
+}
+

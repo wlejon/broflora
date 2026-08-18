@@ -22,13 +22,23 @@ namespace broflora::internal {
 using broflora::rotateYawPitch;
 
 // Offset of `nodeIdx` from the module's local-frame origin, in world
-// orientation, with per-node tropism applied (paper §3.3). Tropism
-// τ(a_b) = g1·g2 / (a_b + g1) along normalized species.tropismDir,
-// where a_b = max(0, m.age − node.ageAtBirth). Applied per-node — not
-// uniformly to the module — so segments born later have larger a_b
-// (smaller offset) and the branch curves under gravity instead of
-// translating rigidly. The module's own worldPos is the un-tropism-
-// shifted attach point handed down from the parent.
+// orientation, with per-node biomechanical tropism applied.
+//
+// Biomechanics:
+//   - Young shoot tips (small a_b) exhibit upward light-seeking phototropism
+//     curling upward toward -tropismDir (+Y):
+//       τ_photo(a_b, L) = sp.tropismG2 * (sp.tropismG1 / (a_b + sp.tropismG1)) * spanScale
+//   - Older, mature branches accumulate cantilever gravity sag along tropismDir
+//     proportional to mature age and reach:
+//       τ_sag(a_b, L) = sp.tropismG2 * (a_b / (a_b + sp.tropismG1)) * spanScale
+//   - Net per-node tropism offset along tropismDir (g_norm):
+//       τ(a_b, L) = g_norm * (τ_sag - τ_photo)
+//                 = g_norm * [sp.tropismG2 * ((a_b - sp.tropismG1) / (a_b + sp.tropismG1)) * spanScale]
+//   - spanScale is the reach (distance from root node, vlen(rel)), guaranteeing
+//     the root node (spanScale = 0) identically maps to zero net drift so modules
+//     remain attached at their exact parent terminals.
+//   - Combined across module hierarchies, this yields the characteristic botanical
+//     S-curve: drooping heavy main boughs with upward-turned apical shoot tips.
 inline bromath::Vec3 nodeOffsetFromRoot(const broflora::Species& sp,
                                        const broflora::BranchModuleInstance& m,
                                        uint32_t nodeIdx) {
@@ -36,6 +46,8 @@ inline bromath::Vec3 nodeOffsetFromRoot(const broflora::Species& sp,
     const auto& proto = *m.prototype;
     if (nodeIdx >= proto.nodes.size()) return {0.0f, 0.0f, 0.0f};
     const uint32_t rootIdx = proto.rootNode < proto.nodes.size() ? proto.rootNode : 0u;
+    if (nodeIdx == rootIdx) return {0.0f, 0.0f, 0.0f};
+
     bromath::Vec3 local = (nodeIdx < m.nodePositions.size())
         ? m.nodePositions[nodeIdx] : proto.nodes[nodeIdx].position;
     bromath::Vec3 rootLocal = (rootIdx < m.nodePositions.size())
@@ -43,22 +55,28 @@ inline bromath::Vec3 nodeOffsetFromRoot(const broflora::Species& sp,
     bromath::Vec3 rel = local - rootLocal;
     bromath::Vec3 rotated = rotateYawPitch(rel, m.orientation.psi, m.orientation.theta);
 
-    // Per-node gravitropic bend along tropismDir. τ(a_b) = g1·g2/(a_b+g1)
-    // is the paper's per-node magnitude — largest for the youngest nodes,
-    // relaxing as they age. We subtract the root node's term so the
-    // *root* node always maps to a zero offset: the module's worldPos is
-    // its attach point and must not drift, otherwise every module (and the
-    // whole plant) translates bodily along tropismDir — which sank plants
-    // ~g2 metres underground at birth and detached children from parents.
-    auto tropism = [&](uint32_t idx) -> bromath::Vec3 {
-        const float ab    = std::max(0.0f, m.age - proto.nodes[idx].ageAtBirth);
-        const float denom = ab + sp.tropismG1;
-        if (denom <= 1e-6f) return {0.0f, 0.0f, 0.0f};
-        const float k = sp.tropismG1 * sp.tropismG2 / denom;
-        if (k == 0.0f) return {0.0f, 0.0f, 0.0f};
-        return bromath::vnorm(sp.tropismDir) * k;
-    };
-    return rotated + tropism(nodeIdx) - tropism(rootIdx);
+    const float dirLen = bromath::vlen(sp.tropismDir);
+    if (dirLen <= 1e-6f) return rotated;
+    const bromath::Vec3 gNorm = sp.tropismDir * (1.0f / dirLen);
+
+    // Cantilever moment arm: lateral/transverse reach perpendicular to gravity.
+    // Vertical trunks (parallel to gravity) experience zero cantilever bending,
+    // while spreading lateral branches accumulate realistic sag and phototropic lift.
+    const float parallelProj = bromath::vdot(rotated, gNorm);
+    const bromath::Vec3 perpRel = rotated - gNorm * parallelProj;
+    const float spanScale = bromath::vlen(perpRel);
+    if (spanScale <= 1e-6f) return rotated;
+
+    const float ab = std::max(0.0f, m.age - proto.nodes[nodeIdx].ageAtBirth);
+    const float denom = ab + sp.tropismG1;
+    if (denom <= 1e-6f) return rotated;
+
+    // Biomechanical tropism:
+    // τ_sag   = sp.tropismG2 * (ab / denom) * spanScale along gNorm (+tropismDir)
+    // τ_photo = sp.tropismG2 * (sp.tropismG1 / denom) * spanScale along -gNorm (-tropismDir)
+    // Net displacement along gNorm:
+    const float k = sp.tropismG2 * ((ab - sp.tropismG1) / denom) * spanScale;
+    return rotated + gNorm * k;
 }
 
 } // namespace broflora::internal
