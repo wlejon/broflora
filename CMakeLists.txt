@@ -25,6 +25,7 @@ add_library(broflora STATIC
     src/validate.cpp
     src/mesh_emit.cpp
     src/prototypes.cpp
+    src/leaf_cluster.cpp
 )
 add_library(broflora::broflora ALIAS broflora)
 
