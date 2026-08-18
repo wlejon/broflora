@@ -209,4 +209,167 @@ BranchModulePrototype whorlModule(uint32_t arms, float spread, const char* name)
     return curveModule(p, 5, 0.22f);
 }
 
+BranchModulePrototype monopodialLeaderModule(uint32_t lateralBranches,
+                                             float lateralSpread,
+                                             const char* name) {
+    if (lateralBranches < 1) lateralBranches = 1;
+    if (lateralBranches > 4) lateralBranches = 4;
+    if (lateralSpread < 0.0f) lateralSpread = 0.0f;
+    if (lateralSpread > 1.0f) lateralSpread = 1.0f;
+
+    BranchModulePrototype p;
+    p.name = name;
+
+    const float trunkLen   = 0.5f;
+    const float leaderRise = 0.9f;
+    const float latRise    = 0.35f;
+    const float latRadius  = 0.25f + lateralSpread * 0.45f;
+
+    // Node 0: Root
+    p.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    // Node 1: Junction
+    p.nodes.push_back({{0.0f, trunkLen, 0.0f}, 0.05f, 1.0f, 1.0f});
+    p.edges.push_back({0, 1});
+    p.rootNode = 0;
+
+    // Node 2: Central dominant leader (terminal 0 = apical tip)
+    p.nodes.push_back({{0.0f, trunkLen + leaderRise, 0.0f}, 0.15f, 1.0f, 1.0f});
+    p.edges.push_back({1, 2});
+    p.terminalNodes.push_back(2);
+
+    // Lateral side arms branching out at realistic acute/spreading angles
+    for (uint32_t i = 0; i < lateralBranches; ++i) {
+        float a = 0.0f;
+        if (lateralBranches == 1) {
+            a = 0.0f;
+        } else {
+            a = bromath::TWO_PI * static_cast<float>(i) / static_cast<float>(lateralBranches);
+        }
+        const float x = std::cos(a) * latRadius;
+        const float z = std::sin(a) * latRadius;
+        const uint32_t tipIdx = static_cast<uint32_t>(p.nodes.size());
+        // Higher ageAtBirth (0.35f) so the apical leader extends strongly first
+        p.nodes.push_back({{x, trunkLen + latRise, z}, 0.35f, 0.8f, 1.0f});
+        p.edges.push_back({1, tipIdx});
+        p.terminalNodes.push_back(tipIdx);
+    }
+
+    return curveModule(p, 4, 0.12f);
+}
+
+BranchModulePrototype sympodialForkModule(float primarySpread,
+                                          float lateralSpread,
+                                          const char* name) {
+    if (primarySpread < 0.0f) primarySpread = 0.0f;
+    if (primarySpread > 1.0f) primarySpread = 1.0f;
+    if (lateralSpread < 0.0f) lateralSpread = 0.0f;
+    if (lateralSpread > 1.0f) lateralSpread = 1.0f;
+
+    BranchModulePrototype p;
+    p.name = name;
+
+    const float trunkLen = 0.35f;
+    // Node 0: root
+    p.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    // Node 1: fork
+    p.nodes.push_back({{0.0f, trunkLen, 0.0f}, 0.05f, 1.0f, 1.0f});
+    p.edges.push_back({0, 1});
+    p.rootNode = 0;
+
+    // Node 2: Primary dominant arm (terminal 0) — more upright, taller, earlier ageAtBirth
+    const float px = 0.15f + primarySpread * 0.25f;
+    const float py = trunkLen + 0.85f;
+    p.nodes.push_back({{px, py, 0.0f}, 0.15f, 1.0f, 1.0f});
+    p.edges.push_back({1, 2});
+    p.terminalNodes.push_back(2);
+
+    // Node 3: Secondary lateral arm (terminal 1) — spreading wider, lower rise, later ageAtBirth
+    const float sx = -(0.35f + lateralSpread * 0.45f);
+    const float sy = trunkLen + 0.55f;
+    p.nodes.push_back({{sx, sy, 0.05f}, 0.30f, 0.8f, 1.0f});
+    p.edges.push_back({1, 3});
+    p.terminalNodes.push_back(3);
+
+    return curveModule(p, 4, 0.18f);
+}
+
+BranchModulePrototype horizontalTierModule(uint32_t arms,
+                                           float spread,
+                                           const char* name) {
+    if (arms < 2) arms = 2;
+    if (arms > 8) arms = 8;
+    if (spread < 0.0f) spread = 0.0f;
+    if (spread > 1.0f) spread = 1.0f;
+
+    BranchModulePrototype p;
+    p.name = name;
+
+    const float trunkLen = 0.35f;
+    const float radius   = 0.4f + spread * 0.6f;
+    const float rise     = 0.05f + (1.0f - spread) * 0.10f; // very low rise: near horizontal
+
+    p.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});     // 0 root
+    p.nodes.push_back({{0.0f, trunkLen, 0.0f}, 0.05f, 1.0f, 1.0f}); // 1 tier junction
+    p.edges.push_back({0, 1});
+    p.rootNode = 0;
+
+    for (uint32_t i = 0; i < arms; ++i) {
+        const float a = bromath::TWO_PI * static_cast<float>(i) / static_cast<float>(arms);
+        const float x = std::cos(a) * radius;
+        const float z = std::sin(a) * radius;
+        const uint32_t tipIdx = static_cast<uint32_t>(p.nodes.size());
+        p.nodes.push_back({{x, trunkLen + rise, z}, 0.20f, 1.0f, 1.0f});
+        p.edges.push_back({1, tipIdx});
+        p.terminalNodes.push_back(tipIdx);
+    }
+
+    return curveModule(p, 4, 0.15f);
+}
+
+BranchModulePrototype weepingModule(float spread,
+                                    float droop,
+                                    const char* name) {
+    if (spread < 0.0f) spread = 0.0f;
+    if (spread > 1.0f) spread = 1.0f;
+    if (droop < 0.0f) droop = 0.0f;
+    if (droop > 1.0f) droop = 1.0f;
+
+    BranchModulePrototype p;
+    p.name = name;
+
+    const float trunkLen   = 0.35f;
+    const float archRise   = 0.25f;
+    const float archRadius = 0.25f + spread * 0.35f;
+    const float droopDist  = 0.30f + droop * 0.70f;
+    const float tipRadius  = archRadius + 0.15f + spread * 0.20f;
+
+    p.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});     // 0 root
+    p.nodes.push_back({{0.0f, trunkLen, 0.0f}, 0.05f, 1.0f, 1.0f}); // 1 junction
+    p.edges.push_back({0, 1});
+    p.rootNode = 0;
+
+    // Two pendulous drooping shoots in opposite directions
+    for (uint32_t i = 0; i < 2; ++i) {
+        const float a = kPi * static_cast<float>(i);
+        const float ca = std::cos(a);
+        const float sa = std::sin(a);
+
+        // Shoulder / arch node
+        const uint32_t archIdx = static_cast<uint32_t>(p.nodes.size());
+        p.nodes.push_back({{ca * archRadius, trunkLen + archRise, sa * archRadius},
+                           0.15f, 0.8f, 1.0f});
+        p.edges.push_back({1, archIdx});
+
+        // Drooping tip node
+        const uint32_t tipIdx = static_cast<uint32_t>(p.nodes.size());
+        p.nodes.push_back({{ca * tipRadius, trunkLen + archRise - droopDist, sa * tipRadius},
+                           0.30f, 1.0f, 1.0f});
+        p.edges.push_back({archIdx, tipIdx});
+        p.terminalNodes.push_back(tipIdx);
+    }
+
+    return curveModule(p, 4, 0.15f);
+}
+
 } // namespace broflora
+

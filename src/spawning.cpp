@@ -275,12 +275,15 @@ void spawnModules(Plant& plant,
             // building a crown instead of a vertical whip.
             uint32_t termParent = u.prototype->rootNode;
             for (const auto& e : u.prototype->edges) {
-                uint32_t a = e.a, b = e.b;
-                if (a > b) std::swap(a, b);
-                if (b == termNode) { termParent = a; break; }
+                if (e.b == termNode) { termParent = e.a; break; }
+                if (e.a == termNode) { termParent = e.b; break; }
             }
             Vec3 armOff = nodeOffsetFromRoot(sp, u, termNode)
                         - nodeOffsetFromRoot(sp, u, termParent);
+            if (vlen2(armOff) <= 1e-8f) {
+                armOff = nodeOffsetFromRoot(sp, u, termNode)
+                       - nodeOffsetFromRoot(sp, u, u.prototype->rootNode);
+            }
             Vec3 armDir = (vlen2(armOff) > 1e-8f) ? vnorm(armOff) : up;
             Vec3 growthTarget = vnorm(armDir + (up - armDir) * orthotropy);
 
@@ -325,10 +328,10 @@ void spawnModules(Plant& plant,
             child.age = 0.0f;
             child.vigor = perTerminal;
             child.light = perTerminal;
-            // The prototype's first listed terminal grows the main
-            // meristem (paper §3.2). Tagging at spawn time keeps the
+            // The prototype's first listed terminal (terminal 0) grows the main
+            // apical meristem (paper §3.2). Tagging at spawn time keeps the
             // λ-weighted vigor split independent of insertion order.
-            child.isMainChild = (k == 0);
+            child.isMainChild = (!terms.empty() && termNode == terms.front());
             child.orientation.theta = theta;
             child.orientation.psi   = psi;
             // worldPos / bbox will be filled in next development tick.

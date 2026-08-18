@@ -36,4 +36,35 @@ BranchModulePrototype forkModule(const char* name = "fork");
 BranchModulePrototype whorlModule(uint32_t arms = 3, float spread = 0.55f,
                                   const char* name = "whorl");
 
+// Monopodial leader module: central dominant leader extending upward
+// (terminal 0 = apical tip) with `lateralBranches` (1..4) side arms branching
+// out at realistic acute/spreading angles. Node ages and lengths are tuned so
+// the leader extends strongly before laterals, giving true excurrent /
+// conifer / monopodial growth. Curved and subdivided with curveModule.
+BranchModulePrototype monopodialLeaderModule(uint32_t lateralBranches = 2,
+                                             float lateralSpread = 0.7f,
+                                             const char* name = "monopodial");
+
+// Sympodial fork module: asymmetrical fork with one dominant arm (primary,
+// terminal 0) and one secondary arm (terminal 1), capturing decurrent
+// spreading crowns (oaks, maples, elms). Curved and subdivided with curveModule.
+BranchModulePrototype sympodialForkModule(float primarySpread = 0.3f,
+                                          float lateralSpread = 0.7f,
+                                          const char* name = "sympodial");
+
+// Horizontal plagiotropic shelf tiers (pines, cedars, dogwoods). `arms`
+// (clamped to [2, 8]) extend out near horizontal with small vertical rise
+// and wide spread. Curved and subdivided with curveModule.
+BranchModulePrototype horizontalTierModule(uint32_t arms = 3,
+                                           float spread = 0.85f,
+                                           const char* name = "tier");
+
+// Weeping module: pendulous downward-curving lateral shoots (weeping willows,
+// weeping birches). Arches outward and droops downward. Curved and
+// subdivided with curveModule.
+BranchModulePrototype weepingModule(float spread = 0.6f,
+                                    float droop = 0.4f,
+                                    const char* name = "weeping");
+
 } // namespace broflora
+
