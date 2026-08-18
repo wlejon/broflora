@@ -25,16 +25,18 @@ inline float clamp01f(float x) {
 }
 
 // Leaf "grade" of a module by branch thickness. Leaves grow on young
-// shoots, not the trunk: 1.0 at leaf thickness, falling linearly to 0 on
+// shoots, not the trunk: 1.0 at leaf thickness, falling to 0 on
 // branches thicker than `kTwigSpan`× the species leaf diameter. The
 // pipe-model `diameter` makes interior twigs thin and the trunk thick, so
 // this naturally keeps foliage in the crown and off the bole.
 inline float leafGrade(const Species& sp, float diameter) {
     const float leafD = sp.leafDiameter > 0.0f ? sp.leafDiameter : 0.02f;
-    const float kTwigSpan = 6.0f;
+    const float kTwigSpan = 2.2f;
     const float twigMax = leafD * kTwigSpan;
-    if (twigMax <= leafD) return diameter <= leafD ? 1.0f : 0.0f;
-    return clamp01f((twigMax - diameter) / (twigMax - leafD));
+    if (diameter <= leafD) return 1.0f;
+    if (diameter >= twigMax) return 0.0f;
+    float t = (twigMax - diameter) / (twigMax - leafD);
+    return t * t;
 }
 
 // Health gate: module maturity (age vs moduleMatureAge) × vigor fraction.

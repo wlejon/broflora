@@ -390,11 +390,10 @@ FoliageSample sampleForModule(const Plant& plant,
     s.twigGrade01     = internal::leafGrade(sp, m.diameter);
 
     // Default mass policy (matches the FoliageSample doc in mesh_emit.h).
-    // Foliage is distributed through the whole crown, not just terminal
-    // tips: leaf-area proxy (thin, mature, vigorous branches) modulated by
-    // the module's effective light and thinned as the plant senesces.
-    // `isTerminal` is still reported but no longer hard-gates mass.
-    s.mass = internal::leafAreaProxy(sp, m) * s.light01 * (1.0f - clamp01(senescence));
+    // Foliage is distributed on thin, mature, vigorous shoots.
+    // Non-terminal modules (structural limbs that have branched) have heavy attenuation.
+    const float termFactor = isTerminal ? 1.0f : 0.20f;
+    s.mass = internal::leafAreaProxy(sp, m) * s.light01 * (1.0f - clamp01(senescence)) * termFactor;
     return s;
 }
 
