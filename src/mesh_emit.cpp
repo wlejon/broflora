@@ -91,59 +91,172 @@ namespace {
 size_t emitPlantSegmentsInto(const Plant& plant,
                              std::vector<bromesh::BranchSegment>& out) {
     const size_t startSize = out.size();
+    const size_t numModules = plant.modules.size();
+    if (numModules == 0) return 0;
+
+    const float pe = plant.species.pipeExp > 0.0f ? plant.species.pipeExp : 2.5f;
+    const float invPe = 1.0f / pe;
+    const float leafR = 0.5f * (plant.species.leafDiameter > 0.0f ? plant.species.leafDiameter : 0.02f);
+
+    // Map each (parent_module_idx, attach_terminal_node) to the list of child module indices.
+    std::vector<std::vector<std::vector<uint32_t>>> attachedChildren(numModules);
+    for (size_t mi = 0; mi < numModules; ++mi) {
+        if (plant.modules[mi].prototype) {
+            attachedChildren[mi].resize(plant.modules[mi].prototype->nodes.size());
+        }
+    }
+    for (size_t ci = 0; ci < numModules; ++ci) {
+        const auto& ch = plant.modules[ci];
+        if (ch.parent != UINT32_MAX && ch.parent < numModules) {
+            const auto& pm = plant.modules[ch.parent];
+            if (pm.prototype && !attachedChildren[ch.parent].empty()) {
+                uint32_t attachNode = ch.parentAttachTerminal;
+                bool foundInTerminals = false;
+                if (attachNode < pm.prototype->nodes.size()) {
+                    for (uint32_t t : pm.prototype->terminalNodes) {
+                        if (t == attachNode) { foundInTerminals = true; break; }
+                    }
+                }
+                if (!foundInTerminals && attachNode < pm.prototype->terminalNodes.size()) {
+                    attachNode = pm.prototype->terminalNodes[attachNode];
+                }
+                if (attachNode < attachedChildren[ch.parent].size()) {
+                    attachedChildren[ch.parent][attachNode].push_back(static_cast<uint32_t>(ci));
+                }
+            }
+        }
+    }
 
     // Per-module: prototype-node-index → segment-index-in-`out` of the
     // segment terminating at that node. Built incrementally as each
     // module's edges emit.
-    std::vector<std::vector<int32_t>> nodeToSeg(plant.modules.size());
+    std::vector<std::vector<int32_t>> nodeToSeg(numModules);
 
-    for (size_t mi = 0; mi < plant.modules.size(); ++mi) {
+    for (size_t mi = 0; mi < numModules; ++mi) {
         const auto& m = plant.modules[mi];
         if (!m.prototype) continue;
+        const auto& proto = *m.prototype;
+        const size_t numNodes = proto.nodes.size();
+        if (numNodes == 0) continue;
 
-        const auto depth = nodeDepths(*m.prototype);
-        uint32_t maxDepth = 0;
-        for (uint32_t d : depth) if (d > maxDepth) maxDepth = d;
-        const float invMaxDepth = (maxDepth > 0)
-            ? 1.0f / static_cast<float>(maxDepth) : 0.0f;
+        const auto depth = nodeDepths(proto);
 
-        const float tipR  = 0.5f * plant.species.leafDiameter;
-        const float rootR = std::max(tipR, 0.5f * m.diameter);
+        // Reachable terminal nodes for each node in proto graph.
+        std::vector<std::vector<uint32_t>> reach(numNodes);
+        for (uint32_t tNode : proto.terminalNodes) {
+            if (tNode < numNodes) {
+                reach[tNode].push_back(tNode);
+            }
+        }
+        for (size_t ei = proto.edges.size(); ei-- > 0; ) {
+            uint32_t a = proto.edges[ei].a, b = proto.edges[ei].b;
+            if (a > b) std::swap(a, b);
+            if (a < numNodes && b < numNodes) {
+                for (uint32_t t : reach[b]) {
+                    if (std::find(reach[a].begin(), reach[a].end(), t) == reach[a].end()) {
+                        reach[a].push_back(t);
+                    }
+                }
+            }
+        }
+        for (size_t i = 0; i < numNodes; ++i) {
+            if (reach[i].empty()) {
+                reach[i] = proto.terminalNodes;
+            }
+        }
 
-        auto radiusForNode = [&](uint32_t idx) -> float {
-            if (idx >= depth.size() || maxDepth == 0) return rootR;
-            const float t = static_cast<float>(depth[idx]) * invMaxDepth;
-            return rootR + (tipR - rootR) * t;
-        };
+        const float rootR = std::max(leafR, 0.5f * m.diameter);
+
+        // Pipe-model tip radius for each terminal node:
+        // tipR(terminal) = ( sum_{child attached to terminal} (0.5 * child.diameter)^pipeExp )^(1 / pipeExp)
+        // If no children are attached to that terminal node: tipR(terminal) = 0.5 * species.leafDiameter.
+        std::vector<float> tipR(numNodes, leafR);
+        for (uint32_t tNode : proto.terminalNodes) {
+            if (tNode >= numNodes) continue;
+            const auto& chList = (tNode < attachedChildren[mi].size())
+                ? attachedChildren[mi][tNode]
+                : std::vector<uint32_t>{};
+            if (chList.empty()) {
+                tipR[tNode] = leafR;
+            } else {
+                float sumChildR_pe = 0.0f;
+                for (uint32_t ci : chList) {
+                    float childR = 0.5f * plant.modules[ci].diameter;
+                    sumChildR_pe += std::pow(std::max(leafR, childR), pe);
+                }
+                float baseTipR = std::pow(sumChildR_pe, invPe);
+                // Subtle branch collar / flare swelling at junctions to avoid harsh geometric pinches.
+                float collarFactor = (chList.size() >= 2) ? 1.05f : 1.0f;
+                tipR[tNode] = baseTipR * collarFactor;
+            }
+        }
+
+        // Partition rootR across terminals according to pipe-model proportions.
+        float sumTipR_pe = 0.0f;
+        for (uint32_t tNode : proto.terminalNodes) {
+            if (tNode < numNodes) {
+                sumTipR_pe += std::pow(tipR[tNode], pe);
+            }
+        }
+
+        std::vector<float> rootR_T(numNodes, 0.0f);
+        for (uint32_t tNode : proto.terminalNodes) {
+            if (tNode >= numNodes) continue;
+            if (sumTipR_pe > 1e-12f) {
+                float fraction = std::pow(tipR[tNode], pe) / sumTipR_pe;
+                rootR_T[tNode] = std::pow(fraction, invPe) * rootR;
+            } else {
+                float fraction = 1.0f / static_cast<float>(std::max(1u, (uint32_t)proto.terminalNodes.size()));
+                rootR_T[tNode] = std::pow(fraction, invPe) * rootR;
+            }
+        }
+
+        // Continuous radius for each node in the module.
+        std::vector<float> nodeRadius(numNodes, rootR);
+        for (size_t i = 0; i < numNodes; ++i) {
+            if (reach[i].empty()) {
+                nodeRadius[i] = rootR;
+                continue;
+            }
+            float sumR_pe = 0.0f;
+            for (uint32_t t : reach[i]) {
+                float maxD = static_cast<float>(depth[t]);
+                float curD = static_cast<float>(depth[i]);
+                float tNorm = (maxD > 0.0f) ? (curD / maxD) : 0.0f;
+                tNorm = std::min(1.0f, std::max(0.0f, tNorm));
+                float r_t = rootR_T[t] + (tipR[t] - rootR_T[t]) * tNorm;
+                sumR_pe += std::pow(std::max(0.0f, r_t), pe);
+            }
+            nodeRadius[i] = std::pow(sumR_pe, invPe);
+        }
 
         // Pre-size the per-module lookup; -1 means "no segment terminates
-        // here yet." Multiple edges may terminate at the same node only
-        // for malformed prototypes; we just overwrite, last-write-wins.
-        nodeToSeg[mi].assign(m.prototype->nodes.size(), -1);
+        // here yet."
+        nodeToSeg[mi].assign(numNodes, -1);
 
         // Resolve the parent module's segment that this module's root
         // edges attach to. UINT32_MAX module-parent means plant root.
         int32_t moduleParentSeg = -1;
-        if (m.parent != UINT32_MAX && m.parent < plant.modules.size()) {
+        if (m.parent != UINT32_MAX && m.parent < numModules) {
             const auto& pm = plant.modules[m.parent];
-            if (pm.prototype && m.parentAttachTerminal < pm.prototype->terminalNodes.size()) {
-                const uint32_t attachNode = pm.prototype->terminalNodes[m.parentAttachTerminal];
-                if (attachNode < nodeToSeg[m.parent].size()) {
+            if (pm.prototype && !nodeToSeg[m.parent].empty()) {
+                uint32_t attachNode = m.parentAttachTerminal;
+                if (attachNode < nodeToSeg[m.parent].size() && nodeToSeg[m.parent][attachNode] >= 0) {
                     moduleParentSeg = nodeToSeg[m.parent][attachNode];
+                } else if (attachNode < pm.prototype->terminalNodes.size()) {
+                    uint32_t tNode = pm.prototype->terminalNodes[attachNode];
+                    if (tNode < nodeToSeg[m.parent].size() && nodeToSeg[m.parent][tNode] >= 0) {
+                        moduleParentSeg = nodeToSeg[m.parent][tNode];
+                    }
                 }
             }
         }
 
-        for (const auto& e : m.prototype->edges) {
+        for (const auto& e : proto.edges) {
             bromesh::BranchSegment seg;
             seg.from   = worldNodePos(plant.species, m, e.a);
             seg.to     = worldNodePos(plant.species, m, e.b);
-            // Representative thickness for the whole segment: the mean of
-            // the (thicker) parent-side and (thinner) tip-side radii. Using
-            // only e.b would report the tip radius for every segment — every
-            // edge's b-node is a max-depth terminal — collapsing the trunk to
-            // leaf thickness for any consumer that scatters by seg.radius.
-            seg.radius = 0.5f * (radiusForNode(e.a) + radiusForNode(e.b));
+            seg.radius = (e.b < nodeRadius.size()) ? nodeRadius[e.b] : leafR;
 
             // Parent: prefer an earlier segment within this module that
             // terminates at e.a. If none (i.e. e.a is the module's root
@@ -151,7 +264,7 @@ size_t emitPlantSegmentsInto(const Plant& plant,
             int32_t parentSeg = -1;
             if (e.a < nodeToSeg[mi].size() && nodeToSeg[mi][e.a] >= 0) {
                 parentSeg = nodeToSeg[mi][e.a];
-            } else if (e.a == m.prototype->rootNode) {
+            } else if (e.a == proto.rootNode) {
                 parentSeg = moduleParentSeg;
             }
             seg.parent = parentSeg;

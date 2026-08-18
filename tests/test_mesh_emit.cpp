@@ -555,3 +555,188 @@ TEST(bloom_non_terminal_module_skipped) {
     auto anchors = emitPlantBloomAnchors(plant);
     ASSERT(anchors.size() == 1u, "only the terminal child contributes");
 }
+
+// Verify that large structural trunks maintain thickness through branch
+// junctions instead of choking down to leafDiameter (Hourglass Pinch fix).
+TEST(mesh_emit_no_hourglass_pinch_at_branch_junction) {
+    static BranchModulePrototype proto;
+    proto.nodes.clear();
+    proto.edges.clear();
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.5f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Plant plant;
+    plant.species = {};
+    plant.species.leafDiameter = 0.02f;  // 1cm leaf radius
+    plant.species.pipeExp = 2.5f;
+
+    // 3-module trunk chain: base (d=0.50) -> mid (d=0.35) -> top (d=0.02)
+    BranchModuleInstance base;
+    base.prototype = &proto;
+    base.parent = UINT32_MAX;
+    base.diameter = 0.50f;
+
+    BranchModuleInstance mid;
+    mid.prototype = &proto;
+    mid.parent = 0;
+    mid.parentAttachTerminal = 1;
+    mid.diameter = 0.35f;
+
+    BranchModuleInstance top;
+    top.prototype = &proto;
+    top.parent = 1;
+    top.parentAttachTerminal = 1;
+    top.diameter = 0.02f;
+
+    plant.modules = {base, mid, top};
+
+    auto segs = emitPlantSegments(plant);
+    ASSERT(segs.size() == 3u, "3 segments emitted");
+
+    // The base trunk module connects to mid module (diameter 0.35).
+    // It must NOT choke down to leaf radius (0.01).
+    ASSERT(segs[0].radius >= 0.175f - 1e-4f,
+           "base trunk segment maintains thickness through junction to mid trunk");
+    // Mid module connects to top shoot (leaf diameter 0.02)
+    ASSERT(segs[1].radius >= 0.01f, "mid trunk radius valid");
+    // Top shoot ends at leaf radius
+    ASSERT(std::fabs(segs[2].radius - 0.01f) < 1e-4f, "top shoot tip is leaf radius");
+
+    // Meshing produces a valid geometry without pinched degenerate triangles
+    MeshData mesh = emitPlantMesh(plant, 6u);
+    ASSERT(!mesh.empty(), "mesh emitted successfully");
+    ASSERT(mesh.vertexCount() > 0, "mesh has vertices");
+    ASSERT(mesh.hasNormals() && mesh.hasTangents() && mesh.hasUVs(),
+           "mesh has complete material attributes");
+}
+
+// Multi-child fork junction radius matches pipe-model power sum.
+TEST(mesh_emit_multi_child_fork_junction_thickness) {
+    static BranchModulePrototype proto;
+    proto.nodes.clear();
+    proto.edges.clear();
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.5f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Plant plant;
+    plant.species = {};
+    plant.species.leafDiameter = 0.02f;
+    plant.species.pipeExp = 2.5f;
+
+    const float pe = 2.5f;
+    const float dA = 0.20f;
+    const float dB = 0.20f;
+    const float rA = 0.5f * dA;
+    const float rB = 0.5f * dB;
+    const float expectedPipeR = std::pow(std::pow(rA, pe) + std::pow(rB, pe), 1.0f / pe);
+
+    BranchModuleInstance trunk;
+    trunk.prototype = &proto;
+    trunk.parent = UINT32_MAX;
+    trunk.diameter = 2.0f * expectedPipeR;
+
+    BranchModuleInstance chA;
+    chA.prototype = &proto;
+    chA.parent = 0;
+    chA.parentAttachTerminal = 1;
+    chA.diameter = dA;
+
+    BranchModuleInstance chB;
+    chB.prototype = &proto;
+    chB.parent = 0;
+    chB.parentAttachTerminal = 1;
+    chB.diameter = dB;
+
+    plant.modules = {trunk, chA, chB};
+
+    auto segs = emitPlantSegments(plant);
+    ASSERT(segs.size() == 3u, "3 segments emitted");
+
+    // Junction segment radius is thicker than any individual branch
+    ASSERT(segs[0].radius >= expectedPipeR - 1e-4f, "junction radius at least pipe-model sum");
+    ASSERT(segs[0].radius > rA, "junction strictly thicker than child branch A");
+    ASSERT(segs[0].radius > rB, "junction strictly thicker than child branch B");
+
+    MeshData mesh = emitPlantMesh(plant, 6u);
+    ASSERT(!mesh.empty(), "fork mesh emitted successfully");
+}
+
+// Curved prototype interpolates radius continuously along sub-edges.
+TEST(mesh_emit_curved_prototype_continuous_interpolation) {
+    static BranchModulePrototype proto;
+    proto.nodes.clear();
+    proto.edges.clear();
+    // 5 nodes (4 edges)
+    for (int i = 0; i < 5; ++i) {
+        proto.nodes.push_back({{0.0f, static_cast<float>(i) * 0.25f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    }
+    for (int i = 0; i < 4; ++i) {
+        proto.edges.push_back({static_cast<uint32_t>(i), static_cast<uint32_t>(i + 1)});
+    }
+    proto.rootNode = 0;
+    proto.terminalNodes = {4};
+
+    Plant plant;
+    plant.species = {};
+    plant.species.leafDiameter = 0.02f;  // tip radius 0.01
+    plant.species.pipeExp = 2.5f;
+
+    BranchModuleInstance m;
+    m.prototype = &proto;
+    m.parent = UINT32_MAX;
+    m.diameter = 0.40f;  // root radius 0.20
+    plant.modules.push_back(m);
+
+    auto segs = emitPlantSegments(plant);
+    ASSERT(segs.size() == 4u, "4 segments emitted");
+
+    // Radii should smoothly decrease from root to tip
+    ASSERT(segs[0].radius > segs[1].radius, "seg 0 thicker than seg 1");
+    ASSERT(segs[1].radius > segs[2].radius, "seg 1 thicker than seg 2");
+    ASSERT(segs[2].radius > segs[3].radius, "seg 2 thicker than seg 3");
+    ASSERT(std::fabs(segs[3].radius - 0.01f) < 1e-4f, "tip segment radius equals leaf radius");
+}
+
+// Branch collar flare swelling at multi-child junctions.
+TEST(mesh_emit_branch_collar_flare_at_junction) {
+    static BranchModulePrototype proto;
+    proto.nodes.clear();
+    proto.edges.clear();
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.5f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Plant plant;
+    plant.species = {};
+    plant.species.leafDiameter = 0.02f;
+    plant.species.pipeExp = 2.5f;
+
+    const float pe = 2.5f;
+    const float d1 = 0.15f;
+    const float d2 = 0.15f;
+    const float baseR = std::pow(std::pow(0.5f * d1, pe) + std::pow(0.5f * d2, pe), 1.0f / pe);
+
+    BranchModuleInstance root;
+    root.prototype = &proto;
+    root.parent = UINT32_MAX;
+    root.diameter = 2.0f * baseR;
+
+    BranchModuleInstance a; a.prototype = &proto; a.parent = 0; a.parentAttachTerminal = 1; a.diameter = d1;
+    BranchModuleInstance b; b.prototype = &proto; b.parent = 0; b.parentAttachTerminal = 1; b.diameter = d2;
+
+    plant.modules = {root, a, b};
+
+    auto segs = emitPlantSegments(plant);
+    ASSERT(segs.size() == 3u, "3 segments");
+    // Junction radius has subtle flare (1.05x)
+    ASSERT(segs[0].radius >= baseR * 1.04f, "junction exhibits collar flare swelling");
+}
+
