@@ -60,26 +60,343 @@ std::vector<uint32_t> nodeDepths(const BranchModulePrototype& proto) {
     return depth;
 }
 
+// Smoothly weld / bridge branch fork junctions connecting parent cylinder rings
+// to child branch root rings.
+void weldBranchJunctions(MeshData& mesh, const std::vector<bromesh::BranchSegment>& segs, int sides) {
+    if (segs.empty() || mesh.empty() || sides < 3) return;
+
+    // Topology analysis matching bromesh::meshBranches chain extraction
+    std::vector<std::vector<int>> children(segs.size());
+    for (size_t i = 0; i < segs.size(); ++i) {
+        int p = segs[i].parent;
+        if (p >= 0 && static_cast<size_t>(p) < segs.size()) {
+            children[p].push_back(static_cast<int>(i));
+        }
+    }
+
+    auto isChainStart = [&](int i) -> bool {
+        int p = segs[i].parent;
+        if (p < 0) return true;
+        return children[p].size() != 1;
+    };
+
+    struct ChainInfo {
+        int startSeg;
+        int endSeg;
+        size_t pathLen;
+        size_t vertStart;
+        bool capStart;
+        bool capEnd;
+    };
+
+    std::vector<ChainInfo> chains;
+    size_t currentVertOffset = 0;
+
+    // Map each segment to its {chainIdx, ringIdx} in the swept mesh
+    std::vector<std::pair<int, int>> segEndRing(segs.size(), {-1, -1});
+    std::vector<int> chainOfStartSeg(segs.size(), -1);
+
+    for (size_t i = 0; i < segs.size(); ++i) {
+        if (!isChainStart(static_cast<int>(i))) continue;
+
+        size_t pathLen = 1;
+        int cur = static_cast<int>(i);
+        std::vector<int> segsInChain;
+        while (true) {
+            const bromesh::BranchSegment& s = segs[cur];
+            if (bromath::vdist2(s.from, s.to) > 1e-12f) {
+                segsInChain.push_back(cur);
+                ++pathLen;
+            }
+            if (children[cur].size() != 1) break;
+            cur = children[cur][0];
+        }
+
+        if (pathLen < 2) continue;
+
+        int chainIdx = static_cast<int>(chains.size());
+        chainOfStartSeg[i] = chainIdx;
+
+        bool capStart = (segs[i].parent < 0);
+        bool capEnd = children[cur].empty();
+
+        chains.push_back({static_cast<int>(i), cur, pathLen, currentVertOffset, capStart, capEnd});
+
+        for (size_t ring = 0; ring < segsInChain.size(); ++ring) {
+            segEndRing[segsInChain[ring]] = {chainIdx, static_cast<int>(ring + 1)};
+        }
+
+        size_t numRingVerts = pathLen * static_cast<size_t>(sides);
+        size_t numCapVerts = (capStart ? 1 : 0) + (capEnd ? 1 : 0);
+        currentVertOffset += (numRingVerts + numCapVerts);
+    }
+
+    if (currentVertOffset != mesh.vertexCount()) {
+        return;
+    }
+
+    // For every chain with a valid parent segment, bridge its root ring (ring 0)
+    // to the parent segment's end ring.
+    for (size_t c = 0; c < chains.size(); ++c) {
+        const auto& chain = chains[c];
+        int pSeg = segs[chain.startSeg].parent;
+        if (pSeg < 0 || static_cast<size_t>(pSeg) >= segs.size()) continue;
+
+        auto pRingInfo = segEndRing[pSeg];
+        if (pRingInfo.first < 0) continue;
+
+        const auto& pChain = chains[pRingInfo.first];
+        size_t pRingIdx = static_cast<size_t>(pRingInfo.second);
+        if (pRingIdx >= pChain.pathLen) continue;
+
+        size_t cBase = chain.vertStart;
+        size_t pBase = pChain.vertStart + pRingIdx * static_cast<size_t>(sides);
+
+        int bestDelta = 0;
+        float bestDist2 = 1e30f;
+        for (int d = 0; d < sides; ++d) {
+            float sumD2 = 0.0f;
+            for (int p = 0; p < sides; ++p) {
+                uint32_t cIdx = static_cast<uint32_t>(cBase + p);
+                uint32_t pIdx = static_cast<uint32_t>(pBase + ((p + d) % sides));
+                Vec3 cPos{mesh.positions[cIdx * 3], mesh.positions[cIdx * 3 + 1], mesh.positions[cIdx * 3 + 2]};
+                Vec3 pPos{mesh.positions[pIdx * 3], mesh.positions[pIdx * 3 + 1], mesh.positions[pIdx * 3 + 2]};
+                sumD2 += bromath::vdist2(cPos, pPos);
+            }
+            if (sumD2 < bestDist2) {
+                bestDist2 = sumD2;
+                bestDelta = d;
+            }
+        }
+
+        for (int p = 0; p < sides; ++p) {
+            int pNext = (p + 1) % sides;
+            int k0 = (p + bestDelta) % sides;
+            int k1 = (p + 1 + bestDelta) % sides;
+
+            uint32_t c0 = static_cast<uint32_t>(cBase + p);
+            uint32_t c1 = static_cast<uint32_t>(cBase + pNext);
+            uint32_t p0 = static_cast<uint32_t>(pBase + k0);
+            uint32_t p1 = static_cast<uint32_t>(pBase + k1);
+
+            mesh.indices.push_back(c0);
+            mesh.indices.push_back(c1);
+            mesh.indices.push_back(p1);
+
+            mesh.indices.push_back(c0);
+            mesh.indices.push_back(p1);
+            mesh.indices.push_back(p0);
+        }
+    }
+}
+
+// Bake hierarchical wind deformation parameters into vertex colors:
+// R = wind sway bend deflection in [0, 1]
+// G = normalized branch hierarchy depth in [0, 1]
+// B = branch stiffness in [0, 1]
+// A = normalized vertical height / canopy envelope in [0, 1]
+void bakeWindDeformation(MeshData& mesh,
+                         const std::vector<bromesh::BranchSegment>& segs,
+                         int sides,
+                         float leafDiameter) {
+    if (mesh.empty()) return;
+    const size_t vc = mesh.vertexCount();
+    mesh.colors.resize(vc * 4);
+
+    if (segs.empty()) {
+        for (size_t i = 0; i < vc; ++i) {
+            mesh.colors[i * 4 + 0] = 0.0f;
+            mesh.colors[i * 4 + 1] = 0.0f;
+            mesh.colors[i * 4 + 2] = 1.0f;
+            mesh.colors[i * 4 + 3] = 1.0f;
+        }
+        return;
+    }
+
+    int maxDepth = 0;
+    float maxRadius = 0.0f;
+    for (const auto& s : segs) {
+        if (s.depth > maxDepth) maxDepth = s.depth;
+        if (s.radius > maxRadius) maxRadius = s.radius;
+    }
+    const float leafR = 0.5f * (leafDiameter > 0.0f ? leafDiameter : 0.02f);
+    if (maxRadius < leafR) maxRadius = leafR + 0.05f;
+
+    float minY = 1e30f, maxY = -1e30f;
+    for (size_t i = 0; i < vc; ++i) {
+        float y = mesh.positions[i * 3 + 1];
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+    }
+    const float spanY = std::max(1e-4f, maxY - minY);
+    const float depthDenom = static_cast<float>(std::max(1, maxDepth + 1));
+    const float radiusDenom = std::max(1e-4f, maxRadius - leafR);
+
+    // Topological mapping matching swept chains
+    std::vector<std::vector<int>> children(segs.size());
+    for (size_t i = 0; i < segs.size(); ++i) {
+        int p = segs[i].parent;
+        if (p >= 0 && static_cast<size_t>(p) < segs.size()) {
+            children[p].push_back(static_cast<int>(i));
+        }
+    }
+
+    auto isChainStart = [&](int i) -> bool {
+        int p = segs[i].parent;
+        if (p < 0) return true;
+        return children[p].size() != 1;
+    };
+
+    size_t currentVertOffset = 0;
+    for (size_t i = 0; i < segs.size(); ++i) {
+        if (!isChainStart(static_cast<int>(i))) continue;
+
+        std::vector<int> segsInChain;
+        int cur = static_cast<int>(i);
+        while (true) {
+            const bromesh::BranchSegment& s = segs[cur];
+            if (bromath::vdist2(s.from, s.to) > 1e-12f) {
+                segsInChain.push_back(cur);
+            }
+            if (children[cur].size() != 1) break;
+            cur = children[cur][0];
+        }
+
+        if (segsInChain.empty()) continue;
+
+        size_t pathLen = segsInChain.size() + 1;
+        bool capStart = (segs[i].parent < 0);
+        bool capEnd = children[cur].empty();
+
+        int p0 = segs[i].parent;
+        float r0 = (p0 >= 0 && segs[p0].radius > 0.0f) ? segs[p0].radius
+                  : (segs[i].radius > 0.0f ? segs[i].radius : leafR);
+
+        // Ring 0
+        {
+            float effDepth = static_cast<float>(segs[i].depth);
+            float normDepth = std::clamp(effDepth / depthDenom, 0.0f, 1.0f);
+            float stiffness = std::clamp((r0 - leafR) / radiusDenom, 0.0f, 1.0f);
+            float flex = 1.0f - 0.85f * stiffness;
+
+            for (int p = 0; p < sides; ++p) {
+                size_t vIdx = currentVertOffset + p;
+                if (vIdx < vc) {
+                    float y = mesh.positions[vIdx * 3 + 1];
+                    float normHeight = std::clamp((y - minY) / spanY, 0.0f, 1.0f);
+                    float windBend = std::clamp(normDepth * flex * (0.15f + 0.85f * normHeight), 0.0f, 1.0f);
+
+                    mesh.colors[vIdx * 4 + 0] = windBend;
+                    mesh.colors[vIdx * 4 + 1] = normDepth;
+                    mesh.colors[vIdx * 4 + 2] = stiffness;
+                    mesh.colors[vIdx * 4 + 3] = normHeight;
+                }
+            }
+        }
+
+        // Subsequent rings (r = 1 .. segsInChain.size())
+        for (size_t r = 0; r < segsInChain.size(); ++r) {
+            int sIdx = segsInChain[r];
+            const auto& s = segs[sIdx];
+            float effDepth = static_cast<float>(s.depth) + 1.0f;
+            float normDepth = std::clamp(effDepth / depthDenom, 0.0f, 1.0f);
+            float stiffness = std::clamp((s.radius - leafR) / radiusDenom, 0.0f, 1.0f);
+            float flex = 1.0f - 0.85f * stiffness;
+
+            size_t ringBase = currentVertOffset + (r + 1) * static_cast<size_t>(sides);
+            for (int p = 0; p < sides; ++p) {
+                size_t vIdx = ringBase + p;
+                if (vIdx < vc) {
+                    float y = mesh.positions[vIdx * 3 + 1];
+                    float normHeight = std::clamp((y - minY) / spanY, 0.0f, 1.0f);
+                    float windBend = std::clamp(normDepth * flex * (0.15f + 0.85f * normHeight), 0.0f, 1.0f);
+
+                    mesh.colors[vIdx * 4 + 0] = windBend;
+                    mesh.colors[vIdx * 4 + 1] = normDepth;
+                    mesh.colors[vIdx * 4 + 2] = stiffness;
+                    mesh.colors[vIdx * 4 + 3] = normHeight;
+                }
+            }
+        }
+
+        size_t totalRingVerts = pathLen * static_cast<size_t>(sides);
+        size_t nextOffset = currentVertOffset + totalRingVerts;
+
+        if (capStart && nextOffset < vc) {
+            size_t vIdx = nextOffset++;
+            float y = mesh.positions[vIdx * 3 + 1];
+            float normHeight = std::clamp((y - minY) / spanY, 0.0f, 1.0f);
+            float effDepth = static_cast<float>(segs[i].depth);
+            float normDepth = std::clamp(effDepth / depthDenom, 0.0f, 1.0f);
+            float stiffness = std::clamp((r0 - leafR) / radiusDenom, 0.0f, 1.0f);
+            float flex = 1.0f - 0.85f * stiffness;
+            float windBend = std::clamp(normDepth * flex * (0.15f + 0.85f * normHeight), 0.0f, 1.0f);
+
+            mesh.colors[vIdx * 4 + 0] = windBend;
+            mesh.colors[vIdx * 4 + 1] = normDepth;
+            mesh.colors[vIdx * 4 + 2] = stiffness;
+            mesh.colors[vIdx * 4 + 3] = normHeight;
+        }
+
+        if (capEnd && nextOffset < vc) {
+            size_t vIdx = nextOffset++;
+            int lastSegIdx = segsInChain.back();
+            const auto& lastSeg = segs[lastSegIdx];
+            float y = mesh.positions[vIdx * 3 + 1];
+            float normHeight = std::clamp((y - minY) / spanY, 0.0f, 1.0f);
+            float effDepth = static_cast<float>(lastSeg.depth) + 1.0f;
+            float normDepth = std::clamp(effDepth / depthDenom, 0.0f, 1.0f);
+            float stiffness = std::clamp((lastSeg.radius - leafR) / radiusDenom, 0.0f, 1.0f);
+            float flex = 1.0f - 0.85f * stiffness;
+            float windBend = std::clamp(normDepth * flex * (0.15f + 0.85f * normHeight), 0.0f, 1.0f);
+
+            mesh.colors[vIdx * 4 + 0] = windBend;
+            mesh.colors[vIdx * 4 + 1] = normDepth;
+            mesh.colors[vIdx * 4 + 2] = stiffness;
+            mesh.colors[vIdx * 4 + 3] = normHeight;
+        }
+
+        currentVertOffset = nextOffset;
+    }
+
+    for (size_t i = currentVertOffset; i < vc; ++i) {
+        float y = mesh.positions[i * 3 + 1];
+        float normHeight = std::clamp((y - minY) / spanY, 0.0f, 1.0f);
+        mesh.colors[i * 4 + 0] = 0.5f * normHeight;
+        mesh.colors[i * 4 + 1] = 0.5f;
+        mesh.colors[i * 4 + 2] = 0.5f;
+        mesh.colors[i * 4 + 3] = normHeight;
+    }
+}
+
 } // namespace
 
 MeshData emitPlantMesh(const Plant& plant, uint32_t sides) {
-    // The branch skeleton emitSegments already produces is exactly the
-    // BranchSegment input bromesh::meshBranches wants. Meshing through it
-    // sweeps each single-child chain as one continuous parallel-transport
-    // tube — smooth welded joints, UVs, and end caps — instead of the
-    // faceted, unwelded, UV-less per-edge cylinders this used to emit.
-    MeshData mesh = bromesh::meshBranches(emitPlantSegments(plant), static_cast<int>(sides));
-    // The swept tube carries UVs + normals, so complete the material set
-    // with tangents — bark normal maps need them, and nothing downstream
-    // could recover them once the segment topology is gone.
+    auto segs = emitPlantSegments(plant);
+    if (segs.empty()) return {};
+    MeshData mesh = bromesh::meshBranches(segs, static_cast<int>(sides));
+    if (mesh.empty()) return {};
+
+    weldBranchJunctions(mesh, segs, static_cast<int>(sides));
+    bromesh::computeNormals(mesh);
     bromesh::generateTangents(mesh);
+    bakeWindDeformation(mesh, segs, static_cast<int>(sides), plant.species.leafDiameter);
     return mesh;
 }
 
 MeshData emitWorldMesh(const WorldState& world, uint32_t sides) {
-    MeshData mesh = bromesh::meshBranches(emitWorldSegments(world), static_cast<int>(sides));
+    auto segs = emitWorldSegments(world);
+    if (segs.empty()) return {};
+    MeshData mesh = bromesh::meshBranches(segs, static_cast<int>(sides));
+    if (mesh.empty()) return {};
+
+    weldBranchJunctions(mesh, segs, static_cast<int>(sides));
+    bromesh::computeNormals(mesh);
+    bromesh::generateTangents(mesh);
+    bakeWindDeformation(mesh, segs, static_cast<int>(sides), 0.02f);
     return mesh;
 }
+
 
 namespace {
 

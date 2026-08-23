@@ -861,3 +861,117 @@ TEST(mesh_emit_buttress_flare_produces_valid_mesh) {
            "mesh has complete material attributes");
 }
 
+// Branch junction welding generates bridge quads between parent and child branch rings.
+TEST(mesh_emit_branch_junction_welding_and_bridges) {
+    BranchModulePrototype proto;
+    proto.nodes.push_back({{ 0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{ 0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Plant plant;
+    plant.species.leafDiameter = 0.02f;
+    plant.species.pipeExp = 2.5f;
+
+    BranchModuleInstance trunk;
+    trunk.prototype = &proto;
+    trunk.parent = UINT32_MAX;
+    trunk.diameter = 0.30f;
+
+    BranchModuleInstance branchA;
+    branchA.prototype = &proto;
+    branchA.parent = 0;
+    branchA.parentAttachTerminal = 1;
+    branchA.diameter = 0.15f;
+
+    BranchModuleInstance branchB;
+    branchB.prototype = &proto;
+    branchB.parent = 0;
+    branchB.parentAttachTerminal = 1;
+    branchB.diameter = 0.15f;
+
+    plant.modules = {trunk, branchA, branchB};
+
+    const uint32_t sides = 6u;
+    MeshData mesh = emitPlantMesh(plant, sides);
+    ASSERT(!mesh.empty(), "fork mesh emitted");
+    ASSERT(mesh.validate(), "mesh passes validation");
+    ASSERT(mesh.hasNormals() && mesh.hasUVs() && mesh.hasTangents() && mesh.hasColors(),
+           "full attribute stream generated including wind attributes");
+
+    // Verify all indices are valid
+    for (size_t t = 0; t < mesh.triangleCount(); ++t) {
+        uint32_t i0 = mesh.indices[t * 3 + 0];
+        uint32_t i1 = mesh.indices[t * 3 + 1];
+        uint32_t i2 = mesh.indices[t * 3 + 2];
+        ASSERT(i0 < mesh.vertexCount() && i1 < mesh.vertexCount() && i2 < mesh.vertexCount(),
+               "indices within vertex bounds");
+        ASSERT(i0 != i1 && i1 != i2 && i0 != i2, "no degenerate triangles");
+    }
+}
+
+// Wind deformation vertex attributes baked into vertex colors (RGBA).
+TEST(mesh_emit_wind_deformation_vertex_attributes) {
+    BranchModulePrototype proto;
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    Plant plant;
+    plant.species.leafDiameter = 0.02f;
+
+    BranchModuleInstance base;
+    base.prototype = &proto;
+    base.parent = UINT32_MAX;
+    base.worldPos = {0.0f, 0.0f, 0.0f};
+    base.diameter = 0.40f;
+
+    BranchModuleInstance mid;
+    mid.prototype = &proto;
+    mid.parent = 0;
+    mid.parentAttachTerminal = 1;
+    mid.worldPos = {0.0f, 1.0f, 0.0f};
+    mid.diameter = 0.20f;
+
+    BranchModuleInstance tip;
+    tip.prototype = &proto;
+    tip.parent = 1;
+    tip.parentAttachTerminal = 1;
+    tip.worldPos = {0.0f, 2.0f, 0.0f};
+    tip.diameter = 0.02f;
+
+    plant.modules = {base, mid, tip};
+
+    MeshData mesh = emitPlantMesh(plant, 6u);
+    ASSERT(mesh.hasColors(), "mesh carries wind deformation colors");
+    ASSERT(mesh.colors.size() == mesh.vertexCount() * 4, "4 floats per vertex color");
+
+    float minBend = 1.0f, maxBend = 0.0f;
+    float maxStiffness = 0.0f, minStiffness = 1.0f;
+
+    for (size_t v = 0; v < mesh.vertexCount(); ++v) {
+        float bend = mesh.colors[v * 4 + 0];
+        float depth = mesh.colors[v * 4 + 1];
+        float stiffness = mesh.colors[v * 4 + 2];
+        float height = mesh.colors[v * 4 + 3];
+
+        ASSERT(std::isfinite(bend) && bend >= -1e-4f && bend <= 1.0001f, "bend in [0, 1]");
+        ASSERT(std::isfinite(depth) && depth >= -1e-4f && depth <= 1.0001f, "depth in [0, 1]");
+        ASSERT(std::isfinite(stiffness) && stiffness >= -1e-4f && stiffness <= 1.0001f, "stiffness in [0, 1]");
+        ASSERT(std::isfinite(height) && height >= -1e-4f && height <= 1.0001f, "height in [0, 1]");
+
+        minBend = std::min(minBend, bend);
+        maxBend = std::max(maxBend, bend);
+        maxStiffness = std::max(maxStiffness, stiffness);
+        minStiffness = std::min(minStiffness, stiffness);
+    }
+
+    ASSERT(minBend < 0.05f, "base of trunk has near-zero wind bend");
+    ASSERT(maxBend > 0.3f, "tip of tree has significant wind bend");
+    ASSERT(maxStiffness > 0.8f, "trunk base has high stiffness");
+    ASSERT(minStiffness < 0.2f, "terminal tip has low stiffness");
+}
+
