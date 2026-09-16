@@ -1,0 +1,13 @@
+# Standard JavaScript host globals
+globalThis
+console
+Object
+Array
+Math
+TypeError
+RangeError
+Float32Array
+Uint32Array
+
+# Bronze host globals
+__bro_flora_native
