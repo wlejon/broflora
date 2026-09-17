@@ -42,6 +42,10 @@ jobs:
           path: bromesh
           submodules: recursive
 
+      # bronze (and through it brass) is needed at configure for the api;
+      # neither is built here, since only the broflora target is traced.
+      - uses: wlejon/bronze/.github/actions/checkout-toolchain@main
+
       # Debug / -O0 keeps the extracted IR close to the source so dataflow paths
       # in the results point at code a human can act on.
       - name: Configure

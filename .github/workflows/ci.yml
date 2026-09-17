@@ -19,6 +19,17 @@ concurrency:
 #       broflora/   <- this repo, checked out into a named path
 #       bromath/
 #       bromesh/    <- with submodules (broflora links it)
+#       bronze/     <- the JavaScript runtime broflora_api binds, and the
+#                      compiler that builds src/api/js/flora.js
+#       brass/      <- bronze's code generator
+#
+# bronze and brass are laid out by bronze's checkout-toolchain action and
+# compiled inside this build tree (bronze add_subdirectory()s brass), with
+# the job's own compiler and CRT — the api is bound across bronze's C++ embed
+# boundary, so a prebuilt bronze would be an unverifiable ABI hazard. That is
+# what makes broflora_api_test the check that the library works the way bro
+# uses it. On macos-arm64 there is no compiled JS (bronze emits x86_64 only)
+# and that test is not registered; the api is still built there.
 #
 # Release, not Debug: broflora links bromesh, whose meshoptimizer Debug
 # assertions surface as a modal abort() on Windows. Default CMake generator, not
@@ -52,6 +63,8 @@ jobs:
           repository: wlejon/bromesh
           path: bromesh
           submodules: recursive
+
+      - uses: wlejon/bronze/.github/actions/checkout-toolchain@main
 
       - name: Configure
         env:
@@ -89,6 +102,8 @@ jobs:
           repository: wlejon/bromesh
           path: bromesh
           submodules: recursive
+
+      - uses: wlejon/bronze/.github/actions/checkout-toolchain@main
 
       - name: Install gcovr
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gcovr

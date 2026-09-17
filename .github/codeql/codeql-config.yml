@@ -12,3 +12,5 @@ queries:
 paths-ignore:
   - bromath
   - bromesh
+  - bronze
+  - brass

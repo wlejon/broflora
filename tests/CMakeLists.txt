@@ -28,7 +28,15 @@ endif()
 
 add_test(NAME broflora_test COMMAND broflora_test)
 
-if(TARGET broflora_api)
+# The api test installs bro.flora into a bronze realm and drives it. The
+# JavaScript half is js/flora.js compiled by the bronze CLI, and bronze emits
+# x86_64 only, so on Apple Silicon the api carries a no-op entry instead
+# (src/api/CMakeLists.txt) and there is nothing for the test to see: it is
+# not registered there rather than registered to fail.
+if(TARGET broflora_api AND NOT BROFLORA_API_COMPILED_JS)
+    message(STATUS "broflora: broflora_api_test not registered (no compiled JS on this target)")
+endif()
+if(TARGET broflora_api AND BROFLORA_API_COMPILED_JS)
     add_executable(broflora_api_test test_api.cpp)
     target_link_libraries(broflora_api_test PRIVATE broflora_api bronze_runtime_shared)
     target_compile_features(broflora_api_test PRIVATE cxx_std_20)
