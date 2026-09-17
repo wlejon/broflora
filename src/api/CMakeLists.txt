@@ -1,13 +1,14 @@
 ## ── Compile JS flora with bronze AOT at build time ─────────────────────────
 
-# bronze's code generator emits x86_64 only, so on Apple Silicon js/flora.js
-# is not compiled and a no-op entry stands in: the natives still register,
-# but nothing mounts `bro.flora`. BROFLORA_API_COMPILED_JS tells the tests
-# which of the two they are looking at.
-if(APPLE AND (CMAKE_OSX_ARCHITECTURES MATCHES "arm64" OR (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")))
+# On a target brass has no code generator for (BRASS_HOST_BACKEND, decided in
+# brass's CMakeLists — Apple Silicon today) js/flora.js is not compiled and
+# a no-op entry stands in: the natives still register, but nothing mounts
+# `bro.flora`. BROFLORA_API_COMPILED_JS tells the tests which of the two
+# they are looking at.
+if(NOT BRASS_HOST_BACKEND)
     set(BROFLORA_COMPILED_JS_OBJECTS "${CMAKE_CURRENT_SOURCE_DIR}/bronze_js_stubs_arm64.cpp")
     set(BROFLORA_API_COMPILED_JS OFF PARENT_SCOPE)
-    message(STATUS "broflora: api built with the arm64 no-op JS entry (bronze emits x86_64 only)")
+    message(STATUS "broflora: api built with the no-op JS entry (brass has no code generator for this target)")
 else()
     set(BROFLORA_API_COMPILED_JS ON PARENT_SCOPE)
     set(GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
