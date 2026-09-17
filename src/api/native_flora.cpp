@@ -17,6 +17,7 @@ Value jsEmitScatterSegments(Value thisVal, std::span<const Value> args);
 Value jsEmitBranchTubes(Value thisVal, std::span<const Value> args);
 Value jsEmitFoliageMesh(Value thisVal, std::span<const Value> args);
 Value jsEmitPlantFoliageMesh(Value thisVal, std::span<const Value> args);
+Value jsEmitBloomMesh(Value thisVal, std::span<const Value> args);
 Value jsLeafCluster(Value thisVal, std::span<const Value> args);
 
 namespace {
@@ -388,6 +389,7 @@ void registerFloraNativeHelpers() {
     REG_FN(emitScatterSegments, 2, jsEmitScatterSegments);
     REG_FN(emitBranchTubes, 2, jsEmitBranchTubes);
     REG_FN(emitFoliageMesh, 3, jsEmitFoliageMesh);
+    REG_FN(emitBloomMesh, 4, jsEmitBloomMesh);
     REG_FN(emitPlantFoliageMesh, 4, jsEmitPlantFoliageMesh);
     REG_FN(leafCluster, 2, jsLeafCluster);
 

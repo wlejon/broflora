@@ -215,6 +215,11 @@
         return __bro_flora_native.emitPlantFoliageMesh(this, plantIdx, leafMesh, opts);
     });
 
+    fn(FloraWorld.prototype, "emitBloomMesh", function emitBloomMesh(petalMesh, centerMesh, opts) {
+        if (petalMesh === undefined) throw new TypeError("bro.flora.FloraWorld.prototype.emitBloomMesh: petalMesh is required");
+        return __bro_flora_native.emitBloomMesh(this, petalMesh, centerMesh === undefined ? null : centerMesh, opts);
+    });
+
     accessor(FloraWorld.prototype, "simTime",
         function () {
             if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.FloraWorld_simTime_get === 'function') {

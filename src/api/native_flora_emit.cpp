@@ -389,6 +389,128 @@ Value jsEmitFoliageMesh(Value /*thisVal*/, std::span<const Value> args) {
     return wrapMeshData(std::move(md));
 }
 
+namespace {
+
+// Append `src` to `target` placed at `pos`, its +Y turned onto `norm`, scaled
+// by `scale`: the stamp emitBloomMesh makes per anchor. Normals rotate with
+// the geometry; a source without normals gets the up vector.
+void appendStamped(bromesh::MeshData& target, const bromesh::MeshData& src,
+                   const bromath::Vec3& pos, const bromath::Vec3& norm, float scale) {
+    if (src.empty()) return;
+    const uint32_t baseIndex = static_cast<uint32_t>(target.vertexCount());
+    const size_t nv = src.vertexCount();
+
+    bromath::Vec3 n = norm;
+    const float len = std::hypot(n.x, std::hypot(n.y, n.z));
+    if (len > 1e-6f) { n.x /= len; n.y /= len; n.z /= len; }
+    else { n = {0.0f, 1.0f, 0.0f}; }
+
+    const float ny = std::max(-1.0f, std::min(1.0f, n.y));
+    const float ang = std::acos(ny);
+    bromath::Vec3 axis{1.0f, 0.0f, 0.0f};
+    if (ang >= 1e-4f && ang <= 3.14159265f - 1e-4f) {
+        axis = {n.z, 0.0f, -n.x};
+        const float al = std::hypot(axis.x, axis.z);
+        if (al > 1e-6f) { axis.x /= al; axis.z /= al; }
+        else { axis = {1.0f, 0.0f, 0.0f}; }
+    }
+
+    const float c = std::cos(ang), s = std::sin(ang);
+    const float omc = 1.0f - c;
+    const float R[3][3] = {
+        { c + axis.x*axis.x*omc,          axis.x*axis.y*omc - axis.z*s, axis.x*axis.z*omc + axis.y*s },
+        { axis.y*axis.x*omc + axis.z*s,  c + axis.y*axis.y*omc,          axis.y*axis.z*omc - axis.x*s },
+        { axis.z*axis.x*omc - axis.y*s,  axis.z*axis.y*omc + axis.x*s,  c + axis.z*axis.z*omc          }
+    };
+
+    target.positions.reserve(target.positions.size() + nv * 3);
+    target.normals.reserve(target.normals.size() + nv * 3);
+    if (!src.uvs.empty()) target.uvs.reserve(target.uvs.size() + src.uvs.size());
+    target.indices.reserve(target.indices.size() + src.indices.size());
+
+    for (size_t i = 0; i < nv; ++i) {
+        const float px = src.positions[i * 3] * scale;
+        const float py = src.positions[i * 3 + 1] * scale;
+        const float pz = src.positions[i * 3 + 2] * scale;
+        target.positions.push_back(R[0][0]*px + R[0][1]*py + R[0][2]*pz + pos.x);
+        target.positions.push_back(R[1][0]*px + R[1][1]*py + R[1][2]*pz + pos.y);
+        target.positions.push_back(R[2][0]*px + R[2][1]*py + R[2][2]*pz + pos.z);
+
+        if (src.hasNormals()) {
+            const float nx = src.normals[i * 3];
+            const float nyy = src.normals[i * 3 + 1];
+            const float nz = src.normals[i * 3 + 2];
+            target.normals.push_back(R[0][0]*nx + R[0][1]*nyy + R[0][2]*nz);
+            target.normals.push_back(R[1][0]*nx + R[1][1]*nyy + R[1][2]*nz);
+            target.normals.push_back(R[2][0]*nx + R[2][1]*nyy + R[2][2]*nz);
+        } else {
+            target.normals.push_back(0.0f);
+            target.normals.push_back(1.0f);
+            target.normals.push_back(0.0f);
+        }
+
+        if (src.hasUVs()) {
+            target.uvs.push_back(src.uvs[i * 2]);
+            target.uvs.push_back(src.uvs[i * 2 + 1]);
+        }
+    }
+    for (size_t i = 0; i < src.indices.size(); ++i) {
+        target.indices.push_back(baseIndex + src.indices[i]);
+    }
+}
+
+}  // namespace
+
+// world.emitBloomMesh(petalMesh, centerMesh?, {bloomCap, bloomLightMin}) →
+// [petals, centers]: one merged mesh per part, a petal stamp at every
+// flowering anchor (strided down to bloomCap of them, the dim ones skipped)
+// and, when a center mesh is given, a center stamp lifted a little along the
+// anchor normal. Scale grows with the anchor's age.
+Value jsEmitBloomMesh(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.size() < 2) return ev::null();
+    auto* w = getWrapper(args[0]);
+    if (!w || !w->world) return ev::null();
+
+    bromesh::MeshData petal;
+    if (!getMeshData(args[1], petal) || petal.empty()) return ev::null();
+    bromesh::MeshData center;
+    const bool hasCenter = args.size() >= 3 && ev::isObject(args[2]) && getMeshData(args[2], center) && !center.empty();
+
+    uint32_t bloomCap = 500;
+    float bloomLightMin = 0.18f;
+    const size_t optsAt = 3;
+    if (args.size() > optsAt && ev::isObject(args[optsAt])) {
+        readUint32Field(args[optsAt], "bloomCap", bloomCap);
+        readFloatField(args[optsAt], "bloomLightMin", bloomLightMin);
+    }
+    if (bloomCap == 0) bloomCap = 1;
+
+    auto petals = std::make_unique<bromesh::MeshData>();
+    auto centers = std::make_unique<bromesh::MeshData>();
+
+    auto anchors = broflora::emitWorldBloomAnchors(*w->world);
+    const size_t stride = (anchors.size() > bloomCap) ? (anchors.size() + bloomCap - 1) / bloomCap : 1;
+    for (size_t i = 0; i < anchors.size(); i += stride) {
+        const auto& a = anchors[i];
+        if (a.lightExposure01 < bloomLightMin) continue;
+        const float s = 0.8f + 0.5f * std::min(1.0f, a.age01);
+        appendStamped(*petals, petal, a.position, a.normal, s);
+        if (hasCenter) {
+            const float lift = 0.012f * s;
+            const bromath::Vec3 cPos = {
+                a.position.x + a.normal.x * lift,
+                a.position.y + a.normal.y * lift,
+                a.position.z + a.normal.z * lift
+            };
+            appendStamped(*centers, center, cPos, a.normal, s);
+        }
+    }
+
+    ev::Persistent petalsVal(wrapMeshData(std::move(petals)));
+    ev::Persistent centersVal(wrapMeshData(std::move(centers)));
+    return hostArrayOf(2, [&](size_t i) { return i == 0 ? petalsVal.get() : centersVal.get(); });
+}
+
 Value jsEmitPlantFoliageMesh(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 3) return ev::null();
     auto* w = getWrapper(args[0]);
