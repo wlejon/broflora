@@ -28,6 +28,18 @@ endif()
 
 add_test(NAME broflora_test COMMAND broflora_test)
 
+add_executable(test_sdf_mesh test_sdf_mesh.cpp)
+target_link_libraries(test_sdf_mesh PRIVATE broflora bromesh)
+target_compile_features(test_sdf_mesh PRIVATE cxx_std_20)
+
+if(MSVC)
+    target_compile_options(test_sdf_mesh PRIVATE /W4)
+else()
+    target_compile_options(test_sdf_mesh PRIVATE -Wall -Wextra)
+endif()
+
+add_test(NAME test_sdf_mesh COMMAND test_sdf_mesh)
+
 # The api test installs bro.flora into a bronze realm and drives it. The
 # JavaScript half is js/flora.js compiled by the bronze CLI, and bronze emits
 # x86_64 only, so on Apple Silicon the api carries a no-op entry instead

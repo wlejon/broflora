@@ -560,4 +560,34 @@ Value jsLeafCluster(Value /*thisVal*/, std::span<const Value> args) {
     return wrapMeshData(std::move(md));
 }
 
+Value jsEmitPlantSdfMesh(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.size() < 2) return ev::null();
+    auto* w = getWrapper(args[0]);
+    if (!w || !w->world) return ev::null();
+    int plantIdx = static_cast<int>(ev::toDouble(args[1]));
+    if (plantIdx < 0 || static_cast<size_t>(plantIdx) >= w->world->plants.size()) return ev::null();
+
+    broflora::SdfMeshOptions opts;
+    if (args.size() >= 3 && ev::isObject(args[2])) {
+        readSdfMeshOptions(args[2], opts);
+    }
+    auto md = std::make_unique<bromesh::MeshData>(
+        broflora::emitPlantSdfMesh(w->world->plants[static_cast<size_t>(plantIdx)], opts));
+    return wrapMeshData(std::move(md));
+}
+
+Value jsEmitWorldSdfMesh(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.empty()) return ev::null();
+    auto* w = getWrapper(args[0]);
+    if (!w || !w->world) return ev::null();
+
+    broflora::SdfMeshOptions opts;
+    if (args.size() >= 2 && ev::isObject(args[1])) {
+        readSdfMeshOptions(args[1], opts);
+    }
+    auto md = std::make_unique<bromesh::MeshData>(
+        broflora::emitWorldSdfMesh(*w->world, opts));
+    return wrapMeshData(std::move(md));
+}
+
 } // namespace broflora::api

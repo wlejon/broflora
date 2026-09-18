@@ -220,6 +220,14 @@
         return __bro_flora_native.emitBloomMesh(this, petalMesh, centerMesh === undefined ? null : centerMesh, opts);
     });
 
+    fn(FloraWorld.prototype, "emitPlantSdfMesh", function emitPlantSdfMesh(plantIdx, opts) {
+        return __bro_flora_native.emitPlantSdfMesh(this, plantIdx, opts);
+    });
+
+    fn(FloraWorld.prototype, "emitWorldSdfMesh", function emitWorldSdfMesh(opts) {
+        return __bro_flora_native.emitWorldSdfMesh(this, opts);
+    });
+
     accessor(FloraWorld.prototype, "simTime",
         function () {
             if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.FloraWorld_simTime_get === 'function') {

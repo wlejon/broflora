@@ -145,6 +145,27 @@ static void test_api_installation_and_smoke() {
     Value vc = ev::getProperty(meshRes.value, "vertexCount");
     TEST_CHECK(ev::toDouble(vc) > 0.0);
 
+    // emitPlantSdfMesh & emitWorldSdfMesh
+    Value emitPlantSdfFn = ev::getProperty(world, "emitPlantSdfMesh");
+    TEST_CHECK(ev::isFunction(emitPlantSdfFn));
+    ev::Persistent sdfOpts(ev::createObject());
+    sdfOpts.set(ev::setProperty(sdfOpts.get(), "voxelSize", ev::fromDouble(0.01)));
+    Value plantArgs[2] = { ev::fromDouble(0.0), sdfOpts.get() };
+    ev::CallResult plantSdfRes = ev::call(emitPlantSdfFn, world, std::span<const Value>(plantArgs, 2));
+    TEST_CHECK(!plantSdfRes.thrown);
+    TEST_CHECK(ev::isObject(plantSdfRes.value));
+    Value plantSdfVc = ev::getProperty(plantSdfRes.value, "vertexCount");
+    TEST_CHECK(ev::toDouble(plantSdfVc) > 0.0);
+
+    Value emitWorldSdfFn = ev::getProperty(world, "emitWorldSdfMesh");
+    TEST_CHECK(ev::isFunction(emitWorldSdfFn));
+    Value worldArgs[1] = { sdfOpts.get() };
+    ev::CallResult worldSdfRes = ev::call(emitWorldSdfFn, world, std::span<const Value>(worldArgs, 1));
+    TEST_CHECK(!worldSdfRes.thrown);
+    TEST_CHECK(ev::isObject(worldSdfRes.value));
+    Value worldSdfVc = ev::getProperty(worldSdfRes.value, "vertexCount");
+    TEST_CHECK(ev::toDouble(worldSdfVc) > 0.0);
+
     // leafCluster
     Value leafClusterFn = ev::getProperty(floraV, "leafCluster");
     TEST_CHECK(ev::isFunction(leafClusterFn));

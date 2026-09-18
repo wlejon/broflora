@@ -94,6 +94,14 @@ inline bool readVec3Prop(Value obj, std::string_view prop, bromath::Vec3& out) {
     return false;
 }
 
+inline void readSdfMeshOptions(Value obj, broflora::SdfMeshOptions& opts) {
+    if (!ev::isObject(obj)) return;
+    readFloatField(obj, "voxelSize", opts.voxelSize);
+    readFloatField(obj, "smoothK", opts.smoothK);
+    readBoolField(obj, "useSurfaceNets", opts.useSurfaceNets);
+    readFloatField(obj, "margin", opts.margin);
+}
+
 // ── Value building helpers ─────────────────────────────────────────────
 
 inline Value createEmptyArray() {
