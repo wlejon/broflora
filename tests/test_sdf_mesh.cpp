@@ -136,7 +136,7 @@ static void test_surface_nets() {
     Plant plant = createGrownPlant();
     SdfMeshOptions opts;
     opts.useSurfaceNets = true;
-    opts.voxelSize = 0.04f;
+    opts.voxelSize = 0.02f;
     opts.smoothK = 0.03f;
     opts.margin = 0.08f;
 
