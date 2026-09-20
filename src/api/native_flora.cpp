@@ -52,6 +52,157 @@ void clearGlobalWind() {
     s_windTime = 0.0;
 }
 
+void applyWindToTransforms(float* transforms, size_t count,
+                           double windTime, double windStrength,
+                           double dirX, double dirY) {
+    if (!transforms || count == 0 || windStrength == 0.0) return;
+
+    float dxDir = static_cast<float>(dirX);
+    float dzDir = static_cast<float>(dirY);
+    float dlen = std::hypot(dxDir, dzDir);
+    if (dlen > 1e-6f) {
+        dxDir /= dlen;
+        dzDir /= dlen;
+    } else {
+        dxDir = 1.0f;
+        dzDir = 0.0f;
+    }
+
+    const float strength = static_cast<float>(windStrength);
+    const float time = static_cast<float>(windTime);
+
+    for (size_t i = 0; i < count; ++i) {
+        float* m = transforms + i * 16;
+        float px = m[3];
+        float py = m[7];
+        float pz = m[11];
+
+        float height = std::max(0.0f, py);
+        float heightFactor = 0.05f + 0.04f * height + 0.015f * height * height;
+        float phase = px * 0.4f + pz * 0.4f;
+        float wave = std::sin(time * 2.8f + phase) * 0.7f + std::sin(time * 5.2f + phase * 1.7f) * 0.3f;
+        float sway = strength * heightFactor * (1.0f + 0.6f * wave);
+
+        float offX = dxDir * sway;
+        float offZ = dzDir * sway;
+        float offY = -0.05f * (offX * offX + offZ * offZ) / (height + 0.1f);
+
+        m[3] += offX;
+        m[7] += offY;
+        m[11] += offZ;
+
+        float tilt = std::min(0.35f, sway * 0.2f);
+        if (std::abs(tilt) > 1e-4f) {
+            float c = std::cos(tilt);
+            float s = std::sin(tilt);
+            float t = 1.0f - c;
+
+            // Rotation axis perpendicular to (0,1,0) and (dxDir, 0, dzDir):
+            // u = (dzDir, 0, -dxDir)
+            float r00 = c + dzDir * dzDir * t;
+            float r01 = dxDir * s;
+            float r02 = -dxDir * dzDir * t;
+
+            float r10 = -dxDir * s;
+            float r11 = c;
+            float r12 = -dzDir * s;
+
+            float r20 = -dxDir * dzDir * t;
+            float r21 = dzDir * s;
+            float r22 = c + dxDir * dxDir * t;
+
+            // Apply orthonormal rotation matrix R to the 3x3 orientation/basis (columns 0, 1, 2)
+            for (int k = 0; k < 3; ++k) {
+                float v0 = m[k];
+                float v1 = m[4 + k];
+                float v2 = m[8 + k];
+
+                m[k]     = r00 * v0 + r01 * v1 + r02 * v2;
+                m[4 + k] = r10 * v0 + r11 * v1 + r12 * v2;
+                m[8 + k] = r20 * v0 + r21 * v1 + r22 * v2;
+            }
+        }
+    }
+}
+
+void applyWindToMeshData(bromesh::MeshData& md,
+                         double windTime, double windStrength,
+                         double dirX, double dirY) {
+    if (md.positions.empty() || windStrength == 0.0) return;
+
+    float dxDir = static_cast<float>(dirX);
+    float dzDir = static_cast<float>(dirY);
+    float dlen = std::hypot(dxDir, dzDir);
+    if (dlen > 1e-6f) {
+        dxDir /= dlen;
+        dzDir /= dlen;
+    } else {
+        dxDir = 1.0f;
+        dzDir = 0.0f;
+    }
+
+    const float strength = static_cast<float>(windStrength);
+    const float time = static_cast<float>(windTime);
+    size_t nv = md.positions.size() / 3;
+    bool hasNormals = (md.normals.size() == md.positions.size());
+
+    for (size_t i = 0; i < nv; ++i) {
+        float px = md.positions[i * 3 + 0];
+        float py = md.positions[i * 3 + 1];
+        float pz = md.positions[i * 3 + 2];
+
+        float height = std::max(0.0f, py);
+        float heightFactor = 0.04f * height + 0.015f * height * height;
+        float phase = px * 0.4f + pz * 0.4f;
+        float wave = std::sin(time * 2.8f + phase) * 0.7f + std::sin(time * 5.2f + phase * 1.7f) * 0.3f;
+        float sway = strength * heightFactor * (1.0f + 0.6f * wave);
+
+        float offX = dxDir * sway;
+        float offZ = dzDir * sway;
+        float offY = -0.05f * (offX * offX + offZ * offZ) / (height + 0.1f);
+
+        md.positions[i * 3 + 0] = px + offX;
+        md.positions[i * 3 + 1] = py + offY;
+        md.positions[i * 3 + 2] = pz + offZ;
+
+        if (hasNormals) {
+            float tilt = std::min(0.35f, sway * 0.2f);
+            if (std::abs(tilt) > 1e-4f) {
+                float c = std::cos(tilt);
+                float s = std::sin(tilt);
+                float t = 1.0f - c;
+
+                float r00 = c + dzDir * dzDir * t;
+                float r01 = dxDir * s;
+                float r02 = -dxDir * dzDir * t;
+
+                float r10 = -dxDir * s;
+                float r11 = c;
+                float r12 = -dzDir * s;
+
+                float r20 = -dxDir * dzDir * t;
+                float r21 = dzDir * s;
+                float r22 = c + dxDir * dxDir * t;
+
+                float nx = md.normals[i * 3 + 0];
+                float ny = md.normals[i * 3 + 1];
+                float nz = md.normals[i * 3 + 2];
+
+                float rnx = r00 * nx + r01 * ny + r02 * nz;
+                float rny = r10 * nx + r11 * ny + r12 * nz;
+                float rnz = r20 * nx + r21 * ny + r22 * nz;
+
+                float nlen = std::hypot(rnx, rny, rnz);
+                if (nlen > 1e-6f) {
+                    md.normals[i * 3 + 0] = rnx / nlen;
+                    md.normals[i * 3 + 1] = rny / nlen;
+                    md.normals[i * 3 + 2] = rnz / nlen;
+                }
+            }
+        }
+    }
+}
+
 namespace {
 
 Value jsCreateWorld(Value /*thisVal*/, std::span<const Value> args) {

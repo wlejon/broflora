@@ -1,6 +1,7 @@
 #include "test_framework.h"
 #include "broflora/api/api.h"
 #include "embed/embed.h"
+#include "native_flora_internal.h"
 
 #include <cmath>
 #include <iostream>
@@ -188,9 +189,56 @@ static void test_api_installation_and_smoke() {
     ev::destroyRealm(realm);
 }
 
+static void test_wind_transforms_and_normals() {
+    // 1. Test applyWindToTransforms preserves orthonormality
+    float transforms[16] = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 5.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
+    };
+    broflora::api::applyWindToTransforms(transforms, 1, 1.0, 1.0, 1.0, 0.0);
+
+    // Columns of the 3x3 block:
+    // col 0: transforms[0], transforms[4], transforms[8]
+    // col 1: transforms[1], transforms[5], transforms[9]
+    // col 2: transforms[2], transforms[6], transforms[10]
+    float len0 = std::sqrt(transforms[0]*transforms[0] + transforms[4]*transforms[4] + transforms[8]*transforms[8]);
+    float len1 = std::sqrt(transforms[1]*transforms[1] + transforms[5]*transforms[5] + transforms[9]*transforms[9]);
+    float len2 = std::sqrt(transforms[2]*transforms[2] + transforms[6]*transforms[6] + transforms[10]*transforms[10]);
+    TEST_CHECK(std::abs(len0 - 1.0f) < 1e-4f);
+    TEST_CHECK(std::abs(len1 - 1.0f) < 1e-4f);
+    TEST_CHECK(std::abs(len2 - 1.0f) < 1e-4f);
+
+    float dot01 = transforms[0]*transforms[1] + transforms[4]*transforms[5] + transforms[8]*transforms[9];
+    float dot02 = transforms[0]*transforms[2] + transforms[4]*transforms[6] + transforms[8]*transforms[10];
+    float dot12 = transforms[1]*transforms[2] + transforms[5]*transforms[6] + transforms[9]*transforms[10];
+    TEST_CHECK(std::abs(dot01) < 1e-4f);
+    TEST_CHECK(std::abs(dot02) < 1e-4f);
+    TEST_CHECK(std::abs(dot12) < 1e-4f);
+
+    // Verify there was actual tilting
+    TEST_CHECK(transforms[5] < 0.999f);
+
+    // 2. Test applyWindToMeshData updates normals
+    bromesh::MeshData md;
+    // Vertex at height 5.0
+    md.positions = {0.0f, 5.0f, 0.0f};
+    md.normals = {0.0f, 1.0f, 0.0f};
+    broflora::api::applyWindToMeshData(md, 1.0, 1.0, 1.0, 0.0);
+
+    float normLen = std::sqrt(md.normals[0]*md.normals[0] + md.normals[1]*md.normals[1] + md.normals[2]*md.normals[2]);
+    TEST_CHECK(std::abs(normLen - 1.0f) < 1e-4f);
+    // Normal should have tilted towards wind direction
+    TEST_CHECK(std::abs(md.normals[0]) > 0.01f);
+    TEST_CHECK(md.normals[1] < 0.999f);
+}
+
 int main() {
     std::cout << "Running broflora API test..." << std::endl;
     test_api_installation_and_smoke();
+    test_wind_transforms_and_normals();
     std::cout << "All broflora API tests passed!" << std::endl;
     return 0;
 }
+
