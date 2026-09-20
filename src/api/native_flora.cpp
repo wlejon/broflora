@@ -22,12 +22,37 @@ Value jsLeafCluster(Value thisVal, std::span<const Value> args);
 Value jsEmitPlantSdfMesh(Value thisVal, std::span<const Value> args);
 Value jsEmitWorldSdfMesh(Value thisVal, std::span<const Value> args);
 
-namespace {
-
 static double s_windStrength = 0.0;
 static double s_windDirX = 0.0;
 static double s_windDirY = 0.0;
 static double s_density = 1.0;
+static double s_windTime = 0.0;
+
+double getGlobalWindStrength() { return s_windStrength; }
+double getGlobalWindDirX() { return s_windDirX; }
+double getGlobalWindDirY() { return s_windDirY; }
+double getGlobalWindTime() { return s_windTime; }
+double getGlobalDensity() { return s_density; }
+void setGlobalWind(double strength, double dirX, double dirY) {
+    s_windStrength = strength;
+    s_windDirX = dirX;
+    s_windDirY = dirY;
+}
+void setGlobalDensity(double density) {
+    s_density = density;
+}
+void updateGlobalWind(double dt) {
+    s_windTime += dt;
+}
+void clearGlobalWind() {
+    s_windStrength = 0.0;
+    s_windDirX = 0.0;
+    s_windDirY = 0.0;
+    s_density = 1.0;
+    s_windTime = 0.0;
+}
+
+namespace {
 
 Value jsCreateWorld(Value /*thisVal*/, std::span<const Value> args) {
     auto world = std::make_unique<broflora::WorldState>();
@@ -334,16 +359,42 @@ Value jsSetWind(Value /*thisVal*/, std::span<const Value> args) {
     return ev::undefined();
 }
 
+Value jsWind(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.empty()) {
+        ev::Persistent o(ev::createObject());
+        o.set(ev::setProperty(o.get(), "strength", ev::fromDouble(s_windStrength)));
+        o.set(ev::setProperty(o.get(), "dirX", ev::fromDouble(s_windDirX)));
+        o.set(ev::setProperty(o.get(), "dirY", ev::fromDouble(s_windDirY)));
+        return o.get();
+    }
+    if (args.size() >= 1 && ev::isNumber(args[0])) s_windStrength = ev::toDouble(args[0]);
+    if (args.size() >= 2 && ev::isNumber(args[1])) s_windDirX = ev::toDouble(args[1]);
+    if (args.size() >= 3 && ev::isNumber(args[2])) s_windDirY = ev::toDouble(args[2]);
+    return ev::undefined();
+}
+
 Value jsSetDensity(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() >= 1 && ev::isNumber(args[0])) s_density = ev::toDouble(args[0]);
     return ev::undefined();
 }
 
-Value jsUpdate(Value /*thisVal*/, std::span<const Value> /*args*/) {
+Value jsDensity(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.empty()) {
+        return ev::fromDouble(s_density);
+    }
+    if (args.size() >= 1 && ev::isNumber(args[0])) s_density = ev::toDouble(args[0]);
+    return ev::undefined();
+}
+
+Value jsUpdate(Value /*thisVal*/, std::span<const Value> args) {
+    if (!args.empty() && ev::isNumber(args[0])) {
+        s_windTime += ev::toDouble(args[0]);
+    }
     return ev::undefined();
 }
 
 Value jsClear(Value /*thisVal*/, std::span<const Value> /*args*/) {
+    clearGlobalWind();
     return ev::undefined();
 }
 
@@ -398,9 +449,9 @@ void registerFloraNativeHelpers() {
     REG_FN(emitWorldSdfMesh, 2, jsEmitWorldSdfMesh);
 
     REG_FN(setWind, 3, jsSetWind);
-    REG_FN(wind, 3, jsSetWind);
+    REG_FN(wind, 3, jsWind);
     REG_FN(setDensity, 1, jsSetDensity);
-    REG_FN(density, 1, jsSetDensity);
+    REG_FN(density, 1, jsDensity);
     REG_FN(update, 1, jsUpdate);
     REG_FN(clear, 0, jsClear);
 
@@ -483,11 +534,23 @@ int32_t bro_flora_FloraWorld_moduleCount_get(void* self) {
     return static_cast<int32_t>(total);
 }
 
-void bro_flora_setWind(double /*strength*/, double /*dirX*/, double /*dirY*/) {}
-void bro_flora_wind(double /*strength*/, double /*dirX*/, double /*dirY*/) {}
-void bro_flora_setDensity(double /*density*/) {}
-void bro_flora_density(double /*density*/) {}
-void bro_flora_update(double /*dt*/) {}
-void bro_flora_clear(void) {}
+void bro_flora_setWind(double strength, double dirX, double dirY) {
+    broflora::api::setGlobalWind(strength, dirX, dirY);
+}
+void bro_flora_wind(double strength, double dirX, double dirY) {
+    broflora::api::setGlobalWind(strength, dirX, dirY);
+}
+void bro_flora_setDensity(double density) {
+    broflora::api::setGlobalDensity(density);
+}
+void bro_flora_density(double density) {
+    broflora::api::setGlobalDensity(density);
+}
+void bro_flora_update(double dt) {
+    broflora::api::updateGlobalWind(dt);
+}
+void bro_flora_clear(void) {
+    broflora::api::clearGlobalWind();
+}
 
 } // extern "C"

@@ -38,6 +38,17 @@ inline FloraWorldWrapper* getWrapper(Value v) {
     return static_cast<FloraWorldWrapper*>(data);
 }
 
+// ── Global simulation parameters (wind, density) ───────────────────────
+double getGlobalWindStrength();
+double getGlobalWindDirX();
+double getGlobalWindDirY();
+double getGlobalWindTime();
+double getGlobalDensity();
+void setGlobalWind(double strength, double dirX, double dirY);
+void setGlobalDensity(double density);
+void updateGlobalWind(double dt);
+void clearGlobalWind();
+
 // ── Property reading helpers ───────────────────────────────────────────
 
 inline bool readFloatField(Value obj, std::string_view prop, float& out) {
@@ -243,6 +254,97 @@ inline void fillFoliageDensity(const std::vector<broflora::FoliageSample>& sampl
         float stem     = f.twigGrade01 * f.twigGrade01;
         if (!f.isTerminal) stem *= 0.10f;
         opts.densityWeight[i] = exposure * maturity * alive * stem;
+    }
+}
+
+// ── Wind displacement helpers ──────────────────────────────────────────
+
+inline void applyWindToTransforms(float* transforms, size_t count,
+                                  double windTime, double windStrength,
+                                  double dirX, double dirY) {
+    if (!transforms || count == 0 || windStrength == 0.0) return;
+
+    float dxDir = static_cast<float>(dirX);
+    float dzDir = static_cast<float>(dirY);
+    float dlen = std::hypot(dxDir, dzDir);
+    if (dlen > 1e-6f) {
+        dxDir /= dlen;
+        dzDir /= dlen;
+    } else {
+        dxDir = 1.0f;
+        dzDir = 0.0f;
+    }
+
+    const float strength = static_cast<float>(windStrength);
+    const float time = static_cast<float>(windTime);
+
+    for (size_t i = 0; i < count; ++i) {
+        float* m = transforms + i * 16;
+        float px = m[3];
+        float py = m[7];
+        float pz = m[11];
+
+        float height = std::max(0.0f, py);
+        float heightFactor = 0.05f + 0.04f * height + 0.015f * height * height;
+        float phase = px * 0.4f + pz * 0.4f;
+        float wave = std::sin(time * 2.8f + phase) * 0.7f + std::sin(time * 5.2f + phase * 1.7f) * 0.3f;
+        float sway = strength * heightFactor * (1.0f + 0.6f * wave);
+
+        float offX = dxDir * sway;
+        float offZ = dzDir * sway;
+        float offY = -0.05f * (offX * offX + offZ * offZ) / (height + 0.1f);
+
+        m[3] += offX;
+        m[7] += offY;
+        m[11] += offZ;
+
+        float tilt = std::min(0.35f, sway * 0.2f);
+        if (std::abs(tilt) > 1e-4f) {
+            float sinT = std::sin(tilt);
+            m[0] += dxDir * sinT * 0.5f;
+            m[8] += dzDir * sinT * 0.5f;
+        }
+    }
+}
+
+inline void applyWindToMeshData(bromesh::MeshData& md,
+                                double windTime, double windStrength,
+                                double dirX, double dirY) {
+    if (md.positions.empty() || windStrength == 0.0) return;
+
+    float dxDir = static_cast<float>(dirX);
+    float dzDir = static_cast<float>(dirY);
+    float dlen = std::hypot(dxDir, dzDir);
+    if (dlen > 1e-6f) {
+        dxDir /= dlen;
+        dzDir /= dlen;
+    } else {
+        dxDir = 1.0f;
+        dzDir = 0.0f;
+    }
+
+    const float strength = static_cast<float>(windStrength);
+    const float time = static_cast<float>(windTime);
+    size_t nv = md.positions.size() / 3;
+
+    for (size_t i = 0; i < nv; ++i) {
+        float px = md.positions[i * 3 + 0];
+        float py = md.positions[i * 3 + 1];
+        float pz = md.positions[i * 3 + 2];
+
+        float height = std::max(0.0f, py);
+        float heightFactor = 0.04f * height + 0.015f * height * height;
+        float phase = px * 0.4f + pz * 0.4f;
+        float wave = std::sin(time * 2.8f + phase) * 0.7f + std::sin(time * 5.2f + phase * 1.7f) * 0.3f;
+        float sway = strength * heightFactor * (1.0f + 0.6f * wave);
+
+        float offX = dxDir * sway;
+        float offZ = dzDir * sway;
+        float offY = -0.05f * (offX * offX + offZ * offZ) / (height + 0.1f);
+
+        md.positions[i * 3 + 0] = px + offX;
+        md.positions[i * 3 + 1] = py + offY;
+        md.positions[i * 3 + 2] = pz + offZ;
     }
 }
 

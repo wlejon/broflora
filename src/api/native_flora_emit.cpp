@@ -12,6 +12,9 @@ Value jsEmitMesh(Value /*thisVal*/, std::span<const Value> args) {
         if (s >= 3) sides = s;
     }
     auto md = std::make_unique<bromesh::MeshData>(broflora::emitWorldMesh(*w->world, sides));
+    if (getGlobalWindStrength() != 0.0) {
+        applyWindToMeshData(*md, getGlobalWindTime(), getGlobalWindStrength(), getGlobalWindDirX(), getGlobalWindDirY());
+    }
     return wrapMeshData(std::move(md));
 }
 
@@ -88,6 +91,9 @@ Value jsEmitPlantMesh(Value /*thisVal*/, std::span<const Value> args) {
     }
     auto md = std::make_unique<bromesh::MeshData>(
         broflora::emitPlantMesh(w->world->plants[static_cast<size_t>(plantIdx)], sides));
+    if (getGlobalWindStrength() != 0.0) {
+        applyWindToMeshData(*md, getGlobalWindTime(), getGlobalWindStrength(), getGlobalWindDirX(), getGlobalWindDirY());
+    }
     return wrapMeshData(std::move(md));
 }
 
@@ -172,10 +178,19 @@ Value jsEmitFoliageTransforms(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() >= 2 && ev::isObject(args[1])) {
         readLeafPlacementOptions(args[1], opts);
     }
+    double gDensity = getGlobalDensity();
+    if (gDensity >= 0.0) {
+        opts.perUnitLength *= static_cast<float>(gDensity);
+    }
     fillFoliageDensity(samples, segs.size(), opts);
 
     auto pl = bromesh::placeLeavesOnBranches(segs, opts);
     if (pl.transforms.empty()) return makeFloat32Array(nullptr, 0);
+
+    double windStr = getGlobalWindStrength();
+    if (windStr != 0.0) {
+        applyWindToTransforms(pl.transforms.data(), pl.count(), getGlobalWindTime(), windStr, getGlobalWindDirX(), getGlobalWindDirY());
+    }
     return makeFloat32Array(pl.transforms.data(), pl.transforms.size());
 }
 
@@ -216,6 +231,11 @@ Value jsEmitSegmentTransforms(Value /*thisVal*/, std::span<const Value> args) {
         o[12] = 1.0f;       o[13] = 1.0f;      o[14] = 1.0f;       o[15] = 1.0f;
     }
 
+    double windStr = getGlobalWindStrength();
+    if (windStr != 0.0) {
+        applyWindToTransforms(transforms.data(), count, getGlobalWindTime(), windStr, getGlobalWindDirX(), getGlobalWindDirY());
+    }
+
     return makeFloat32Array(transforms.data(), count * 16);
 }
 
@@ -230,6 +250,10 @@ Value jsEmitScatterSegments(Value /*thisVal*/, std::span<const Value> args) {
     bromesh::LeafPlacementOptions opts;
     if (args.size() >= 2 && ev::isObject(args[1])) {
         readLeafPlacementOptions(args[1], opts);
+    }
+    double gDensity = getGlobalDensity();
+    if (gDensity >= 0.0) {
+        opts.perUnitLength *= static_cast<float>(gDensity);
     }
     fillFoliageDensity(samples, segs.size(), opts);
 
@@ -382,10 +406,17 @@ Value jsEmitFoliageMesh(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() >= 3 && ev::isObject(args[2])) {
         readLeafPlacementOptions(args[2], opts);
     }
+    double gDensity = getGlobalDensity();
+    if (gDensity >= 0.0) {
+        opts.perUnitLength *= static_cast<float>(gDensity);
+    }
     fillFoliageDensity(samples, segs.size(), opts);
 
     auto md = std::make_unique<bromesh::MeshData>(
         bromesh::scatterLeaves(segs, leaf, opts));
+    if (getGlobalWindStrength() != 0.0) {
+        applyWindToMeshData(*md, getGlobalWindTime(), getGlobalWindStrength(), getGlobalWindDirX(), getGlobalWindDirY());
+    }
     return wrapMeshData(std::move(md));
 }
 
@@ -532,10 +563,17 @@ Value jsEmitPlantFoliageMesh(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() >= 4 && ev::isObject(args[3])) {
         readLeafPlacementOptions(args[3], opts);
     }
+    double gDensity = getGlobalDensity();
+    if (gDensity >= 0.0) {
+        opts.perUnitLength *= static_cast<float>(gDensity);
+    }
     fillFoliageDensity(samples, segs.size(), opts);
 
     auto md = std::make_unique<bromesh::MeshData>(
         bromesh::scatterLeaves(segs, leaf, opts));
+    if (getGlobalWindStrength() != 0.0) {
+        applyWindToMeshData(*md, getGlobalWindTime(), getGlobalWindStrength(), getGlobalWindDirX(), getGlobalWindDirY());
+    }
     return wrapMeshData(std::move(md));
 }
 
