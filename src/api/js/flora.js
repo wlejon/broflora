@@ -7,13 +7,16 @@
         Object.defineProperty(obj, name, { value, writable: true, enumerable: true, configurable: true });
     const mount = (root, name) => root[name] !== undefined ? root[name] : (root[name] = {});
 
+    const _native = (typeof __bro_flora_native !== 'undefined' && __bro_flora_native) ? __bro_flora_native :
+                    ((typeof globalThis !== 'undefined' && globalThis.__bro_native && globalThis.__bro_native.flora) ? globalThis.__bro_native.flora : null);
+
     // ---- bro.flora -----------------------------------------------------------
     const broObj = mount(globalThis, "bro");
     const ns_flora = mount(broObj, "flora");
     accessor(ns_flora, "available", function () { return true; }, undefined);
 
     fn(ns_flora, "createWorld", function createWorld(opts) {
-        var w = __bro_flora_native.createWorld(opts);
+        var w = _native ? _native.createWorld(opts) : null;
         if (w && Object.getPrototypeOf(w) !== FloraWorld.prototype) {
             Object.setPrototypeOf(w, FloraWorld.prototype);
         }
@@ -21,7 +24,7 @@
     });
 
     fn(ns_flora, "leafCluster", function leafCluster(phyl, opts) {
-        return __bro_flora_native.leafCluster(phyl, opts);
+        return _native ? _native.leafCluster(phyl, opts) : null;
     });
 
     var _windState = { strength: 0, dirX: 0, dirY: 0 };
@@ -137,11 +140,47 @@
                 var offZ = dz * sway;
                 var offY = -0.05 * (offX * offX + offZ * offZ) / (h + 0.1);
 
-                cur[o + 0] = base[o + 0] + dx * sway * 0.03;
+                // Rigid rotation around axis u = (dz, 0, -dx)
+                var angle = sway * 0.05;
+                var c = Math.cos(angle);
+                var s = Math.sin(angle);
+                var omc = 1.0 - c;
+
+                var r00 = c + dz * dz * omc;
+                var r01 = dx * s;
+                var r02 = -dx * dz * omc;
+
+                var r10 = -dx * s;
+                var r11 = c;
+                var r12 = -dz * s;
+
+                var r20 = -dx * dz * omc;
+                var r21 = dz * s;
+                var r22 = c + dx * dx * omc;
+
+                var b00 = base[o + 0], b01 = base[o + 1], b02 = base[o + 2];
+                var b10 = base[o + 4], b11 = base[o + 5], b12 = base[o + 6];
+                var b20 = base[o + 8], b21 = base[o + 9], b22 = base[o + 10];
+
+                cur[o + 0] = r00 * b00 + r01 * b10 + r02 * b20;
+                cur[o + 1] = r00 * b01 + r01 * b11 + r02 * b21;
+                cur[o + 2] = r00 * b02 + r01 * b12 + r02 * b22;
                 cur[o + 3] = px + offX;
+
+                cur[o + 4] = r10 * b00 + r11 * b10 + r12 * b20;
+                cur[o + 5] = r10 * b01 + r11 * b11 + r12 * b21;
+                cur[o + 6] = r10 * b02 + r11 * b12 + r12 * b22;
                 cur[o + 7] = py + offY;
-                cur[o + 8] = base[o + 8] + dz * sway * 0.03;
+
+                cur[o + 8] = r20 * b00 + r21 * b10 + r22 * b20;
+                cur[o + 9] = r20 * b01 + r21 * b11 + r22 * b21;
+                cur[o + 10] = r20 * b02 + r21 * b12 + r22 * b22;
                 cur[o + 11] = pz + offZ;
+
+                cur[o + 12] = base[o + 12];
+                cur[o + 13] = base[o + 13];
+                cur[o + 14] = base[o + 14];
+                cur[o + 15] = base[o + 15];
             }
         }
     }
@@ -153,18 +192,15 @@
         _windState.strength = strength;
         _windState.dirX = dirX;
         _windState.dirY = dirY;
-        if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.setWind === 'function') {
-            globalThis.__bro_native.flora.setWind(strength, dirX, dirY);
-        }
-        if (typeof __bro_flora_native !== 'undefined' && typeof __bro_flora_native.setWind === 'function') {
-            __bro_flora_native.setWind(strength, dirX, dirY);
+        if (_native && typeof _native.setWind === 'function') {
+            _native.setWind(strength, dirX, dirY);
         }
     });
 
     fn(ns_flora, "wind", function wind(strength, dirX, dirY) {
         if (strength === undefined) {
-            if (typeof __bro_flora_native !== 'undefined' && typeof __bro_flora_native.wind === 'function') {
-                return __bro_flora_native.wind();
+            if (_native && typeof _native.wind === 'function') {
+                return _native.wind();
             }
             return { strength: _windState.strength, dirX: _windState.dirX, dirY: _windState.dirY };
         }
@@ -173,49 +209,37 @@
         _windState.strength = strength;
         _windState.dirX = dirX;
         _windState.dirY = dirY;
-        if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.wind === 'function') {
-            globalThis.__bro_native.flora.wind(strength, dirX, dirY);
-        }
-        if (typeof __bro_flora_native !== 'undefined' && typeof __bro_flora_native.wind === 'function') {
-            __bro_flora_native.wind(strength, dirX, dirY);
+        if (_native && typeof _native.wind === 'function') {
+            _native.wind(strength, dirX, dirY);
         }
     });
 
     fn(ns_flora, "setDensity", function setDensity(density) {
         if (density === undefined) throw new TypeError("bro.flora.setDensity: density is required");
         _densityState = density;
-        if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.setDensity === 'function') {
-            globalThis.__bro_native.flora.setDensity(density);
-        }
-        if (typeof __bro_flora_native !== 'undefined' && typeof __bro_flora_native.setDensity === 'function') {
-            __bro_flora_native.setDensity(density);
+        if (_native && typeof _native.setDensity === 'function') {
+            _native.setDensity(density);
         }
     });
 
     fn(ns_flora, "density", function density(val) {
         if (val === undefined) {
-            if (typeof __bro_flora_native !== 'undefined' && typeof __bro_flora_native.density === 'function') {
-                return __bro_flora_native.density();
+            if (_native && typeof _native.density === 'function') {
+                return _native.density();
             }
             return _densityState;
         }
         _densityState = val;
-        if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.density === 'function') {
-            globalThis.__bro_native.flora.density(val);
-        }
-        if (typeof __bro_flora_native !== 'undefined' && typeof __bro_flora_native.density === 'function') {
-            __bro_flora_native.density(val);
+        if (_native && typeof _native.density === 'function') {
+            _native.density(val);
         }
     });
 
     fn(ns_flora, "update", function update(dt) {
         if (dt === undefined) throw new TypeError("bro.flora.update: dt is required");
         _windTime += dt;
-        if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.update === 'function') {
-            globalThis.__bro_native.flora.update(dt);
-        }
-        if (typeof __bro_flora_native !== 'undefined' && typeof __bro_flora_native.update === 'function') {
-            __bro_flora_native.update(dt);
+        if (_native && typeof _native.update === 'function') {
+            _native.update(dt);
         }
         _updateBatches();
     });
@@ -228,11 +252,8 @@
         _densityState = 1.0;
         _activePlacements.length = 0;
         _activeBatches.length = 0;
-        if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.clear === 'function') {
-            globalThis.__bro_native.flora.clear();
-        }
-        if (typeof __bro_flora_native !== 'undefined' && typeof __bro_flora_native.clear === 'function') {
-            __bro_flora_native.clear();
+        if (_native && typeof _native.clear === 'function') {
+            _native.clear();
         }
     });
 
@@ -282,14 +303,14 @@
     fn(ns_flora, "Phyllotaxy", phylObj);
 
     fn(ns_flora, "prototypes", {
-        straight: function straight() { return __bro_flora_native.protoStraight(); },
-        fork: function fork() { return __bro_flora_native.protoFork(); },
-        whorl: function whorl(arms, spread) { return __bro_flora_native.protoWhorl(arms, spread); },
-        monopodial: function monopodial(lateralBranches, lateralSpread) { return __bro_flora_native.protoMonopodial(lateralBranches, lateralSpread); },
-        sympodial: function sympodial(primarySpread, lateralSpread) { return __bro_flora_native.protoSympodial(primarySpread, lateralSpread); },
-        horizontalTier: function horizontalTier(arms, spread) { return __bro_flora_native.protoHorizontalTier(arms, spread); },
-        tier: function tier(arms, spread) { return __bro_flora_native.protoHorizontalTier(arms, spread); },
-        weeping: function weeping(spread, droop) { return __bro_flora_native.protoWeeping(spread, droop); },
+        straight: function straight() { return _native ? _native.protoStraight() : null; },
+        fork: function fork() { return _native ? _native.protoFork() : null; },
+        whorl: function whorl(arms, spread) { return _native ? _native.protoWhorl(arms, spread) : null; },
+        monopodial: function monopodial(lateralBranches, lateralSpread) { return _native ? _native.protoMonopodial(lateralBranches, lateralSpread) : null; },
+        sympodial: function sympodial(primarySpread, lateralSpread) { return _native ? _native.protoSympodial(primarySpread, lateralSpread) : null; },
+        horizontalTier: function horizontalTier(arms, spread) { return _native ? _native.protoHorizontalTier(arms, spread) : null; },
+        tier: function tier(arms, spread) { return _native ? _native.protoHorizontalTier(arms, spread) : null; },
+        weeping: function weeping(spread, droop) { return _native ? _native.protoWeeping(spread, droop) : null; },
     });
 
     // ---- bro.flora.FloraWorld ------------------------------------------------
@@ -299,160 +320,168 @@
     fn(ns_flora, "FloraWorld", FloraWorld);
     globalThis.FloraWorld = FloraWorld;
 
-    if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && globalThis.__bro_native.flora.FloraWorldProto !== undefined) {
-        Object.setPrototypeOf(globalThis.__bro_native.flora.FloraWorldProto, FloraWorld.prototype);
+    if (_native && _native.FloraWorldProto !== undefined) {
+        Object.setPrototypeOf(_native.FloraWorldProto, FloraWorld.prototype);
     }
 
     fn(FloraWorld.prototype, "addPrototype", function addPrototype(spec) {
-        return __bro_flora_native.addPrototype(this, spec);
+        return _native ? _native.addPrototype(this, spec) : -1;
     });
 
     fn(FloraWorld.prototype, "addVoronoiSite", function addVoronoiSite(prototypeIndex, determinacy, apicalControl) {
         if (prototypeIndex === undefined) throw new TypeError("bro.flora.FloraWorld.prototype.addVoronoiSite: prototypeIndex is required");
-        if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.FloraWorld_addVoronoiSite === 'function') {
-            return globalThis.__bro_native.flora.FloraWorld_addVoronoiSite(this, prototypeIndex, determinacy === undefined ? 1 : determinacy, apicalControl === undefined ? 0.5 : apicalControl);
+        var det = determinacy === undefined ? 1 : determinacy;
+        var ap = apicalControl === undefined ? 0.5 : apicalControl;
+        if (_native) {
+            if (typeof _native.addVoronoiSite === 'function') return _native.addVoronoiSite(this, prototypeIndex, det, ap);
+            if (typeof _native.FloraWorld_addVoronoiSite === 'function') return _native.FloraWorld_addVoronoiSite(this, prototypeIndex, det, ap);
         }
-        return __bro_flora_native.addVoronoiSite(this, prototypeIndex, determinacy === undefined ? 1 : determinacy, apicalControl === undefined ? 0.5 : apicalControl);
+        return 0;
     });
 
     fn(FloraWorld.prototype, "addPlant", function addPlant(spec) {
-        return __bro_flora_native.addPlant(this, spec);
+        return _native ? _native.addPlant(this, spec) : -1;
     });
 
     fn(FloraWorld.prototype, "removePlant", function removePlant(plantIdx) {
         if (plantIdx === undefined) throw new TypeError("bro.flora.FloraWorld.prototype.removePlant: plantIdx is required");
-        if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.FloraWorld_removePlant === 'function') {
-            return globalThis.__bro_native.flora.FloraWorld_removePlant(this, plantIdx);
+        if (_native) {
+            if (typeof _native.removePlant === 'function') return _native.removePlant(this, plantIdx);
+            if (typeof _native.FloraWorld_removePlant === 'function') return _native.FloraWorld_removePlant(this, plantIdx);
         }
-        return __bro_flora_native.removePlant(this, plantIdx);
+        return false;
     });
 
     fn(FloraWorld.prototype, "step", function step(dt) {
         if (dt === undefined) throw new TypeError("bro.flora.FloraWorld.prototype.step: dt is required");
-        if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.FloraWorld_step === 'function') {
-            return globalThis.__bro_native.flora.FloraWorld_step(this, dt);
+        if (_native) {
+            if (typeof _native.step === 'function') return _native.step(this, dt);
+            if (typeof _native.FloraWorld_step === 'function') return _native.FloraWorld_step(this, dt);
         }
-        return __bro_flora_native.step(this, dt);
     });
 
     fn(FloraWorld.prototype, "plantInfo", function plantInfo(plantIdx) {
-        return __bro_flora_native.plantInfo(this, plantIdx);
+        return _native ? _native.plantInfo(this, plantIdx) : null;
     });
 
     fn(FloraWorld.prototype, "setClimate", function setClimate(opts) {
-        return __bro_flora_native.setClimate(this, opts);
+        return _native ? _native.setClimate(this, opts) : false;
     });
 
     fn(FloraWorld.prototype, "sampleShadow", function sampleShadow(pos) {
-        return __bro_flora_native.sampleShadow(this, pos);
+        return _native ? _native.sampleShadow(this, pos) : 0;
     });
 
     fn(FloraWorld.prototype, "validate", function validate() {
-        return __bro_flora_native.validate(this);
+        return _native ? _native.validate(this) : null;
     });
 
     fn(FloraWorld.prototype, "emitMesh", function emitMesh(sides) {
-        return __bro_flora_native.emitMesh(this, sides === undefined ? 6 : sides);
+        return _native ? _native.emitMesh(this, sides === undefined ? 6 : sides) : null;
     });
 
     fn(FloraWorld.prototype, "emitSegments", function emitSegments() {
-        return __bro_flora_native.emitSegments(this);
+        return _native ? _native.emitSegments(this) : null;
     });
 
     fn(FloraWorld.prototype, "emitFoliage", function emitFoliage() {
-        return __bro_flora_native.emitFoliage(this);
+        return _native ? _native.emitFoliage(this) : null;
     });
 
     fn(FloraWorld.prototype, "emitBloomAnchors", function emitBloomAnchors() {
-        return __bro_flora_native.emitBloomAnchors(this);
+        return _native ? _native.emitBloomAnchors(this) : null;
     });
 
     fn(FloraWorld.prototype, "emitPlantMesh", function emitPlantMesh(plantIdx, sides) {
-        return __bro_flora_native.emitPlantMesh(this, plantIdx, sides === undefined ? 6 : sides);
+        return _native ? _native.emitPlantMesh(this, plantIdx, sides === undefined ? 6 : sides) : null;
     });
 
     fn(FloraWorld.prototype, "emitPlantSegments", function emitPlantSegments(plantIdx) {
-        return __bro_flora_native.emitPlantSegments(this, plantIdx);
+        return _native ? _native.emitPlantSegments(this, plantIdx) : null;
     });
 
     fn(FloraWorld.prototype, "emitPlantFoliage", function emitPlantFoliage(plantIdx) {
-        return __bro_flora_native.emitPlantFoliage(this, plantIdx);
+        return _native ? _native.emitPlantFoliage(this, plantIdx) : null;
     });
 
     fn(FloraWorld.prototype, "emitPlantBloomAnchors", function emitPlantBloomAnchors(plantIdx) {
-        return __bro_flora_native.emitPlantBloomAnchors(this, plantIdx);
+        return _native ? _native.emitPlantBloomAnchors(this, plantIdx) : null;
     });
 
     fn(FloraWorld.prototype, "emitFoliageTransforms", function emitFoliageTransforms(opts) {
-        return __bro_flora_native.emitFoliageTransforms(this, opts);
+        return _native ? _native.emitFoliageTransforms(this, opts) : null;
     });
 
     fn(FloraWorld.prototype, "emitSegmentTransforms", function emitSegmentTransforms() {
-        return __bro_flora_native.emitSegmentTransforms(this);
+        return _native ? _native.emitSegmentTransforms(this) : null;
     });
 
     fn(FloraWorld.prototype, "emitScatterSegments", function emitScatterSegments(opts) {
-        return __bro_flora_native.emitScatterSegments(this, opts);
+        return _native ? _native.emitScatterSegments(this, opts) : null;
     });
 
     fn(FloraWorld.prototype, "emitBranchTubes", function emitBranchTubes(opts) {
-        return __bro_flora_native.emitBranchTubes(this, opts);
+        return _native ? _native.emitBranchTubes(this, opts) : null;
     });
 
     fn(FloraWorld.prototype, "emitFoliageMesh", function emitFoliageMesh(leafMesh, opts) {
-        return __bro_flora_native.emitFoliageMesh(this, leafMesh, opts);
+        return _native ? _native.emitFoliageMesh(this, leafMesh, opts) : null;
     });
 
     fn(FloraWorld.prototype, "emitPlantFoliageMesh", function emitPlantFoliageMesh(plantIdx, leafMesh, opts) {
-        return __bro_flora_native.emitPlantFoliageMesh(this, plantIdx, leafMesh, opts);
+        return _native ? _native.emitPlantFoliageMesh(this, plantIdx, leafMesh, opts) : null;
     });
 
     fn(FloraWorld.prototype, "emitBloomMesh", function emitBloomMesh(petalMesh, centerMesh, opts) {
         if (petalMesh === undefined) throw new TypeError("bro.flora.FloraWorld.prototype.emitBloomMesh: petalMesh is required");
-        return __bro_flora_native.emitBloomMesh(this, petalMesh, centerMesh === undefined ? null : centerMesh, opts);
+        return _native ? _native.emitBloomMesh(this, petalMesh, centerMesh === undefined ? null : centerMesh, opts) : null;
     });
 
     fn(FloraWorld.prototype, "emitPlantSdfMesh", function emitPlantSdfMesh(plantIdx, opts) {
-        return __bro_flora_native.emitPlantSdfMesh(this, plantIdx, opts);
+        return _native ? _native.emitPlantSdfMesh(this, plantIdx, opts) : null;
     });
 
     fn(FloraWorld.prototype, "emitWorldSdfMesh", function emitWorldSdfMesh(opts) {
-        return __bro_flora_native.emitWorldSdfMesh(this, opts);
+        return _native ? _native.emitWorldSdfMesh(this, opts) : null;
     });
 
     accessor(FloraWorld.prototype, "simTime",
         function () {
-            if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.FloraWorld_simTime_get === 'function') {
-                return globalThis.__bro_native.flora.FloraWorld_simTime_get(this);
+            if (_native) {
+                if (typeof _native.simTime === 'function') return _native.simTime(this);
+                if (typeof _native.FloraWorld_simTime_get === 'function') return _native.FloraWorld_simTime_get(this);
             }
-            return __bro_flora_native.simTime(this);
+            return 0;
         },
         undefined);
 
     accessor(FloraWorld.prototype, "plantCount",
         function () {
-            if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.FloraWorld_plantCount_get === 'function') {
-                return globalThis.__bro_native.flora.FloraWorld_plantCount_get(this);
+            if (_native) {
+                if (typeof _native.plantCount === 'function') return _native.plantCount(this);
+                if (typeof _native.FloraWorld_plantCount_get === 'function') return _native.FloraWorld_plantCount_get(this);
             }
-            return __bro_flora_native.plantCount(this);
+            return 0;
         },
         undefined);
 
     accessor(FloraWorld.prototype, "prototypeCount",
         function () {
-            if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.FloraWorld_prototypeCount_get === 'function') {
-                return globalThis.__bro_native.flora.FloraWorld_prototypeCount_get(this);
+            if (_native) {
+                if (typeof _native.prototypeCount === 'function') return _native.prototypeCount(this);
+                if (typeof _native.FloraWorld_prototypeCount_get === 'function') return _native.FloraWorld_prototypeCount_get(this);
             }
-            return __bro_flora_native.prototypeCount(this);
+            return 0;
         },
         undefined);
 
     accessor(FloraWorld.prototype, "moduleCount",
         function () {
-            if (typeof globalThis.__bro_native !== 'undefined' && globalThis.__bro_native.flora && typeof globalThis.__bro_native.flora.FloraWorld_moduleCount_get === 'function') {
-                return globalThis.__bro_native.flora.FloraWorld_moduleCount_get(this);
+            if (_native) {
+                if (typeof _native.moduleCount === 'function') return _native.moduleCount(this);
+                if (typeof _native.FloraWorld_moduleCount_get === 'function') return _native.FloraWorld_moduleCount_get(this);
             }
-            return __bro_flora_native.moduleCount(this);
+            return 0;
         },
         undefined);
 })();
