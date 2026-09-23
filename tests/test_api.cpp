@@ -195,6 +195,59 @@ static void test_api_option_readers() {
     )JS");
 }
 
+// Every wind-bent instance path shares one model: a placement batch built
+// from the wind-free emitSegmentTransforms / emitFoliageTransforms output and
+// swayed by update() must equal what the emitter itself returns under the
+// same wind, float for float.
+static void test_api_wind_paths_agree() {
+    runScript("wind paths", R"JS(
+        const F = bro.flora;
+        const fail = (m) => { throw new Error(m); };
+        F.clear();
+        const w = F.createWorld({ rngSeed: 99 });
+        const pi = w.addPrototype(F.prototypes.whorl(3, 0.6));
+        w.addVoronoiSite(pi, 0.5, 0.5);
+        w.addPlant({ origin: [0.5, 0, -0.25], prototypeIndex: pi });
+        for (let i = 0; i < 30; i++) w.step(0.25);
+        const leafOpts = { perUnitLength: 20, seed: 5, terminalOnly: false, maxRadius: 10 };
+
+        const segRest = w.emitSegmentTransforms();
+        const leafRest = w.emitFoliageTransforms(leafOpts);
+        if (segRest.length === 0 || leafRest.length === 0) fail("nothing emitted");
+
+        F.setWind(1.7, 0.6, -0.8);
+        F.update(0.37);
+        const segWind = w.emitSegmentTransforms();
+        const leafWind = w.emitFoliageTransforms(leafOpts);
+
+        const segBatch = F.addPlacement({ transforms: segRest });
+        const leafBatch = F.addPlacement({ transforms: leafRest, windFactor: 1 });
+        F.update(0);  // re-sway at the same clock
+        const same = (a, b, what) => {
+            if (a.length !== b.length) fail(what + ": length " + a.length + " vs " + b.length);
+            for (let i = 0; i < a.length; i++) {
+                if (a[i] !== b[i]) fail(what + ": float " + i + " is " + a[i] + ", emitter gave " + b[i]);
+            }
+        };
+        same(segBatch.transforms, segWind, "segment batch");
+        same(leafBatch.transforms, leafWind, "leaf batch");
+        let moved = false;
+        for (let i = 0; i < segRest.length; i++) if (segRest[i] !== segWind[i]) moved = true;
+        if (!moved) fail("the wind bent nothing");
+
+        // windFactor scales the strength; 0 restores the rest pose.
+        const half = F.addPlacement({ transforms: segRest, windFactor: 0.5 });
+        F.setWind(3.4, 0.6, -0.8);
+        F.update(0);
+        same(half.transforms, segWind, "windFactor 0.5 of 3.4");
+        F.setWind(0, 0, 0);
+        F.update(0);
+        same(segBatch.transforms, segRest, "calm batch");
+        F.clear();
+        "SUCCESS";
+    )JS");
+}
+
 static void test_api_in_realm() {
     ev::Realm* realm = ev::createRealm();
     {
@@ -203,6 +256,7 @@ static void test_api_in_realm() {
         test_api_embed_surface();
         test_api_world_lifecycle();
         test_api_option_readers();
+        test_api_wind_paths_agree();
     }
     ev::destroyRealm(realm);
 }
@@ -252,10 +306,63 @@ static void test_wind_transforms_and_normals() {
     TEST_CHECK(md.normals[1] < 0.999f);
 }
 
+// An instance matrix at p and a mesh vertex at p get the same wind: the
+// translation lands where the vertex lands, and each basis column turns
+// exactly as a normal along that axis does.
+static void test_wind_instance_matches_mesh() {
+    const double time = 0.83, dirX = -0.3, dirY = 0.9;
+    const float p[3] = {0.7f, 2.4f, -1.1f};
+    for (double strength : {1.3, -2.6, 40.0}) {
+        float m[16] = {
+            1.0f, 0.0f, 0.0f, p[0],
+            0.0f, 1.0f, 0.0f, p[1],
+            0.0f, 0.0f, 1.0f, p[2],
+            1.0f, 1.0f, 1.0f, 1.0f
+        };
+        broflora::api::applyWindToTransforms(m, 1, time, strength, dirX, dirY);
+
+        bromesh::MeshData md;
+        md.positions = {p[0], p[1], p[2], p[0], p[1], p[2], p[0], p[1], p[2]};
+        md.normals = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+        broflora::api::applyWindToMeshData(md, time, strength, dirX, dirY);
+
+        TEST_CHECK(m[3] == md.positions[0] && m[7] == md.positions[1] && m[11] == md.positions[2]);
+        TEST_CHECK(std::abs(m[3] - p[0]) > 1e-3f);  // it did move
+        for (int k = 0; k < 3; ++k) {
+            TEST_CHECK(m[k] == md.normals[k * 3 + 0]);
+            TEST_CHECK(m[4 + k] == md.normals[k * 3 + 1]);
+            TEST_CHECK(m[8 + k] == md.normals[k * 3 + 2]);
+        }
+        // Rigid in both directions: orthonormal, and the tilt of +Y stays
+        // within the model's clamp whatever the strength's sign or size.
+        for (int a = 0; a < 3; ++a) {
+            for (int b = 0; b < 3; ++b) {
+                float d = m[a] * m[b] + m[4 + a] * m[4 + b] + m[8 + a] * m[8 + b];
+                TEST_CHECK(std::abs(d - (a == b ? 1.0f : 0.0f)) < 1e-5f);
+            }
+        }
+        TEST_CHECK(m[5] >= std::cos(0.35f) - 1e-5f);
+        // The instance tint row is not the wind's to touch.
+        TEST_CHECK(m[12] == 1.0f && m[13] == 1.0f && m[14] == 1.0f && m[15] == 1.0f);
+    }
+
+    // Rooted: nothing at ground level moves, in either path.
+    float g[16] = {1, 0, 0, 3.0f, 0, 1, 0, 0.0f, 0, 0, 1, -2.0f, 1, 1, 1, 1};
+    broflora::api::applyWindToTransforms(g, 1, time, 5.0, dirX, dirY);
+    TEST_CHECK(g[3] == 3.0f && g[7] == 0.0f && g[11] == -2.0f && g[5] == 1.0f);
+    bromesh::MeshData base;
+    base.positions = {3.0f, 0.0f, -2.0f};
+    base.normals = {0.0f, 1.0f, 0.0f};
+    broflora::api::applyWindToMeshData(base, time, 5.0, dirX, dirY);
+    TEST_CHECK(base.positions[0] == 3.0f && base.positions[1] == 0.0f && base.positions[2] == -2.0f);
+    TEST_CHECK(base.normals[1] == 1.0f);
+}
+
 int main() {
     std::cout << "Running broflora API test..." << std::endl;
     test_api_in_realm();
     test_wind_transforms_and_normals();
+    test_wind_instance_matches_mesh();
     std::cout << "All broflora API tests passed!" << std::endl;
     return 0;
 }

@@ -52,75 +52,64 @@ void clearGlobalWind() {
     s_windTime = 0.0;
 }
 
-void applyWindToTransforms(float* transforms, size_t count,
-                           double windTime, double windStrength,
-                           double dirX, double dirY) {
-    if (!transforms || count == 0 || windStrength == 0.0) return;
-
-    float dxDir = static_cast<float>(dirX);
-    float dzDir = static_cast<float>(dirY);
-    float dlen = std::hypot(dxDir, dzDir);
-    if (dlen > 1e-6f) {
-        dxDir /= dlen;
-        dzDir /= dlen;
-    } else {
-        dxDir = 1.0f;
-        dzDir = 0.0f;
-    }
+// The wind model (native_flora_internal.h describes the contract). The sway
+// is zero at y = 0 and grows with height; the gust wave is phased by ground
+// position so neighbours move out of step. The tilt is a Rodrigues rotation
+// by `tilt` about u = (dz, 0, -dx), the horizontal axis perpendicular to
+// the wind, which carries +Y toward the wind direction; it is clamped to
+// +-0.35 rad in both directions so a negative strength (wind reversed) is
+// bounded the same as a positive one.
+WindSway windSwayAt(float px, float py, float pz,
+                    double windTime, double windStrength,
+                    double dirX, double dirY) {
+    float dx = static_cast<float>(dirX);
+    float dz = static_cast<float>(dirY);
+    const float dlen = std::hypot(dx, dz);
+    if (dlen > 1e-6f) { dx /= dlen; dz /= dlen; }
+    else { dx = 1.0f; dz = 0.0f; }
 
     const float strength = static_cast<float>(windStrength);
     const float time = static_cast<float>(windTime);
 
+    const float height = std::max(0.0f, py);
+    const float heightFactor = 0.04f * height + 0.015f * height * height;
+    const float phase = px * 0.4f + pz * 0.4f;
+    const float wave = std::sin(time * 2.8f + phase) * 0.7f + std::sin(time * 5.2f + phase * 1.7f) * 0.3f;
+    const float sway = strength * heightFactor * (1.0f + 0.6f * wave);
+
+    WindSway w{};
+    const float offX = dx * sway;
+    const float offZ = dz * sway;
+    w.offset[0] = offX;
+    w.offset[1] = -0.05f * (offX * offX + offZ * offZ) / (height + 0.1f);
+    w.offset[2] = offZ;
+
+    const float tilt = std::clamp(sway * 0.2f, -0.35f, 0.35f);
+    const float c = std::cos(tilt);
+    const float s = std::sin(tilt);
+    const float t = 1.0f - c;
+    w.rot[0][0] = c + dz * dz * t;  w.rot[0][1] = dx * s;  w.rot[0][2] = -dx * dz * t;
+    w.rot[1][0] = -dx * s;          w.rot[1][1] = c;       w.rot[1][2] = -dz * s;
+    w.rot[2][0] = -dx * dz * t;     w.rot[2][1] = dz * s;  w.rot[2][2] = c + dx * dx * t;
+    return w;
+}
+
+void applyWindToTransforms(float* transforms, size_t count,
+                           double windTime, double windStrength,
+                           double dirX, double dirY) {
+    if (!transforms || count == 0 || windStrength == 0.0) return;
     for (size_t i = 0; i < count; ++i) {
         float* m = transforms + i * 16;
-        float px = m[3];
-        float py = m[7];
-        float pz = m[11];
-
-        float height = std::max(0.0f, py);
-        float heightFactor = 0.05f + 0.04f * height + 0.015f * height * height;
-        float phase = px * 0.4f + pz * 0.4f;
-        float wave = std::sin(time * 2.8f + phase) * 0.7f + std::sin(time * 5.2f + phase * 1.7f) * 0.3f;
-        float sway = strength * heightFactor * (1.0f + 0.6f * wave);
-
-        float offX = dxDir * sway;
-        float offZ = dzDir * sway;
-        float offY = -0.05f * (offX * offX + offZ * offZ) / (height + 0.1f);
-
-        m[3] += offX;
-        m[7] += offY;
-        m[11] += offZ;
-
-        float tilt = std::min(0.35f, sway * 0.2f);
-        if (std::abs(tilt) > 1e-4f) {
-            float c = std::cos(tilt);
-            float s = std::sin(tilt);
-            float t = 1.0f - c;
-
-            // Rotation axis perpendicular to (0,1,0) and (dxDir, 0, dzDir):
-            // u = (dzDir, 0, -dxDir)
-            float r00 = c + dzDir * dzDir * t;
-            float r01 = dxDir * s;
-            float r02 = -dxDir * dzDir * t;
-
-            float r10 = -dxDir * s;
-            float r11 = c;
-            float r12 = -dzDir * s;
-
-            float r20 = -dxDir * dzDir * t;
-            float r21 = dzDir * s;
-            float r22 = c + dxDir * dxDir * t;
-
-            // Apply orthonormal rotation matrix R to the 3x3 orientation/basis (columns 0, 1, 2)
-            for (int k = 0; k < 3; ++k) {
-                float v0 = m[k];
-                float v1 = m[4 + k];
-                float v2 = m[8 + k];
-
-                m[k]     = r00 * v0 + r01 * v1 + r02 * v2;
-                m[4 + k] = r10 * v0 + r11 * v1 + r12 * v2;
-                m[8 + k] = r20 * v0 + r21 * v1 + r22 * v2;
-            }
+        const WindSway w = windSwayAt(m[3], m[7], m[11], windTime, windStrength, dirX, dirY);
+        m[3]  += w.offset[0];
+        m[7]  += w.offset[1];
+        m[11] += w.offset[2];
+        // R * B for the row-major 3x3 basis B (floats 0-2 / 4-6 / 8-10).
+        for (int k = 0; k < 3; ++k) {
+            const float b0 = m[k], b1 = m[4 + k], b2 = m[8 + k];
+            m[k]     = w.rot[0][0] * b0 + w.rot[0][1] * b1 + w.rot[0][2] * b2;
+            m[4 + k] = w.rot[1][0] * b0 + w.rot[1][1] * b1 + w.rot[1][2] * b2;
+            m[8 + k] = w.rot[2][0] * b0 + w.rot[2][1] * b1 + w.rot[2][2] * b2;
         }
     }
 }
@@ -129,76 +118,20 @@ void applyWindToMeshData(bromesh::MeshData& md,
                          double windTime, double windStrength,
                          double dirX, double dirY) {
     if (md.positions.empty() || windStrength == 0.0) return;
-
-    float dxDir = static_cast<float>(dirX);
-    float dzDir = static_cast<float>(dirY);
-    float dlen = std::hypot(dxDir, dzDir);
-    if (dlen > 1e-6f) {
-        dxDir /= dlen;
-        dzDir /= dlen;
-    } else {
-        dxDir = 1.0f;
-        dzDir = 0.0f;
-    }
-
-    const float strength = static_cast<float>(windStrength);
-    const float time = static_cast<float>(windTime);
-    size_t nv = md.positions.size() / 3;
-    bool hasNormals = (md.normals.size() == md.positions.size());
-
+    const size_t nv = md.positions.size() / 3;
+    const bool hasNormals = (md.normals.size() == md.positions.size());
     for (size_t i = 0; i < nv; ++i) {
-        float px = md.positions[i * 3 + 0];
-        float py = md.positions[i * 3 + 1];
-        float pz = md.positions[i * 3 + 2];
-
-        float height = std::max(0.0f, py);
-        float heightFactor = 0.04f * height + 0.015f * height * height;
-        float phase = px * 0.4f + pz * 0.4f;
-        float wave = std::sin(time * 2.8f + phase) * 0.7f + std::sin(time * 5.2f + phase * 1.7f) * 0.3f;
-        float sway = strength * heightFactor * (1.0f + 0.6f * wave);
-
-        float offX = dxDir * sway;
-        float offZ = dzDir * sway;
-        float offY = -0.05f * (offX * offX + offZ * offZ) / (height + 0.1f);
-
-        md.positions[i * 3 + 0] = px + offX;
-        md.positions[i * 3 + 1] = py + offY;
-        md.positions[i * 3 + 2] = pz + offZ;
-
+        float* p = &md.positions[i * 3];
+        const WindSway w = windSwayAt(p[0], p[1], p[2], windTime, windStrength, dirX, dirY);
+        p[0] += w.offset[0];
+        p[1] += w.offset[1];
+        p[2] += w.offset[2];
         if (hasNormals) {
-            float tilt = std::min(0.35f, sway * 0.2f);
-            if (std::abs(tilt) > 1e-4f) {
-                float c = std::cos(tilt);
-                float s = std::sin(tilt);
-                float t = 1.0f - c;
-
-                float r00 = c + dzDir * dzDir * t;
-                float r01 = dxDir * s;
-                float r02 = -dxDir * dzDir * t;
-
-                float r10 = -dxDir * s;
-                float r11 = c;
-                float r12 = -dzDir * s;
-
-                float r20 = -dxDir * dzDir * t;
-                float r21 = dzDir * s;
-                float r22 = c + dxDir * dxDir * t;
-
-                float nx = md.normals[i * 3 + 0];
-                float ny = md.normals[i * 3 + 1];
-                float nz = md.normals[i * 3 + 2];
-
-                float rnx = r00 * nx + r01 * ny + r02 * nz;
-                float rny = r10 * nx + r11 * ny + r12 * nz;
-                float rnz = r20 * nx + r21 * ny + r22 * nz;
-
-                float nlen = std::hypot(rnx, rny, rnz);
-                if (nlen > 1e-6f) {
-                    md.normals[i * 3 + 0] = rnx / nlen;
-                    md.normals[i * 3 + 1] = rny / nlen;
-                    md.normals[i * 3 + 2] = rnz / nlen;
-                }
-            }
+            float* n = &md.normals[i * 3];
+            const float n0 = n[0], n1 = n[1], n2 = n[2];
+            n[0] = w.rot[0][0] * n0 + w.rot[0][1] * n1 + w.rot[0][2] * n2;
+            n[1] = w.rot[1][0] * n0 + w.rot[1][1] * n1 + w.rot[1][2] * n2;
+            n[2] = w.rot[2][0] * n0 + w.rot[2][1] * n1 + w.rot[2][2] * n2;
         }
     }
 }
@@ -542,6 +475,38 @@ Value jsDensity(Value /*thisVal*/, std::span<const Value> args) {
     return ev::undefined();
 }
 
+// swayTransforms(base, out, windFactor = 1): write `base` (a Float32Array of
+// 16-float instance matrices) into `out`, bent by the global wind scaled by
+// windFactor. The placement batches' per-update pass, so an instanced batch
+// sways exactly as emitFoliageTransforms / emitSegmentTransforms do.
+Value jsSwayTransforms(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.size() < 2) return ev::throwTypeError("swayTransforms: base and out are required");
+    std::vector<float> buf;
+    {
+        // Copied out before anything allocates: the pointer is a snapshot.
+        const ev::TypedArrayInfo bi = ev::typedArrayInfo(args[0]);
+        if (!bi || bi.elementKind != ev::elements::Float32) {
+            return ev::throwTypeError("swayTransforms: base must be a Float32Array");
+        }
+        const float* src = reinterpret_cast<const float*>(bi.data);
+        buf.assign(src, src + bi.elementCount);
+    }
+    double factor = 1.0;
+    if (args.size() >= 3 && ev::isNumber(args[2])) factor = ev::toDouble(args[2]);
+    const size_t count = buf.size() / 16;
+    applyWindToTransforms(buf.data(), count, s_windTime, s_windStrength * factor, s_windDirX, s_windDirY);
+
+    const ev::TypedArrayInfo oi = ev::typedArrayInfo(args[1]);
+    if (!oi || oi.elementKind != ev::elements::Float32) {
+        return ev::throwTypeError("swayTransforms: out must be a Float32Array");
+    }
+    if (oi.elementCount < buf.size()) {
+        return ev::throwRangeError("swayTransforms: out is shorter than base");
+    }
+    if (!buf.empty()) std::memcpy(oi.data, buf.data(), buf.size() * sizeof(float));
+    return ev::undefined();
+}
+
 Value jsUpdate(Value /*thisVal*/, std::span<const Value> args) {
     if (!args.empty() && ev::isNumber(args[0])) {
         s_windTime += ev::toDouble(args[0]);
@@ -613,6 +578,7 @@ void registerFloraNativeHelpers() {
     REG_FN(wind, 3, jsWind);
     REG_FN(setDensity, 1, jsSetDensity);
     REG_FN(density, 1, jsDensity);
+    REG_FN(swayTransforms, 3, jsSwayTransforms);
     REG_FN(update, 1, jsUpdate);
     REG_FN(clear, 0, jsClear);
 

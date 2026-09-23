@@ -29,7 +29,6 @@
 
     var _windState = { strength: 0, dirX: 0, dirY: 0 };
     var _densityState = 1.0;
-    var _windTime = 0.0;
     var _activeBatches = [];
     var _activePlacements = [];
     var _nextBatchId = 0;
@@ -104,16 +103,20 @@
         };
     }
 
+    // Re-sway every batch from its rest pose. The bend itself is the native
+    // wind model (swayTransforms), the same one the emitters use, so a
+    // batch built from emitFoliageTransforms output sways exactly as the
+    // emitter's own wind-bent matrices do.
     function _updateBatches() {
         var str = _windState.strength;
+        var canSway = !!(_native && typeof _native.swayTransforms === 'function');
         for (var b = 0; b < _activeBatches.length; b++) {
             var batch = _activeBatches[b];
             if (!batch || !batch.count || !batch.baseTransforms || !batch.transforms) continue;
             var wFactor = batch.windFactor !== undefined ? batch.windFactor : 1.0;
-            var effStrength = str * wFactor;
             var cur = batch.transforms;
             var base = batch.baseTransforms;
-            if (effStrength === 0) {
+            if (str * wFactor === 0 || !canSway) {
                 if (batch._swayed) {
                     for (var k = 0; k < base.length; k++) cur[k] = base[k];
                     batch._swayed = false;
@@ -121,67 +124,7 @@
                 continue;
             }
             batch._swayed = true;
-            var dx = _windState.dirX || 0;
-            var dz = _windState.dirY || 0;
-            var dlen = Math.hypot(dx, dz);
-            if (dlen > 1e-6) { dx /= dlen; dz /= dlen; } else { dx = 1.0; dz = 0.0; }
-            var t = _windTime;
-            for (var i = 0; i < batch.count; i++) {
-                var o = i * 16;
-                var px = base[o + 3];
-                var py = base[o + 7];
-                var pz = base[o + 11];
-                var h = py > 0 ? py : 0;
-                var hFactor = 0.05 + 0.04 * h + 0.015 * h * h;
-                var phase = px * 0.4 + pz * 0.4;
-                var wave = Math.sin(t * 2.8 + phase) * 0.7 + Math.sin(t * 5.2 + phase * 1.7) * 0.3;
-                var sway = effStrength * hFactor * (1.0 + 0.6 * wave);
-                var offX = dx * sway;
-                var offZ = dz * sway;
-                var offY = -0.05 * (offX * offX + offZ * offZ) / (h + 0.1);
-
-                // Rigid rotation around axis u = (dz, 0, -dx)
-                var angle = sway * 0.05;
-                var c = Math.cos(angle);
-                var s = Math.sin(angle);
-                var omc = 1.0 - c;
-
-                var r00 = c + dz * dz * omc;
-                var r01 = dx * s;
-                var r02 = -dx * dz * omc;
-
-                var r10 = -dx * s;
-                var r11 = c;
-                var r12 = -dz * s;
-
-                var r20 = -dx * dz * omc;
-                var r21 = dz * s;
-                var r22 = c + dx * dx * omc;
-
-                var b00 = base[o + 0], b01 = base[o + 1], b02 = base[o + 2];
-                var b10 = base[o + 4], b11 = base[o + 5], b12 = base[o + 6];
-                var b20 = base[o + 8], b21 = base[o + 9], b22 = base[o + 10];
-
-                cur[o + 0] = r00 * b00 + r01 * b10 + r02 * b20;
-                cur[o + 1] = r00 * b01 + r01 * b11 + r02 * b21;
-                cur[o + 2] = r00 * b02 + r01 * b12 + r02 * b22;
-                cur[o + 3] = px + offX;
-
-                cur[o + 4] = r10 * b00 + r11 * b10 + r12 * b20;
-                cur[o + 5] = r10 * b01 + r11 * b11 + r12 * b21;
-                cur[o + 6] = r10 * b02 + r11 * b12 + r12 * b22;
-                cur[o + 7] = py + offY;
-
-                cur[o + 8] = r20 * b00 + r21 * b10 + r22 * b20;
-                cur[o + 9] = r20 * b01 + r21 * b11 + r22 * b21;
-                cur[o + 10] = r20 * b02 + r21 * b12 + r22 * b22;
-                cur[o + 11] = pz + offZ;
-
-                cur[o + 12] = base[o + 12];
-                cur[o + 13] = base[o + 13];
-                cur[o + 14] = base[o + 14];
-                cur[o + 15] = base[o + 15];
-            }
+            _native.swayTransforms(base, cur, wFactor);
         }
     }
 
@@ -237,7 +180,6 @@
 
     fn(ns_flora, "update", function update(dt) {
         if (dt === undefined) throw new TypeError("bro.flora.update: dt is required");
-        _windTime += dt;
         if (_native && typeof _native.update === 'function') {
             _native.update(dt);
         }
@@ -248,7 +190,6 @@
         _windState.strength = 0;
         _windState.dirX = 0;
         _windState.dirY = 0;
-        _windTime = 0;
         _densityState = 1.0;
         _activePlacements.length = 0;
         _activeBatches.length = 0;
