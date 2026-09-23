@@ -365,6 +365,50 @@ static void test_api_count_validation() {
     )JS");
 }
 
+// A handle this module did not make is never read as a FloraWorld, even when
+// its payload is a real FloraWorldWrapper: getWrapper checks the brand table,
+// not just that the value is a handle. (Before, any handle's payload was cast
+// to FloraWorldWrapper, so another library's handle was dereferenced as one.)
+static void test_api_foreign_handles() {
+    ev::Persistent forge(ev::makeFunction(
+        [](Value, std::span<const Value> a) -> Value {
+            const bool small = !a.empty() && ev::toBool(a[0]);
+            if (small) {
+                return ev::makeHandle(new uint32_t(7), [](void* p) { delete static_cast<uint32_t*>(p); },
+                                      ev::Finalize::InSweep);
+            }
+            auto* wrap = new broflora::api::FloraWorldWrapper{std::make_unique<broflora::WorldState>()};
+            return ev::makeHandle(wrap, [](void* p) { delete static_cast<broflora::api::FloraWorldWrapper*>(p); },
+                                  ev::Finalize::InSweep);
+        },
+        1, "forgeFloraHandle"));
+    ev::registerGlobal("forgeFloraHandle", forge.get());
+    runScript("foreign handles", R"JS(
+        const fail = (m) => { throw new Error(m); };
+        const real = bro.flora.createWorld({});
+        const spec = bro.flora.prototypes.straight();
+        if (real.addPrototype(spec) !== 0) fail("a real world should take a prototype");
+        for (const small of [false, true]) {
+            const forged = forgeFloraHandle(small);
+            Object.setPrototypeOf(forged, FloraWorld.prototype);
+            if (forged.addPrototype(spec) !== -1) fail("a forged handle was read as a world (small=" + small + ")");
+            if (forged.addPlant({ prototypeIndex: 0 }) !== -1) fail("addPlant on a forged handle");
+            if (forged.plantInfo(0) !== null) fail("plantInfo on a forged handle");
+            // Every method and getter: a throw or an empty answer, never a
+            // read of the payload.
+            for (const k of Object.getOwnPropertyNames(FloraWorld.prototype)) {
+                if (k === "constructor") continue;
+                const d = Object.getOwnPropertyDescriptor(FloraWorld.prototype, k);
+                try {
+                    if (typeof d.value === "function") d.value.call(forged, 0, 0);
+                    else if (d.get) d.get.call(forged);
+                } catch (e) {}
+            }
+        }
+        "SUCCESS";
+    )JS");
+}
+
 static void test_api_in_realm() {
     ev::Realm* realm = ev::createRealm();
     {
@@ -376,6 +420,7 @@ static void test_api_in_realm() {
         test_api_wind_paths_agree();
         test_api_instance_layout();
         test_api_count_validation();
+        test_api_foreign_handles();
     }
     ev::destroyRealm(realm);
 }

@@ -1,6 +1,57 @@
 #include "native_flora_internal.h"
 
+#include <mutex>
+#include <unordered_set>
+
 namespace broflora::api {
+
+// ── FloraWorld brand ───────────────────────────────────────────────────────
+// Every FloraWorldWrapper a handle carries is registered here while the
+// handle lives; getWrapper reads a payload only when it is in the set. The
+// set is process-wide (a Worker's worlds have unique payload addresses too)
+// and never destroyed, so a sweep at exit can still unregister.
+namespace {
+
+std::mutex& worldBrandMutex() {
+    static std::mutex m;
+    return m;
+}
+
+std::unordered_set<const void*>& worldBrands() {
+    static auto* s = new std::unordered_set<const void*>();
+    return *s;
+}
+
+// Runs in the sweep (Finalize::InSweep): no heap access, only the set and
+// the delete.
+void destroyFloraWorldWrapper(void* p) {
+    {
+        std::lock_guard<std::mutex> lk(worldBrandMutex());
+        worldBrands().erase(p);
+    }
+    delete static_cast<FloraWorldWrapper*>(p);
+}
+
+} // namespace
+
+Value makeFloraWorldHandle(FloraWorldWrapper* wrap, Value proto) {
+    {
+        std::lock_guard<std::mutex> lk(worldBrandMutex());
+        worldBrands().insert(wrap);
+    }
+    // The 4-argument form is fatal on a non-object prototype.
+    if (!ev::isObject(proto)) {
+        return ev::makeHandle(wrap, &destroyFloraWorldWrapper, ev::Finalize::InSweep);
+    }
+    return ev::makeHandle(wrap, &destroyFloraWorldWrapper, ev::Finalize::InSweep, proto);
+}
+
+FloraWorldWrapper* getWrapper(Value v) {
+    void* data = ev::handleData(v);
+    if (!data) return nullptr;
+    std::lock_guard<std::mutex> lk(worldBrandMutex());
+    return worldBrands().count(data) ? static_cast<FloraWorldWrapper*>(data) : nullptr;
+}
 
 // Forward declarations of emit methods from native_flora_emit.cpp
 Value jsEmitMesh(Value thisVal, std::span<const Value> args);
@@ -170,10 +221,7 @@ Value jsCreateWorld(Value /*thisVal*/, std::span<const Value> args) {
     // The 4-argument form is fatal on a non-object prototype, so a world made
     // before flora.js mounted FloraWorld is a bare handle (createWorld's JS
     // side re-parents it).
-    if (!ev::isObject(proto)) {
-        return ev::makeHandle(wrap, &destroyFloraWorldWrapper, ev::Finalize::InSweep);
-    }
-    return ev::makeHandle(wrap, &destroyFloraWorldWrapper, ev::Finalize::InSweep, proto);
+    return makeFloraWorldHandle(wrap, proto);
 }
 
 Value jsAddPrototype(Value /*thisVal*/, std::span<const Value> args) {

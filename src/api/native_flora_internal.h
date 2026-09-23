@@ -29,14 +29,16 @@ struct FloraWorldWrapper {
     std::unique_ptr<broflora::WorldState> world;
 };
 
-inline void destroyFloraWorldWrapper(void* p) {
-    delete static_cast<FloraWorldWrapper*>(p);
-}
+// A FloraWorld handle around `wrap`, born on `proto` when it is an object.
+// The payload is registered as a flora world (a brand) until the handle's
+// destructor runs.
+Value makeFloraWorldHandle(FloraWorldWrapper* wrap, Value proto);
 
-inline FloraWorldWrapper* getWrapper(Value v) {
-    void* data = ev::handleData(v);
-    return static_cast<FloraWorldWrapper*>(data);
-}
+// The world a FloraWorld handle carries; nullptr for any other value,
+// another library's handle included. ev::handleData answers for ANY handle,
+// so its payload is only read as a FloraWorldWrapper once the brand table
+// says this module made it. Allocates nothing.
+FloraWorldWrapper* getWrapper(Value v);
 
 // ── Global simulation parameters (wind, density) ───────────────────────
 double getGlobalWindStrength();
