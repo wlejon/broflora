@@ -73,8 +73,16 @@ if(TARGET broflora_api AND BROFLORA_API_COMPILED_JS)
         )
     endif()
     add_test(NAME broflora_api_test COMMAND broflora_api_test)
+    # The same test with bronze's collector flipping at every allocation: a
+    # raw Value held across an allocating embed call in a binding crashes or
+    # misreads here where the normal run happens to pass.
+    add_test(NAME broflora_api_test_gcstress COMMAND broflora_api_test)
     if(WIN32)
         set_tests_properties(broflora_api_test PROPERTIES
             ENVIRONMENT "PATH=$<TARGET_FILE_DIR:bronze_runtime_shared>;$<TARGET_FILE_DIR:broflora_api_test>;$ENV{PATH}")
+        set_tests_properties(broflora_api_test_gcstress PROPERTIES
+            ENVIRONMENT "BRONZE_GC_STRESS=1;PATH=$<TARGET_FILE_DIR:bronze_runtime_shared>;$<TARGET_FILE_DIR:broflora_api_test>;$ENV{PATH}")
+    else()
+        set_tests_properties(broflora_api_test_gcstress PROPERTIES ENVIRONMENT "BRONZE_GC_STRESS=1")
     endif()
 endif()

@@ -55,7 +55,22 @@ void applyWindToMeshData(bromesh::MeshData& md,
                          double windTime, double windStrength,
                          double dirX, double dirY);
 
+// ── GC rooting ─────────────────────────────────────────────────────────
+//
+// bronze's collector moves objects, so a Value copied out of an argument or
+// a property read goes stale at the next allocating embed call (getProperty,
+// getElement, createObject, ...). A reader that makes several reads from one
+// object holds it in a Rooted, which re-reads the root at every use.
+struct Rooted {
+    ev::Persistent p;
+    explicit Rooted(Value v) : p(v) {}
+    operator Value() const { return p.get(); }
+    Value get() const { return p.get(); }
+};
+
 // ── Property reading helpers ───────────────────────────────────────────
+// The single-read helpers below are safe on a plain Value; the multi-read
+// ones root their input first.
 
 inline bool readFloatField(Value obj, std::string_view prop, float& out) {
     if (!ev::isObject(obj)) return false;
@@ -99,7 +114,7 @@ inline bool readBoolField(Value obj, std::string_view prop, bool& out) {
 
 inline bool readVec3Prop(Value obj, std::string_view prop, bromath::Vec3& out) {
     if (!ev::isObject(obj)) return false;
-    Value v = ev::getProperty(obj, prop);
+    Rooted v(ev::getProperty(obj, prop));
     if (!ev::isObject(v)) return false;
     Value lenV = ev::getProperty(v, "length");
     if (ev::isNumber(lenV) && ev::toDouble(lenV) >= 3.0) {
@@ -111,8 +126,9 @@ inline bool readVec3Prop(Value obj, std::string_view prop, bromath::Vec3& out) {
     return false;
 }
 
-inline void readSdfMeshOptions(Value obj, broflora::SdfMeshOptions& opts) {
-    if (!ev::isObject(obj)) return;
+inline void readSdfMeshOptions(Value in, broflora::SdfMeshOptions& opts) {
+    if (!ev::isObject(in)) return;
+    Rooted obj(in);
     readFloatField(obj, "voxelSize", opts.voxelSize);
     readFloatField(obj, "smoothK", opts.smoothK);
     readBoolField(obj, "useSurfaceNets", opts.useSurfaceNets);
@@ -179,6 +195,7 @@ inline Value wrapMeshData(std::unique_ptr<bromesh::MeshData> md) {
 
     ev::GlobalValue meshCtor = ev::globalValue("Mesh");
     if (meshCtor.found && ev::isFunction(meshCtor.value)) {
+        Rooted ctor(meshCtor.value);  // the option object below allocates
         ev::Persistent opts(ev::createObject());
         opts.set(ev::setProperty(opts.get(), "positions", p.get()));
         opts.set(ev::setProperty(opts.get(), "normals", n.get()));
@@ -186,7 +203,7 @@ inline Value wrapMeshData(std::unique_ptr<bromesh::MeshData> md) {
         opts.set(ev::setProperty(opts.get(), "colors", c.get()));
         opts.set(ev::setProperty(opts.get(), "indices", idx.get()));
         Value optVal = opts.get();
-        ev::CallResult res = ev::construct(meshCtor.value, std::span<const Value>(&optVal, 1));
+        ev::CallResult res = ev::construct(ctor.get(), std::span<const Value>(&optVal, 1));
         if (!res.thrown) return res.value;
     }
 
@@ -297,8 +314,9 @@ inline broflora::Phyllotaxy parsePhyllotaxy(Value v) {
     return broflora::Phyllotaxy::Alternate;
 }
 
-inline void readLeafClusterOptions(Value obj, broflora::LeafClusterOptions& opts) {
-    if (!ev::isObject(obj)) return;
+inline void readLeafClusterOptions(Value in, broflora::LeafClusterOptions& opts) {
+    if (!ev::isObject(in)) return;
+    Rooted obj(in);
     readIntField  (obj, "count",            opts.count);
     readFloatField(obj, "twigLength",       opts.twigLength);
     readFloatField(obj, "twigRadius",       opts.twigRadius);
@@ -306,13 +324,16 @@ inline void readLeafClusterOptions(Value obj, broflora::LeafClusterOptions& opts
     readFloatField(obj, "leafWidth",        opts.leafWidth);
     readFloatField(obj, "leafLength",       opts.leafLength);
 
-    Value sv = ev::getProperty(obj, "leafShape");
-    if (ev::isUndefined(sv) || ev::isNull(sv)) {
-        sv = ev::getProperty(obj, "shape");
-    }
-    if (!ev::isUndefined(sv) && !ev::isNull(sv)) {
-        opts.leafShape = parseLeafShapeValue(sv);
-        opts.shape = opts.leafShape;
+    {
+        Value sv = ev::getProperty(obj, "leafShape");
+        if (ev::isUndefined(sv) || ev::isNull(sv)) {
+            sv = ev::getProperty(obj, "shape");
+        }
+        // parseLeafShapeValue reads sv before anything allocates.
+        if (!ev::isUndefined(sv) && !ev::isNull(sv)) {
+            opts.leafShape = parseLeafShapeValue(sv);
+            opts.shape = opts.leafShape;
+        }
     }
 
     readFloatField(obj, "leafBend",         opts.leafBend);
@@ -326,8 +347,9 @@ inline void readLeafClusterOptions(Value obj, broflora::LeafClusterOptions& opts
     readBoolField (obj, "fullUV",           opts.fullUV);
 }
 
-inline void readLeafPlacementOptions(Value o, bromesh::LeafPlacementOptions& opts) {
-    if (!ev::isObject(o)) return;
+inline void readLeafPlacementOptions(Value in, bromesh::LeafPlacementOptions& opts) {
+    if (!ev::isObject(in)) return;
+    Rooted o(in);
     readFloatField(o, "maxRadius",       opts.maxRadius);
     readIntField  (o, "minDepth",        opts.minDepth);
     readBoolField (o, "terminalOnly",    opts.terminalOnly);
@@ -344,7 +366,7 @@ inline void readLeafPlacementOptions(Value o, bromesh::LeafPlacementOptions& opt
     Value seedV = ev::getProperty(o, "seed");
     if (ev::isNumber(seedV)) opts.seed = static_cast<uint64_t>(ev::toDouble(seedV));
 
-    Value dw = ev::getProperty(o, "densityWeight");
+    Rooted dw(ev::getProperty(o, "densityWeight"));
     if (ev::isObject(dw)) {
         Value lenV = ev::getProperty(dw, "length");
         if (ev::isNumber(lenV)) {
@@ -359,8 +381,9 @@ inline void readLeafPlacementOptions(Value o, bromesh::LeafPlacementOptions& opt
 
 // ── Species partial application ────────────────────────────────────────
 
-inline void applySpeciesPartial(Value spec, broflora::Species& s) {
-    if (!ev::isObject(spec)) return;
+inline void applySpeciesPartial(Value in, broflora::Species& s) {
+    if (!ev::isObject(in)) return;
+    Rooted spec(in);
     readFloatField(spec, "maxVigor",                    s.maxVigor);
     readFloatField(spec, "minVigor",                    s.minVigor);
     readFloatField(spec, "rootVigorMax",                s.rootVigorMax);
@@ -393,10 +416,11 @@ inline void applySpeciesPartial(Value spec, broflora::Species& s) {
 
 // ── Prototype builder ──────────────────────────────────────────────────
 
-inline bool buildPrototype(Value spec,
+inline bool buildPrototype(Value in,
                            broflora::BranchModulePrototype& out,
                            std::string& nameStorage) {
-    if (!ev::isObject(spec)) return false;
+    if (!ev::isObject(in)) return false;
+    Rooted spec(in);
 
     Value nameV = ev::getProperty(spec, "name");
     if (ev::isString(nameV)) {
@@ -404,14 +428,14 @@ inline bool buildPrototype(Value spec,
         out.name = nameStorage.c_str();
     }
 
-    Value nodesV = ev::getProperty(spec, "nodes");
+    Rooted nodesV(ev::getProperty(spec, "nodes"));
     if (ev::isObject(nodesV)) {
         Value lenV = ev::getProperty(nodesV, "length");
         if (ev::isNumber(lenV)) {
             uint32_t n = static_cast<uint32_t>(ev::toDouble(lenV));
             out.nodes.reserve(n);
             for (uint32_t i = 0; i < n; ++i) {
-                Value nv = ev::getElement(nodesV, i);
+                Rooted nv(ev::getElement(nodesV, i));
                 broflora::ModuleNode mn;
                 readVec3Prop  (nv, "position",    mn.position);
                 readFloatField(nv, "ageAtBirth",  mn.ageAtBirth);
@@ -422,14 +446,14 @@ inline bool buildPrototype(Value spec,
         }
     }
 
-    Value edgesV = ev::getProperty(spec, "edges");
+    Rooted edgesV(ev::getProperty(spec, "edges"));
     if (ev::isObject(edgesV)) {
         Value lenV = ev::getProperty(edgesV, "length");
         if (ev::isNumber(lenV)) {
             uint32_t n = static_cast<uint32_t>(ev::toDouble(lenV));
             out.edges.reserve(n);
             for (uint32_t i = 0; i < n; ++i) {
-                Value evVal = ev::getElement(edgesV, i);
+                Rooted evVal(ev::getElement(edgesV, i));
                 broflora::ModuleEdge e{};
                 if (ev::isObject(evVal)) {
                     Value lenSub = ev::getProperty(evVal, "length");
@@ -448,7 +472,7 @@ inline bool buildPrototype(Value spec,
 
     readUint32Field(spec, "rootNode", out.rootNode);
 
-    Value termsV = ev::getProperty(spec, "terminalNodes");
+    Rooted termsV(ev::getProperty(spec, "terminalNodes"));
     if (ev::isObject(termsV)) {
         Value lenV = ev::getProperty(termsV, "length");
         if (ev::isNumber(lenV)) {
@@ -465,8 +489,9 @@ inline bool buildPrototype(Value spec,
 
 // ── Climate / shadow readers ───────────────────────────────────────────
 
-inline void readClimateFields(Value obj, broflora::GlobalClimate& c) {
-    if (!ev::isObject(obj)) return;
+inline void readClimateFields(Value in, broflora::GlobalClimate& c) {
+    if (!ev::isObject(in)) return;
+    Rooted obj(in);
     readFloatField(obj, "annualTempBase",   c.annualTempBase);
     readFloatField(obj, "annualPrecip",     c.annualPrecip);
     readFloatField(obj, "tempLapsePerUnit", c.tempLapsePerUnit);
@@ -478,7 +503,7 @@ inline void readClimate(Value opts, broflora::GlobalClimate& c) {
 }
 
 inline void readShadow(Value opts, broflora::ShadowGrid& g) {
-    Value sv = ev::getProperty(opts, "shadow");
+    Rooted sv(ev::getProperty(opts, "shadow"));
     if (ev::isObject(sv)) {
         readVec3Prop  (sv, "origin",   g.origin);
         readFloatField(sv, "cellSize", g.cellSize);

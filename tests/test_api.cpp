@@ -1,6 +1,7 @@
 #include "test_framework.h"
 #include "broflora/api/api.h"
 #include "embed/embed.h"
+#include "eval/eval.h"
 #include "native_flora_internal.h"
 
 #include <cmath>
@@ -16,176 +17,193 @@ using Value = bronze::Value;
     } \
 } while (0)
 
-static void test_api_installation_and_smoke() {
-    ev::Realm* realm = ev::createRealm();
-    ev::RealmScope scope(realm);
+// Runs `script` in the current realm; it must evaluate to "SUCCESS".
+static void runScript(const char* what, const char* script) {
+    ev::CallResult res = bronze::eval::evalScript(script);
+    if (res.thrown || ev::toUtf8(res.value) != "SUCCESS") {
+        std::cerr << what << " script: " << ev::toUtf8(res.value) << std::endl;
+        std::exit(1);
+    }
+}
 
-    // Install bro.flora API
-    broflora::api::installFlora();
-
+// The embed-level half: bro.flora is mounted and callable from C++. Values
+// read here are rooted, since every getProperty/call may move the heap.
+static void test_api_embed_surface() {
     ev::GlobalValue broG = ev::globalValue("bro");
     TEST_CHECK(broG.found);
     TEST_CHECK(ev::isObject(broG.value));
+    ev::Persistent flora(ev::getProperty(broG.value, "flora"));
+    TEST_CHECK(ev::isObject(flora.get()));
+    TEST_CHECK(ev::toBool(ev::getProperty(flora.get(), "available")) == true);
 
-    Value floraV = ev::getProperty(broG.value, "flora");
-    TEST_CHECK(ev::isObject(floraV));
-
-    Value availV = ev::getProperty(floraV, "available");
-    TEST_CHECK(ev::toBool(availV) == true);
-
-    // Prototypes
-    Value protosV = ev::getProperty(floraV, "prototypes");
-    TEST_CHECK(ev::isObject(protosV));
-
-    Value straightFn = ev::getProperty(protosV, "straight");
-    TEST_CHECK(ev::isFunction(straightFn));
-    ev::CallResult straightRes = ev::call(straightFn, protosV, {});
+    ev::Persistent protos(ev::getProperty(flora.get(), "prototypes"));
+    TEST_CHECK(ev::isObject(protos.get()));
+    ev::Persistent straightFn(ev::getProperty(protos.get(), "straight"));
+    TEST_CHECK(ev::isFunction(straightFn.get()));
+    ev::CallResult straightRes = ev::call(straightFn.get(), protos.get(), {});
     TEST_CHECK(!straightRes.thrown);
-    TEST_CHECK(ev::isObject(straightRes.value));
+    ev::Persistent straight(straightRes.value);
+    ev::Persistent nodes(ev::getProperty(straight.get(), "nodes"));
+    TEST_CHECK(ev::isObject(nodes.get()));
+    TEST_CHECK(ev::toDouble(ev::getProperty(nodes.get(), "length")) >= 2.0);
 
-    Value nodes = ev::getProperty(straightRes.value, "nodes");
-    TEST_CHECK(ev::isObject(nodes));
-    Value nodesLen = ev::getProperty(nodes, "length");
-    TEST_CHECK(ev::toDouble(nodesLen) >= 2.0);
-
-    // createWorld
-    Value createWorldFn = ev::getProperty(floraV, "createWorld");
-    TEST_CHECK(ev::isFunction(createWorldFn));
-
+    ev::Persistent createWorldFn(ev::getProperty(flora.get(), "createWorld"));
+    TEST_CHECK(ev::isFunction(createWorldFn.get()));
     ev::Persistent opts(ev::createObject());
     opts.set(ev::setProperty(opts.get(), "rngSeed", ev::fromDouble(12345.0)));
     Value optVal = opts.get();
-    ev::CallResult worldRes = ev::call(createWorldFn, floraV, std::span<const Value>(&optVal, 1));
+    ev::CallResult worldRes = ev::call(createWorldFn.get(), flora.get(), std::span<const Value>(&optVal, 1));
     TEST_CHECK(!worldRes.thrown);
-    TEST_CHECK(ev::isObject(worldRes.value));
+    ev::Persistent world(worldRes.value);
+    TEST_CHECK(ev::isObject(world.get()));
+    TEST_CHECK(ev::toDouble(ev::getProperty(world.get(), "prototypeCount")) == 0.0);
 
-    Value world = worldRes.value;
-
-    // prototypeCount initial
-    Value protoCountV = ev::getProperty(world, "prototypeCount");
-    TEST_CHECK(ev::toDouble(protoCountV) == 0.0);
-
-    // addPrototype
-    Value addProtoFn = ev::getProperty(world, "addPrototype");
-    TEST_CHECK(ev::isFunction(addProtoFn));
-    Value protoArg = straightRes.value;
-    ev::CallResult addProtoRes = ev::call(addProtoFn, world, std::span<const Value>(&protoArg, 1));
+    ev::Persistent addProtoFn(ev::getProperty(world.get(), "addPrototype"));
+    TEST_CHECK(ev::isFunction(addProtoFn.get()));
+    Value protoArg = straight.get();
+    ev::CallResult addProtoRes = ev::call(addProtoFn.get(), world.get(), std::span<const Value>(&protoArg, 1));
     TEST_CHECK(!addProtoRes.thrown);
-    double protoIdx = ev::toDouble(addProtoRes.value);
-    TEST_CHECK(protoIdx == 0.0);
+    TEST_CHECK(ev::toDouble(addProtoRes.value) == 0.0);
+    TEST_CHECK(ev::toDouble(ev::getProperty(world.get(), "prototypeCount")) == 1.0);
+}
 
-    protoCountV = ev::getProperty(world, "prototypeCount");
-    TEST_CHECK(ev::toDouble(protoCountV) == 1.0);
+// The world lifecycle, driven from JS.
+static void test_api_world_lifecycle() {
+    runScript("world lifecycle", R"JS(
+        const F = bro.flora;
+        const fail = (m) => { throw new Error(m); };
+        const w = F.createWorld({ rngSeed: 12345 });
+        const pi = w.addPrototype(F.prototypes.straight());
+        if (pi !== 0) fail("addPrototype returned " + pi);
+        if (w.prototypeCount !== 1) fail("prototypeCount");
+        w.addVoronoiSite(pi, 0.5, 0.5);
 
-    // addVoronoiSite
-    Value addVoronoiFn = ev::getProperty(world, "addVoronoiSite");
-    TEST_CHECK(ev::isFunction(addVoronoiFn));
-    Value voronoiArgs[3] = {ev::fromDouble(protoIdx), ev::fromDouble(0.5), ev::fromDouble(0.5)};
-    ev::CallResult voronoiRes = ev::call(addVoronoiFn, world, std::span<const Value>(voronoiArgs, 3));
-    TEST_CHECK(!voronoiRes.thrown);
+        const idx = w.addPlant({ origin: [0, 0, 0], prototypeIndex: pi,
+                                 species: { apicalControl: 0.8, determinacy: 0.2 } });
+        if (idx !== 0) fail("addPlant returned " + idx);
+        if (w.plantCount !== 1) fail("plantCount");
+        if (w.validate() !== null) fail("validate: " + w.validate());
+        for (let i = 0; i < 20; i++) {
+            if (w.step(0.1) !== w) fail("step should return this");
+        }
+        if (!(w.simTime > 1.9)) fail("simTime " + w.simTime);
 
-    // addPlant
-    Value addPlantFn = ev::getProperty(world, "addPlant");
-    TEST_CHECK(ev::isFunction(addPlantFn));
+        const info = w.plantInfo(0);
+        if (!info || !(info.moduleCount > 0)) fail("plantInfo.moduleCount");
+        if (w.plantInfo(99) !== null) fail("plantInfo out of range should be null");
 
-    ev::Persistent plantSpec(ev::createObject());
-    ev::CallResult originParsed = ev::parseJson("[0.0, 0.0, 0.0]");
-    TEST_CHECK(!originParsed.thrown);
-    plantSpec.set(ev::setProperty(plantSpec.get(), "origin", originParsed.value));
-    plantSpec.set(ev::setProperty(plantSpec.get(), "prototypeIndex", ev::fromDouble(protoIdx)));
+        const mesh = w.emitMesh(6);
+        if (!(mesh.vertexCount > 0)) fail("emitMesh produced nothing");
+        const psdf = w.emitPlantSdfMesh(0, { voxelSize: 0.01 });
+        if (!(psdf.vertexCount > 0)) fail("emitPlantSdfMesh produced nothing");
+        const wsdf = w.emitWorldSdfMesh({ voxelSize: 0.01 });
+        if (!(wsdf.vertexCount > 0)) fail("emitWorldSdfMesh produced nothing");
+        const lc = F.leafCluster();
+        if (!(lc.vertexCount > 0)) fail("leafCluster() produced nothing");
 
-    ev::Persistent spObj(ev::createObject());
-    spObj.set(ev::setProperty(spObj.get(), "apicalControl", ev::fromDouble(0.8)));
-    spObj.set(ev::setProperty(spObj.get(), "determinacy", ev::fromDouble(0.2)));
-    plantSpec.set(ev::setProperty(plantSpec.get(), "species", spObj.get()));
+        if (w.removePlant(0) !== true) fail("removePlant(0)");
+        if (w.plantCount !== 0) fail("plantCount after removePlant");
+        if (w.removePlant(0) !== false) fail("removePlant of a missing plant should be false");
+        "SUCCESS";
+    )JS");
+}
 
-    Value plantSpecVal = plantSpec.get();
-    ev::CallResult addPlantRes = ev::call(addPlantFn, world, std::span<const Value>(&plantSpecVal, 1));
-    TEST_CHECK(!addPlantRes.thrown);
-    TEST_CHECK(ev::toDouble(addPlantRes.value) == 0.0);
+// Every option reader in one script: under BRONZE_GC_STRESS=1 a reader that
+// held its option object as a plain Value across the reads would misread or
+// crash here.
+static void test_api_option_readers() {
+    runScript("option-reader", R"JS(
+        const F = bro.flora;
+        const fail = (m) => { throw new Error(m); };
 
-    Value plantCountV = ev::getProperty(world, "plantCount");
-    TEST_CHECK(ev::toDouble(plantCountV) == 1.0);
+        // createWorld reads rngSeed, climate and the shadow grid.
+        const w = F.createWorld({
+            rngSeed: 7,
+            climate: { annualTempBase: 14, annualPrecip: 900, tempLapsePerUnit: 0.01 },
+            shadow: { origin: [-4, 0, -4], cellSize: 0.5, width: 16, height: 16, depth: 16, fill: 0.75 }
+        });
+        if (!(w instanceof F.FloraWorld)) fail("createWorld did not return a FloraWorld");
+        const q = w.sampleShadow([0.1, 0.1, 0.1]);
+        if (q !== 0.75) fail("shadow fill/origin/dims not read: sampleShadow = " + q);
+        if (w.sampleShadow([100, 0, 0]) !== null) fail("sampleShadow outside the grid should be null");
+        if (w.setClimate({ annualTempBase: 10 }) !== w) fail("setClimate should return this");
 
-    // validate
-    Value validateFn = ev::getProperty(world, "validate");
-    TEST_CHECK(ev::isFunction(validateFn));
-    ev::CallResult valRes = ev::call(validateFn, world, {});
-    TEST_CHECK(!valRes.thrown);
-    TEST_CHECK(ev::isNull(valRes.value));
+        // A hand-written prototype: nodes, edges in both forms, terminals.
+        const pi = w.addPrototype({
+            name: "custom",
+            nodes: [
+                { position: [0, 0, 0], ageAtBirth: 0, lengthMax: 1, thickening: 1 },
+                { position: [0, 0.5, 0], ageAtBirth: 0.2, lengthMax: 1, thickening: 1 },
+                { position: [0.2, 1, 0], ageAtBirth: 0.4, lengthMax: 1, thickening: 1 }
+            ],
+            edges: [[0, 1], { a: 1, b: 2 }],
+            rootNode: 0,
+            terminalNodes: [2]
+        });
+        if (pi !== 0) fail("addPrototype returned " + pi);
+        const straight = w.addPrototype(F.prototypes.straight());
+        if (straight !== 1) fail("second addPrototype returned " + straight);
+        w.addVoronoiSite(pi, 0.5, 0.5);
+        w.addVoronoiSite(straight, 0.8, 0.3);
 
-    // step
-    Value stepFn = ev::getProperty(world, "step");
-    TEST_CHECK(ev::isFunction(stepFn));
-    Value dtArg = ev::fromDouble(0.1);
-    for (int i = 0; i < 20; ++i) {
-        ev::CallResult stepRes = ev::call(stepFn, world, std::span<const Value>(&dtArg, 1));
-        TEST_CHECK(!stepRes.thrown);
+        // addPlant reads origin, age, species (incl. the tropismDir vector).
+        const idx = w.addPlant({
+            origin: [1, 0, 2], age: 0, prototypeIndex: straight, initialVigor: 3,
+            species: { apicalControl: 0.8, determinacy: 0.2, tropismDir: [0, 1, 0.5], maxAge: 90 }
+        });
+        if (idx !== 0) fail("addPlant returned " + idx);
+        const info0 = w.plantInfo(0);
+        if (info0.origin[0] !== 1 || info0.origin[2] !== 2) fail("addPlant origin not read: " + info0.origin);
+        if (info0.species.tropismDir[2] !== 0.5) fail("species.tropismDir not read: " + info0.species.tropismDir);
+        if (info0.species.maxAge !== 90) fail("species.maxAge not read");
+        if (Math.abs(info0.rootVigor - 3) > 1e-6) fail("initialVigor not read: " + info0.rootVigor);
+        for (let i = 0; i < 40; i++) w.step(0.25);
+        if (w.validate() !== null) fail("validate: " + w.validate());
+
+        // Placement options (densityWeight is an array read element-wise).
+        const segs = w.emitSegments();
+        if (segs.length === 0) fail("no segments after 10 s of growth");
+        const dense = w.emitFoliageTransforms({ perUnitLength: 40, seed: 3, terminalOnly: false, maxRadius: 10 });
+        const weights = new Array(segs.length).fill(0);
+        const none = w.emitFoliageTransforms({ perUnitLength: 40, seed: 3, terminalOnly: false, maxRadius: 10, densityWeight: weights });
+        if (!(dense instanceof Float32Array) || dense.length === 0) fail("emitFoliageTransforms produced nothing");
+        if (none.length !== 0) fail("an all-zero densityWeight should place no leaves, got " + none.length / 16);
+        const sc = w.emitScatterSegments({ perUnitLength: 40, seed: 3, terminalOnly: false, maxRadius: 10 });
+        if (sc.segCount === 0 || sc.boundsMin.length !== 3) fail("emitScatterSegments shape");
+        const tubes = w.emitBranchTubes({ minRadius: 1e9 });
+        if (tubes.segCount !== 0) fail("emitBranchTubes ignored minRadius");
+
+        // leafCluster: options object with phyllotaxy + shape, and the
+        // (phyllotaxy, opts) form.
+        const lcA = F.leafCluster({ phyllotaxy: "opposite", count: 6, leafShape: "needle", includeTwigMesh: true });
+        const lcB = F.leafCluster(F.phyllotaxy.spiral, { count: 3, shape: "lobed" });
+        if (!(lcA.vertexCount > 0) || !(lcB.vertexCount > 0)) fail("leafCluster produced no geometry");
+        const lc6 = F.leafCluster(F.phyllotaxy.spiral, { count: 6, includeTwigMesh: false });
+        const lc2 = F.leafCluster(F.phyllotaxy.spiral, { count: 2, includeTwigMesh: false });
+        if (!(lc6.vertexCount > lc2.vertexCount)) fail("leafCluster ignored count");
+
+        // Mesh-object inputs: a leaf and petal read field by field.
+        const leaf = F.leafCluster(F.phyllotaxy.alternate, { count: 1, includeTwigMesh: false });
+        const fm = w.emitFoliageMesh(leaf, { perUnitLength: 10, seed: 1, terminalOnly: false, maxRadius: 10 });
+        if (!fm || !(fm.vertexCount > 0)) fail("emitFoliageMesh produced nothing");
+        const bloom = w.emitBloomMesh(leaf, null, { bloomCap: 4, bloomLightMin: 0 });
+        if (!Array.isArray(bloom) || bloom.length !== 2) fail("emitBloomMesh should return [petals, centers]");
+
+        const sdf = w.emitWorldSdfMesh({ voxelSize: 0.02, smoothK: 0.01, useSurfaceNets: true, margin: 0.05 });
+        if (!(sdf.vertexCount > 0)) fail("emitWorldSdfMesh produced nothing");
+        "SUCCESS";
+    )JS");
+}
+
+static void test_api_in_realm() {
+    ev::Realm* realm = ev::createRealm();
+    {
+        ev::RealmScope scope(realm);
+        broflora::api::installFlora();
+        test_api_embed_surface();
+        test_api_world_lifecycle();
+        test_api_option_readers();
     }
-
-    Value simTimeV = ev::getProperty(world, "simTime");
-    TEST_CHECK(ev::toDouble(simTimeV) > 1.9);
-
-    // plantInfo
-    Value plantInfoFn = ev::getProperty(world, "plantInfo");
-    TEST_CHECK(ev::isFunction(plantInfoFn));
-    Value idxArg = ev::fromDouble(0.0);
-    ev::CallResult infoRes = ev::call(plantInfoFn, world, std::span<const Value>(&idxArg, 1));
-    TEST_CHECK(!infoRes.thrown);
-    TEST_CHECK(ev::isObject(infoRes.value));
-    Value modCountV = ev::getProperty(infoRes.value, "moduleCount");
-    TEST_CHECK(ev::toDouble(modCountV) > 0.0);
-
-    // emitMesh
-    Value emitMeshFn = ev::getProperty(world, "emitMesh");
-    TEST_CHECK(ev::isFunction(emitMeshFn));
-    Value sidesArg = ev::fromDouble(6.0);
-    ev::CallResult meshRes = ev::call(emitMeshFn, world, std::span<const Value>(&sidesArg, 1));
-    TEST_CHECK(!meshRes.thrown);
-    TEST_CHECK(ev::isObject(meshRes.value));
-    Value vc = ev::getProperty(meshRes.value, "vertexCount");
-    TEST_CHECK(ev::toDouble(vc) > 0.0);
-
-    // emitPlantSdfMesh & emitWorldSdfMesh
-    Value emitPlantSdfFn = ev::getProperty(world, "emitPlantSdfMesh");
-    TEST_CHECK(ev::isFunction(emitPlantSdfFn));
-    ev::Persistent sdfOpts(ev::createObject());
-    sdfOpts.set(ev::setProperty(sdfOpts.get(), "voxelSize", ev::fromDouble(0.01)));
-    Value plantArgs[2] = { ev::fromDouble(0.0), sdfOpts.get() };
-    ev::CallResult plantSdfRes = ev::call(emitPlantSdfFn, world, std::span<const Value>(plantArgs, 2));
-    TEST_CHECK(!plantSdfRes.thrown);
-    TEST_CHECK(ev::isObject(plantSdfRes.value));
-    Value plantSdfVc = ev::getProperty(plantSdfRes.value, "vertexCount");
-    TEST_CHECK(ev::toDouble(plantSdfVc) > 0.0);
-
-    Value emitWorldSdfFn = ev::getProperty(world, "emitWorldSdfMesh");
-    TEST_CHECK(ev::isFunction(emitWorldSdfFn));
-    Value worldArgs[1] = { sdfOpts.get() };
-    ev::CallResult worldSdfRes = ev::call(emitWorldSdfFn, world, std::span<const Value>(worldArgs, 1));
-    TEST_CHECK(!worldSdfRes.thrown);
-    TEST_CHECK(ev::isObject(worldSdfRes.value));
-    Value worldSdfVc = ev::getProperty(worldSdfRes.value, "vertexCount");
-    TEST_CHECK(ev::toDouble(worldSdfVc) > 0.0);
-
-    // leafCluster
-    Value leafClusterFn = ev::getProperty(floraV, "leafCluster");
-    TEST_CHECK(ev::isFunction(leafClusterFn));
-    ev::CallResult lcRes = ev::call(leafClusterFn, floraV, {});
-    TEST_CHECK(!lcRes.thrown);
-    TEST_CHECK(ev::isObject(lcRes.value));
-    Value lcVc = ev::getProperty(lcRes.value, "vertexCount");
-    TEST_CHECK(ev::toDouble(lcVc) > 0.0);
-
-    // removePlant
-    Value removePlantFn = ev::getProperty(world, "removePlant");
-    TEST_CHECK(ev::isFunction(removePlantFn));
-    ev::CallResult remRes = ev::call(removePlantFn, world, std::span<const Value>(&idxArg, 1));
-    TEST_CHECK(!remRes.thrown);
-    TEST_CHECK(ev::toBool(remRes.value) == true);
-
-    plantCountV = ev::getProperty(world, "plantCount");
-    TEST_CHECK(ev::toDouble(plantCountV) == 0.0);
-
     ev::destroyRealm(realm);
 }
 
@@ -236,9 +254,8 @@ static void test_wind_transforms_and_normals() {
 
 int main() {
     std::cout << "Running broflora API test..." << std::endl;
-    test_api_installation_and_smoke();
+    test_api_in_realm();
     test_wind_transforms_and_normals();
     std::cout << "All broflora API tests passed!" << std::endl;
     return 0;
 }
-

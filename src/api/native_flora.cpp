@@ -208,13 +208,13 @@ namespace {
 Value jsCreateWorld(Value /*thisVal*/, std::span<const Value> args) {
     auto world = std::make_unique<broflora::WorldState>();
     if (!args.empty() && ev::isObject(args[0])) {
-        Value opts = args[0];
-        Value seedV = ev::getProperty(opts, "rngSeed");
+        // args[i] is a live root; a copy of it would go stale at the first read.
+        Value seedV = ev::getProperty(args[0], "rngSeed");
         if (ev::isNumber(seedV)) {
             world->rngState = static_cast<uint64_t>(ev::toDouble(seedV));
         }
-        readClimate(opts, world->climate);
-        readShadow(opts, world->shadow);
+        readClimate(args[0], world->climate);
+        readShadow(args[0], world->shadow);
     }
     auto* wrap = new FloraWorldWrapper{std::move(world)};
 
@@ -233,6 +233,12 @@ Value jsCreateWorld(Value /*thisVal*/, std::span<const Value> args) {
                 }
             }
         }
+    }
+    // The 4-argument form is fatal on a non-object prototype, so a world made
+    // before flora.js mounted FloraWorld is a bare handle (createWorld's JS
+    // side re-parents it).
+    if (!ev::isObject(proto)) {
+        return ev::makeHandle(wrap, &destroyFloraWorldWrapper, ev::Finalize::InSweep);
     }
     return ev::makeHandle(wrap, &destroyFloraWorldWrapper, ev::Finalize::InSweep, proto);
 }
@@ -267,13 +273,12 @@ Value jsAddPlant(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 2) return ev::fromDouble(-1.0);
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return ev::fromDouble(-1.0);
-    Value spec = args[1];
-    if (!ev::isObject(spec)) return ev::fromDouble(-1.0);
+    if (!ev::isObject(args[1])) return ev::fromDouble(-1.0);
+    Rooted spec(args[1]);
 
     broflora::Plant p;
     p.species = {};
-    Value speciesV = ev::getProperty(spec, "species");
-    applySpeciesPartial(speciesV, p.species);
+    applySpeciesPartial(ev::getProperty(spec, "species"), p.species);
 
     readVec3Prop(spec, "origin", p.origin);
     readFloatField(spec, "age", p.age);
@@ -395,8 +400,8 @@ Value jsSampleShadow(Value /*thisVal*/, std::span<const Value> args) {
     if (g.qg.empty() || g.width == 0 || g.height == 0 || g.depth == 0) return ev::null();
 
     bromath::Vec3 p{};
-    Value posV = args[1];
-    if (!ev::isObject(posV)) return ev::null();
+    if (!ev::isObject(args[1])) return ev::null();
+    Rooted posV(args[1]);
     Value lenV = ev::getProperty(posV, "length");
     if (!ev::isNumber(lenV) || ev::toDouble(lenV) < 3.0) return ev::null();
     p.x = static_cast<float>(ev::toDouble(ev::getElement(posV, 0)));
@@ -554,8 +559,13 @@ Value jsClear(Value /*thisVal*/, std::span<const Value> /*args*/) {
 void registerFloraNativeHelpers() {
     ev::Persistent nativeObj(ev::createObject());
 
+    // makeFunction allocates, so it runs before the receiver is read: in one
+    // argument list the evaluation order is unspecified.
     #define REG_FN(name, arity, fn) \
-        nativeObj.set(ev::setProperty(nativeObj.get(), #name, ev::makeFunction(fn, arity, #name)))
+        do { \
+            Value f_ = ev::makeFunction(fn, arity, #name); \
+            nativeObj.set(ev::setProperty(nativeObj.get(), #name, f_)); \
+        } while (0)
 
     REG_FN(createWorld, 1, jsCreateWorld);
     REG_FN(addPrototype, 2, jsAddPrototype);
@@ -616,92 +626,3 @@ void registerFloraNativeHelpers() {
 }
 
 } // namespace broflora::api
-
-// ── C ABI symbols matching native_flora_decl.h ─────────────────────────
-
-extern "C" {
-
-void bro_flora_FloraWorld_dtor(void* self) {
-    delete static_cast<broflora::api::FloraWorldWrapper*>(self);
-}
-
-void* bro_flora_FloraWorld_ctor(void) {
-    return new broflora::api::FloraWorldWrapper{std::make_unique<broflora::WorldState>()};
-}
-
-void* bro_flora_FloraWorld_addVoronoiSite(void* self, int32_t prototypeIndex, double determinacy, double apicalControl) {
-    if (self && prototypeIndex >= 0) {
-        auto* w = static_cast<broflora::api::FloraWorldWrapper*>(self);
-        if (w->world) {
-            broflora::addVoronoiSite(*w->world, static_cast<uint32_t>(prototypeIndex),
-                                     static_cast<float>(determinacy),
-                                     static_cast<float>(apicalControl));
-        }
-    }
-    return self;
-}
-
-bool bro_flora_FloraWorld_removePlant(void* self, int32_t plantIdx) {
-    if (!self || plantIdx < 0) return false;
-    auto* w = static_cast<broflora::api::FloraWorldWrapper*>(self);
-    if (!w->world || static_cast<size_t>(plantIdx) >= w->world->plants.size()) return false;
-    return broflora::removePlant(*w->world, static_cast<uint32_t>(plantIdx));
-}
-
-void* bro_flora_FloraWorld_step(void* self, double dt) {
-    if (self) {
-        auto* w = static_cast<broflora::api::FloraWorldWrapper*>(self);
-        if (w->world) {
-            broflora::step(*w->world, static_cast<float>(dt));
-        }
-    }
-    return self;
-}
-
-double bro_flora_FloraWorld_simTime_get(void* self) {
-    if (!self) return 0.0;
-    auto* w = static_cast<broflora::api::FloraWorldWrapper*>(self);
-    return w->world ? w->world->simTime : 0.0;
-}
-
-int32_t bro_flora_FloraWorld_plantCount_get(void* self) {
-    if (!self) return 0;
-    auto* w = static_cast<broflora::api::FloraWorldWrapper*>(self);
-    return w->world ? static_cast<int32_t>(w->world->plants.size()) : 0;
-}
-
-int32_t bro_flora_FloraWorld_prototypeCount_get(void* self) {
-    if (!self) return 0;
-    auto* w = static_cast<broflora::api::FloraWorldWrapper*>(self);
-    return w->world ? static_cast<int32_t>(w->world->prototypes.size()) : 0;
-}
-
-int32_t bro_flora_FloraWorld_moduleCount_get(void* self) {
-    if (!self) return 0;
-    auto* w = static_cast<broflora::api::FloraWorldWrapper*>(self);
-    if (!w->world) return 0;
-    size_t total = 0;
-    for (const auto& p : w->world->plants) total += p.modules.size();
-    return static_cast<int32_t>(total);
-}
-
-void bro_flora_setWind(double strength, double dirX, double dirY) {
-    broflora::api::setGlobalWind(strength, dirX, dirY);
-}
-void bro_flora_wind(double strength, double dirX, double dirY) {
-    broflora::api::setGlobalWind(strength, dirX, dirY);
-}
-void bro_flora_setDensity(double density) {
-    broflora::api::setGlobalDensity(density);
-}
-void bro_flora_density(double density) {
-    broflora::api::setGlobalDensity(density);
-}
-void bro_flora_update(double dt) {
-    broflora::api::updateGlobalWind(dt);
-}
-void bro_flora_clear(void) {
-    broflora::api::clearGlobalWind();
-}
-
-} // extern "C"
