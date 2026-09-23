@@ -248,6 +248,44 @@ static void test_api_wind_paths_agree() {
     )JS");
 }
 
+// Every 16-float instance the API hands out is bro's InstancedMeshNode
+// layout: a row-major 3x4 affine plus an RGBA tint that defaults to white.
+// The batch builder used to write 0, 0, 0, 1 there (a 4x4 bottom row),
+// which InstancedMeshNode draws black.
+static void test_api_instance_layout() {
+    runScript("instance layout", R"JS(
+        const F = bro.flora;
+        const fail = (m) => { throw new Error(m); };
+        F.clear();
+        const white = (t, what) => {
+            if (t.length % 16 !== 0 || t.length === 0) fail(what + ": length " + t.length);
+            for (let o = 0; o < t.length; o += 16) {
+                for (let k = 12; k < 16; k++) {
+                    if (t[o + k] !== 1) fail(what + ": instance " + o / 16 + " float " + k + " is " + t[o + k]);
+                }
+            }
+        };
+        const fromPoints = F.addPlacement({ transforms: [[1, 2, 3], [4, 5, 6]] });
+        white(fromPoints.transforms, "points batch");
+        white(fromPoints.baseTransforms, "points batch rest pose");
+        const t = fromPoints.transforms;
+        if (t[3] !== 1 || t[7] !== 2 || t[11] !== 3 || t[16 + 3] !== 4) fail("translation not at 3/7/11");
+        if (t[0] !== 1 || t[5] !== 1 || t[10] !== 1 || t[1] !== 0 || t[4] !== 0) fail("basis not identity");
+        white(F.addPlacement({ count: 3 }).transforms, "count batch");
+
+        const w = F.createWorld({ rngSeed: 3 });
+        const pi = w.addPrototype(F.prototypes.straight());
+        w.addPlant({ origin: [0, 0, 0], prototypeIndex: pi });
+        for (let i = 0; i < 10; i++) w.step(0.25);
+        white(w.emitSegmentTransforms(), "emitSegmentTransforms");
+        const ones = new Array(w.emitSegments().length).fill(1);
+        white(w.emitFoliageTransforms({ perUnitLength: 20, terminalOnly: false, maxRadius: 10, minDepth: 0,
+                                        densityWeight: ones }), "emitFoliageTransforms");
+        F.clear();
+        "SUCCESS";
+    )JS");
+}
+
 static void test_api_in_realm() {
     ev::Realm* realm = ev::createRealm();
     {
@@ -257,6 +295,7 @@ static void test_api_in_realm() {
         test_api_world_lifecycle();
         test_api_option_readers();
         test_api_wind_paths_agree();
+        test_api_instance_layout();
     }
     ev::destroyRealm(realm);
 }

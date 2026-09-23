@@ -224,6 +224,9 @@ Value jsEmitSegmentTransforms(Value /*thisVal*/, std::span<const Value> args) {
         float r = seg.radius > 0.001f ? seg.radius : 0.001f;
         bromath::Vec3 origin = seg.from;
 
+        // bro's InstancedMeshNode layout, as bromesh::placeLeavesOnBranches
+        // writes it: a row-major 3x4 affine, then the RGBA instance tint
+        // (white) in floats 12-15 -- not the 0, 0, 0, 1 row of a 4x4.
         float* o = transforms.data() + static_cast<size_t>(i) * 16;
         o[0] = side.x * r;  o[1] = up.x * r;  o[2] = fwd.x * len;  o[3] = origin.x;
         o[4] = side.y * r;  o[5] = up.y * r;  o[6] = fwd.y * len;  o[7] = origin.y;

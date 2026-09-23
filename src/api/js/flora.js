@@ -33,6 +33,18 @@
     var _activePlacements = [];
     var _nextBatchId = 0;
 
+    // One instance in bro's InstancedMeshNode layout, the layout the native
+    // emitters write: rows 0-2 are a row-major 3x4 affine (identity basis,
+    // translation at floats 3 / 7 / 11) and floats 12-15 are the instance's
+    // RGBA tint, white. It is not the bottom row of a 4x4: 0, 0, 0, 1 there
+    // would draw the instance black.
+    function _writeInstance(t, o, x, y, z) {
+        t[o + 0] = 1; t[o + 1] = 0; t[o + 2] = 0;  t[o + 3] = x;
+        t[o + 4] = 0; t[o + 5] = 1; t[o + 6] = 0;  t[o + 7] = y;
+        t[o + 8] = 0; t[o + 9] = 0; t[o + 10] = 1; t[o + 11] = z;
+        t[o + 12] = 1; t[o + 13] = 1; t[o + 14] = 1; t[o + 15] = 1;
+    }
+
     function _createBatch(cfg) {
         if (!cfg) return null;
         var id = cfg.id !== undefined ? cfg.id : ('flora_batch_' + (++_nextBatchId));
@@ -68,11 +80,7 @@
                     transforms = new Float32Array(count * 16);
                     for (var i = 0; i < count; i++) {
                         var p = rawT[i];
-                        var o = i * 16;
-                        transforms[o + 0] = 1; transforms[o + 1] = 0; transforms[o + 2] = 0; transforms[o + 3] = p[0];
-                        transforms[o + 4] = 0; transforms[o + 5] = 1; transforms[o + 6] = 0; transforms[o + 7] = p[1];
-                        transforms[o + 8] = 0; transforms[o + 9] = 0; transforms[o + 10] = 1; transforms[o + 11] = p[2];
-                        transforms[o + 12] = 0; transforms[o + 13] = 0; transforms[o + 14] = 0; transforms[o + 15] = 1;
+                        _writeInstance(transforms, i * 16, p[0], p[1], p[2]);
                     }
                     baseTransforms = new Float32Array(transforms);
                 }
@@ -80,10 +88,7 @@
         } else if (typeof cfg.count === 'number' && cfg.count > 0) {
             count = cfg.count | 0;
             transforms = new Float32Array(count * 16);
-            for (var i = 0; i < count; i++) {
-                var o = i * 16;
-                transforms[o + 0] = 1; transforms[o + 5] = 1; transforms[o + 10] = 1; transforms[o + 15] = 1;
-            }
+            for (var i = 0; i < count; i++) _writeInstance(transforms, i * 16, 0, 0, 0);
             baseTransforms = new Float32Array(transforms);
         }
 
