@@ -144,10 +144,10 @@ Value jsCreateWorld(Value /*thisVal*/, std::span<const Value> args) {
         // args[i] is a live root; a copy of it would go stale at the first read.
         Value seedV = ev::getProperty(args[0], "rngSeed");
         if (ev::isNumber(seedV)) {
-            world->rngState = static_cast<uint64_t>(ev::toDouble(seedV));
+            world->rngState = seedOf(ev::toDouble(seedV));
         }
         readClimate(args[0], world->climate);
-        readShadow(args[0], world->shadow);
+        if (!readShadow(args[0], world->shadow)) return ev::undefined();
     }
     auto* wrap = new FloraWorldWrapper{std::move(world)};
 
@@ -183,8 +183,10 @@ Value jsAddPrototype(Value /*thisVal*/, std::span<const Value> args) {
 
     broflora::BranchModulePrototype proto;
     std::string nameStorage;
-    if (!buildPrototype(args[1], proto, nameStorage)) {
-        return ev::fromDouble(-1.0);
+    switch (buildPrototype(args[1], proto, nameStorage)) {
+        case BuildResult::Ok: break;
+        case BuildResult::NotAPrototype: return ev::fromDouble(-1.0);
+        case BuildResult::Threw: return ev::undefined();
     }
     uint32_t idx = broflora::addPrototype(*w->world, std::move(proto));
     return ev::fromDouble(static_cast<double>(idx));
@@ -194,7 +196,13 @@ Value jsAddVoronoiSite(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 2) return args.empty() ? ev::undefined() : args[0];
     auto* w = getWrapper(args[0]);
     if (w && w->world) {
-        uint32_t protoIdx = static_cast<uint32_t>(ev::toDouble(args[1]));
+        // An index past the prototype list is kept (validate() reports it and
+        // spawning skips the site); one no uint32 can hold is an error.
+        int64_t idx = 0;
+        if (!intValue(args[1], "bro.flora.FloraWorld.addVoronoiSite: prototypeIndex", 0.0, kMaxUint32, idx)) {
+            return ev::undefined();
+        }
+        const uint32_t protoIdx = static_cast<uint32_t>(idx);
         float det = args.size() >= 3 && ev::isNumber(args[2]) ? static_cast<float>(ev::toDouble(args[2])) : 1.0f;
         float ac = args.size() >= 4 && ev::isNumber(args[3]) ? static_cast<float>(ev::toDouble(args[3])) : 0.5f;
         broflora::addVoronoiSite(*w->world, protoIdx, det, ac);
@@ -217,9 +225,13 @@ Value jsAddPlant(Value /*thisVal*/, std::span<const Value> args) {
     readFloatField(spec, "age", p.age);
     p.effectiveRootVigorMax = p.species.rootVigorMax;
 
-    uint32_t protoIdx = UINT32_MAX;
-    if (readUint32Field(spec, "prototypeIndex", protoIdx)) {
-        const auto* proto = broflora::prototypeAt(*w->world, protoIdx);
+    int64_t protoIdx = -1;
+    if (!intField(spec, "prototypeIndex", "bro.flora.FloraWorld.addPlant: spec.prototypeIndex",
+                  0.0, kMaxUint32, protoIdx)) {
+        return ev::undefined();
+    }
+    if (protoIdx >= 0) {
+        const auto* proto = broflora::prototypeAt(*w->world, static_cast<uint32_t>(protoIdx));
         if (!proto) return ev::fromDouble(-1.0);
         broflora::BranchModuleInstance root;
         root.prototype = proto;
@@ -239,10 +251,8 @@ Value jsRemovePlant(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 2) return ev::fromBool(false);
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return ev::fromBool(false);
-    int plantIdx = static_cast<int>(ev::toDouble(args[1]));
-    if (plantIdx < 0 || static_cast<size_t>(plantIdx) >= w->world->plants.size()) {
-        return ev::fromBool(false);
-    }
+    size_t plantIdx = 0;
+    if (!plantIndexOf(args[1], *w->world, plantIdx)) return ev::fromBool(false);
     bool ok = broflora::removePlant(*w->world, static_cast<uint32_t>(plantIdx));
     return ev::fromBool(ok);
 }
@@ -261,11 +271,9 @@ Value jsPlantInfo(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 2) return ev::null();
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return ev::null();
-    int plantIdx = static_cast<int>(ev::toDouble(args[1]));
-    if (plantIdx < 0 || static_cast<size_t>(plantIdx) >= w->world->plants.size()) {
-        return ev::null();
-    }
-    const auto& p = w->world->plants[static_cast<size_t>(plantIdx)];
+    size_t plantIdx = 0;
+    if (!plantIndexOf(args[1], *w->world, plantIdx)) return ev::null();
+    const auto& p = w->world->plants[plantIdx];
     ev::Persistent o(ev::createObject());
     ev::Persistent orig(makeVec3(p.origin));
     o.set(ev::setProperty(o.get(), "origin", orig.get()));
@@ -341,19 +349,20 @@ Value jsSampleShadow(Value /*thisVal*/, std::span<const Value> args) {
     p.y = static_cast<float>(ev::toDouble(ev::getElement(posV, 1)));
     p.z = static_cast<float>(ev::toDouble(ev::getElement(posV, 2)));
 
-    const float inv = (g.cellSize > 0.0f) ? 1.0f / g.cellSize : 0.0f;
-    int ix = static_cast<int>((p.x - g.origin.x) * inv);
-    int iy = static_cast<int>((p.y - g.origin.y) * inv);
-    int iz = static_cast<int>((p.z - g.origin.z) * inv);
-    if (ix < 0 || iy < 0 || iz < 0) return ev::null();
-    if (static_cast<uint32_t>(ix) >= g.width ||
-        static_cast<uint32_t>(iy) >= g.height ||
-        static_cast<uint32_t>(iz) >= g.depth) {
+    // The same cell the simulation's shadowCellOf picks, but range-checked
+    // before the integer conversion: a far-away or NaN position has no int.
+    if (!(g.cellSize > 0.0f)) return ev::null();
+    const float fx = (p.x - g.origin.x) / g.cellSize;
+    const float fy = (p.y - g.origin.y) / g.cellSize;
+    const float fz = (p.z - g.origin.z) / g.cellSize;
+    if (!(fx >= 0.0f && fx < static_cast<float>(g.width) &&
+          fy >= 0.0f && fy < static_cast<float>(g.height) &&
+          fz >= 0.0f && fz < static_cast<float>(g.depth))) {
         return ev::null();
     }
-    const uint32_t idx = broflora::shadowIndex(g, static_cast<uint32_t>(ix),
-                                               static_cast<uint32_t>(iy),
-                                               static_cast<uint32_t>(iz));
+    const uint32_t idx = broflora::shadowIndex(g, static_cast<uint32_t>(fx),
+                                               static_cast<uint32_t>(fy),
+                                               static_cast<uint32_t>(fz));
     return ev::fromDouble(g.qg[idx]);
 }
 
@@ -402,17 +411,19 @@ Value jsProtoFork(Value /*thisVal*/, std::span<const Value> /*args*/) {
 }
 
 Value jsProtoWhorl(Value /*thisVal*/, std::span<const Value> args) {
-    uint32_t arms = 3;
+    uint32_t arms = 3;  // whorlModule clamps it to [2, 8]
     float spread = 0.55f;
-    if (args.size() >= 1 && ev::isNumber(args[0])) arms = static_cast<uint32_t>(ev::toDouble(args[0]));
+    if (!optIntArg(args, 0, "bro.flora.prototypes.whorl: arms", 0.0, kMaxUint32, arms)) return ev::undefined();
     if (args.size() >= 2 && ev::isNumber(args[1])) spread = static_cast<float>(ev::toDouble(args[1]));
     return protoToSpec(broflora::whorlModule(arms, spread));
 }
 
 Value jsProtoMonopodial(Value /*thisVal*/, std::span<const Value> args) {
-    uint32_t lateralBranches = 2;
+    uint32_t lateralBranches = 2;  // monopodialLeaderModule clamps it to [1, 4]
     float lateralSpread = 0.7f;
-    if (args.size() >= 1 && ev::isNumber(args[0])) lateralBranches = static_cast<uint32_t>(ev::toDouble(args[0]));
+    if (!optIntArg(args, 0, "bro.flora.prototypes.monopodial: lateralBranches", 0.0, kMaxUint32, lateralBranches)) {
+        return ev::undefined();
+    }
     if (args.size() >= 2 && ev::isNumber(args[1])) lateralSpread = static_cast<float>(ev::toDouble(args[1]));
     return protoToSpec(broflora::monopodialLeaderModule(lateralBranches, lateralSpread));
 }
@@ -426,9 +437,11 @@ Value jsProtoSympodial(Value /*thisVal*/, std::span<const Value> args) {
 }
 
 Value jsProtoHorizontalTier(Value /*thisVal*/, std::span<const Value> args) {
-    uint32_t arms = 3;
+    uint32_t arms = 3;  // horizontalTierModule clamps it to [2, 8]
     float spread = 0.85f;
-    if (args.size() >= 1 && ev::isNumber(args[0])) arms = static_cast<uint32_t>(ev::toDouble(args[0]));
+    if (!optIntArg(args, 0, "bro.flora.prototypes.horizontalTier: arms", 0.0, kMaxUint32, arms)) {
+        return ev::undefined();
+    }
     if (args.size() >= 2 && ev::isNumber(args[1])) spread = static_cast<float>(ev::toDouble(args[1]));
     return protoToSpec(broflora::horizontalTierModule(arms, spread));
 }

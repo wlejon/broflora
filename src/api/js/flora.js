@@ -85,8 +85,15 @@
                     baseTransforms = new Float32Array(transforms);
                 }
             }
-        } else if (typeof cfg.count === 'number' && cfg.count > 0) {
-            count = cfg.count | 0;
+        } else if (cfg.count !== undefined) {
+            // `| 0` used to wrap a big count and a fraction truncated silently.
+            if (typeof cfg.count !== 'number') {
+                throw new TypeError("bro.flora.addPlacement: config.count must be a number");
+            }
+            if (cfg.count !== Math.floor(cfg.count) || cfg.count < 0 || cfg.count > 16777216) {
+                throw new RangeError("bro.flora.addPlacement: config.count must be an integer in [0, 16777216], got " + cfg.count);
+            }
+            count = cfg.count;
             transforms = new Float32Array(count * 16);
             for (var i = 0; i < count; i++) _writeInstance(transforms, i * 16, 0, 0, 0);
             baseTransforms = new Float32Array(transforms);

@@ -87,6 +87,99 @@ struct Rooted {
     Value get() const { return p.get(); }
 };
 
+// ── Integer arguments ──────────────────────────────────────────────────
+//
+// Counts, sizes and indices arrive as JS doubles. A static_cast of a
+// negative, NaN or out-of-range double to an integer type is undefined
+// behaviour and in practice wraps to ~4e9, which then sizes an allocation or
+// indexes past a vector. Every such value goes through intValue: a
+// non-number is a TypeError; NaN, a fraction or a value outside [lo, hi] is
+// a RangeError. It returns false once it has raised, and the caller returns
+// ev::undefined() (what the throw helpers return) so the exception reaches
+// JS. `what` names the argument in the message, e.g.
+// "bro.flora.FloraWorld.emitMesh: sides".
+
+inline constexpr double kMaxUint32 = 4294967295.0;
+
+inline std::string numberText(double d) {
+    if (std::isnan(d)) return "NaN";
+    if (std::isinf(d)) return d > 0 ? "Infinity" : "-Infinity";
+    if (d == std::floor(d) && std::fabs(d) < 1e15) return std::to_string(static_cast<long long>(d));
+    std::string s = std::to_string(d);
+    while (!s.empty() && s.back() == '0') s.pop_back();
+    return s;
+}
+
+inline bool intValue(Value v, std::string_view what, double lo, double hi, int64_t& out) {
+    if (!ev::isNumber(v)) {
+        ev::throwTypeError(std::string(what) + " must be a number");
+        return false;
+    }
+    const double d = ev::toDouble(v);
+    if (std::isnan(d) || d != std::floor(d) || d < lo || d > hi) {
+        ev::throwRangeError(std::string(what) + " must be an integer in [" + numberText(lo) + ", " +
+                            numberText(hi) + "], got " + numberText(d));
+        return false;
+    }
+    out = static_cast<int64_t>(d);
+    return true;
+}
+
+// intValue for an optional positional argument: absent or undefined leaves
+// `out` alone (it holds the default).
+template <typename T>
+inline bool optIntArg(std::span<const Value> args, size_t i, std::string_view what,
+                      double lo, double hi, T& out) {
+    if (i >= args.size() || ev::isUndefined(args[i])) return true;
+    int64_t v = 0;
+    if (!intValue(args[i], what, lo, hi, v)) return false;
+    out = static_cast<T>(v);
+    return true;
+}
+
+// intValue for an option field: an undefined field leaves `out` alone.
+template <typename T>
+inline bool intField(Value obj, std::string_view prop, std::string_view what,
+                     double lo, double hi, T& out) {
+    if (!ev::isObject(obj)) return true;
+    Value v = ev::getProperty(obj, prop);
+    if (ev::isUndefined(v)) return true;
+    int64_t n = 0;
+    if (!intValue(v, what, lo, hi, n)) return false;
+    out = static_cast<T>(n);
+    return true;
+}
+
+// The element count of an array or array-like option value.
+inline bool lengthOf(Value arr, std::string_view what, uint32_t& out) {
+    out = 0;
+    return intField(arr, "length", what, 0.0, kMaxUint32, out);
+}
+
+// A plant index. Not a throwing argument: an index that names no plant
+// (negative, fractional, NaN, past the end) is the documented null / false
+// / [] answer of every per-plant method, so this only keeps the conversion
+// defined.
+inline bool plantIndexOf(Value v, const broflora::WorldState& world, size_t& out) {
+    if (!ev::isNumber(v)) return false;
+    const double d = ev::toDouble(v);
+    if (!(d >= 0.0) || d != std::floor(d) || d >= static_cast<double>(world.plants.size())) return false;
+    out = static_cast<size_t>(d);
+    return true;
+}
+
+// A seed: any number, converted without undefined behaviour. Non-negative
+// integers keep their value; a negative one wraps as two's complement;
+// NaN and infinities read as 0.
+inline uint64_t seedOf(double d) {
+    if (!std::isfinite(d)) return 0;
+    d = std::trunc(d);
+    if (d >= 18446744073709551615.0) return UINT64_MAX;
+    if (d >= 0.0) return static_cast<uint64_t>(d);
+    if (d <= -9223372036854775808.0) return static_cast<uint64_t>(INT64_MIN);
+    return static_cast<uint64_t>(static_cast<int64_t>(d));
+}
+
 // ── Property reading helpers ───────────────────────────────────────────
 // The single-read helpers below are safe on a plain Value; the multi-read
 // ones root their input first.
@@ -97,26 +190,6 @@ inline bool readFloatField(Value obj, std::string_view prop, float& out) {
     if (ev::isNumber(v)) {
         double d = ev::toDouble(v);
         if (!std::isnan(d)) { out = static_cast<float>(d); return true; }
-    }
-    return false;
-}
-
-inline bool readIntField(Value obj, std::string_view prop, int& out) {
-    if (!ev::isObject(obj)) return false;
-    Value v = ev::getProperty(obj, prop);
-    if (ev::isNumber(v)) {
-        double d = ev::toDouble(v);
-        if (!std::isnan(d)) { out = static_cast<int>(d); return true; }
-    }
-    return false;
-}
-
-inline bool readUint32Field(Value obj, std::string_view prop, uint32_t& out) {
-    if (!ev::isObject(obj)) return false;
-    Value v = ev::getProperty(obj, prop);
-    if (ev::isNumber(v)) {
-        double d = ev::toDouble(v);
-        if (!std::isnan(d)) { out = static_cast<uint32_t>(d); return true; }
     }
     return false;
 }
@@ -333,10 +406,11 @@ inline broflora::Phyllotaxy parsePhyllotaxy(Value v) {
     return broflora::Phyllotaxy::Alternate;
 }
 
-inline void readLeafClusterOptions(Value in, broflora::LeafClusterOptions& opts) {
-    if (!ev::isObject(in)) return;
+// Returns false once it has thrown (a bad count).
+inline bool readLeafClusterOptions(Value in, broflora::LeafClusterOptions& opts) {
+    if (!ev::isObject(in)) return true;
     Rooted obj(in);
-    readIntField  (obj, "count",            opts.count);
+    if (!intField(obj, "count", "bro.flora.leafCluster: opts.count", 0, 4096, opts.count)) return false;
     readFloatField(obj, "twigLength",       opts.twigLength);
     readFloatField(obj, "twigRadius",       opts.twigRadius);
     readFloatField(obj, "petioleLength",    opts.petioleLength);
@@ -364,13 +438,17 @@ inline void readLeafClusterOptions(Value in, broflora::LeafClusterOptions& opts)
     readBoolField (obj, "includeTwigMesh",  opts.includeTwigMesh);
     readBoolField (obj, "shapedSilhouette", opts.shapedSilhouette);
     readBoolField (obj, "fullUV",           opts.fullUV);
+    return true;
 }
 
-inline void readLeafPlacementOptions(Value in, bromesh::LeafPlacementOptions& opts) {
-    if (!ev::isObject(in)) return;
+// Returns false once it has thrown (a bad minDepth or densityWeight length).
+inline bool readLeafPlacementOptions(Value in, bromesh::LeafPlacementOptions& opts) {
+    if (!ev::isObject(in)) return true;
     Rooted o(in);
     readFloatField(o, "maxRadius",       opts.maxRadius);
-    readIntField  (o, "minDepth",        opts.minDepth);
+    if (!intField(o, "minDepth", "leaf placement opts.minDepth", -2147483648.0, 2147483647.0, opts.minDepth)) {
+        return false;
+    }
     readBoolField (o, "terminalOnly",    opts.terminalOnly);
     readFloatField(o, "perUnitLength",   opts.perUnitLength);
     readFloatField(o, "densityFalloff",  opts.densityFalloff);
@@ -383,19 +461,18 @@ inline void readLeafPlacementOptions(Value in, bromesh::LeafPlacementOptions& op
     readFloatField(o, "dedupRadius",     opts.dedupRadius);
 
     Value seedV = ev::getProperty(o, "seed");
-    if (ev::isNumber(seedV)) opts.seed = static_cast<uint64_t>(ev::toDouble(seedV));
+    if (ev::isNumber(seedV)) opts.seed = seedOf(ev::toDouble(seedV));
 
     Rooted dw(ev::getProperty(o, "densityWeight"));
     if (ev::isObject(dw)) {
-        Value lenV = ev::getProperty(dw, "length");
-        if (ev::isNumber(lenV)) {
-            uint32_t n = static_cast<uint32_t>(ev::toDouble(lenV));
-            opts.densityWeight.resize(n);
-            for (uint32_t i = 0; i < n; ++i) {
-                opts.densityWeight[i] = static_cast<float>(ev::toDouble(ev::getElement(dw, i)));
-            }
+        uint32_t n = 0;
+        if (!lengthOf(dw, "leaf placement opts.densityWeight.length", n)) return false;
+        opts.densityWeight.resize(n);
+        for (uint32_t i = 0; i < n; ++i) {
+            opts.densityWeight[i] = static_cast<float>(ev::toDouble(ev::getElement(dw, i)));
         }
     }
+    return true;
 }
 
 // ── Species partial application ────────────────────────────────────────
@@ -435,11 +512,18 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
 
 // ── Prototype builder ──────────────────────────────────────────────────
 
-inline bool buildPrototype(Value in,
-                           broflora::BranchModulePrototype& out,
-                           std::string& nameStorage) {
-    if (!ev::isObject(in)) return false;
+enum class BuildResult { Ok, NotAPrototype, Threw };
+
+// A spec with no nodes is NotAPrototype (addPrototype answers -1). Node
+// references -- rootNode, both ends of every edge, every terminal -- must be
+// integers naming a node, or it throws a RangeError: the simulation indexes
+// `nodes` with them unchecked.
+inline BuildResult buildPrototype(Value in,
+                                  broflora::BranchModulePrototype& out,
+                                  std::string& nameStorage) {
+    if (!ev::isObject(in)) return BuildResult::NotAPrototype;
     Rooted spec(in);
+    constexpr std::string_view kWhat = "bro.flora.FloraWorld.addPrototype: ";
 
     Value nameV = ev::getProperty(spec, "name");
     if (ev::isString(nameV)) {
@@ -449,61 +533,85 @@ inline bool buildPrototype(Value in,
 
     Rooted nodesV(ev::getProperty(spec, "nodes"));
     if (ev::isObject(nodesV)) {
-        Value lenV = ev::getProperty(nodesV, "length");
-        if (ev::isNumber(lenV)) {
-            uint32_t n = static_cast<uint32_t>(ev::toDouble(lenV));
-            out.nodes.reserve(n);
-            for (uint32_t i = 0; i < n; ++i) {
-                Rooted nv(ev::getElement(nodesV, i));
-                broflora::ModuleNode mn;
-                readVec3Prop  (nv, "position",    mn.position);
-                readFloatField(nv, "ageAtBirth",  mn.ageAtBirth);
-                readFloatField(nv, "lengthMax",   mn.lengthMax);
-                readFloatField(nv, "thickening",  mn.thickening);
-                out.nodes.push_back(mn);
-            }
+        uint32_t n = 0;
+        if (!lengthOf(nodesV, std::string(kWhat) + "spec.nodes.length", n)) return BuildResult::Threw;
+        out.nodes.reserve(n);
+        for (uint32_t i = 0; i < n; ++i) {
+            Rooted nv(ev::getElement(nodesV, i));
+            broflora::ModuleNode mn;
+            readVec3Prop  (nv, "position",    mn.position);
+            readFloatField(nv, "ageAtBirth",  mn.ageAtBirth);
+            readFloatField(nv, "lengthMax",   mn.lengthMax);
+            readFloatField(nv, "thickening",  mn.thickening);
+            out.nodes.push_back(mn);
         }
     }
+    if (out.nodes.empty()) return BuildResult::NotAPrototype;
+    const double lastNode = static_cast<double>(out.nodes.size() - 1);
+    auto nodeRef = [&](Value v, const std::string& what, uint32_t& ref) {
+        int64_t r = 0;
+        if (!intValue(v, what, 0.0, lastNode, r)) return false;
+        ref = static_cast<uint32_t>(r);
+        return true;
+    };
 
     Rooted edgesV(ev::getProperty(spec, "edges"));
     if (ev::isObject(edgesV)) {
-        Value lenV = ev::getProperty(edgesV, "length");
-        if (ev::isNumber(lenV)) {
-            uint32_t n = static_cast<uint32_t>(ev::toDouble(lenV));
-            out.edges.reserve(n);
-            for (uint32_t i = 0; i < n; ++i) {
-                Rooted evVal(ev::getElement(edgesV, i));
-                broflora::ModuleEdge e{};
-                if (ev::isObject(evVal)) {
-                    Value lenSub = ev::getProperty(evVal, "length");
-                    if (ev::isNumber(lenSub) && ev::toDouble(lenSub) >= 2.0) {
-                        e.a = static_cast<uint32_t>(ev::toDouble(ev::getElement(evVal, 0)));
-                        e.b = static_cast<uint32_t>(ev::toDouble(ev::getElement(evVal, 1)));
-                    } else {
-                        readUint32Field(evVal, "a", e.a);
-                        readUint32Field(evVal, "b", e.b);
-                    }
-                }
-                out.edges.push_back(e);
+        uint32_t n = 0;
+        if (!lengthOf(edgesV, std::string(kWhat) + "spec.edges.length", n)) return BuildResult::Threw;
+        out.edges.reserve(n);
+        for (uint32_t i = 0; i < n; ++i) {
+            Rooted evVal(ev::getElement(edgesV, i));
+            const std::string at = std::string(kWhat) + "spec.edges[" + std::to_string(i) + "]";
+            if (!ev::isObject(evVal)) {
+                ev::throwTypeError(at + " must be [a, b] or {a, b}");
+                return BuildResult::Threw;
             }
+            broflora::ModuleEdge e{};
+            Value lenSub = ev::getProperty(evVal, "length");
+            if (ev::isNumber(lenSub)) {
+                if (!(ev::toDouble(lenSub) >= 2.0)) {
+                    ev::throwTypeError(at + " must be [a, b] or {a, b}");
+                    return BuildResult::Threw;
+                }
+                if (!nodeRef(ev::getElement(evVal, 0), at + "[0]", e.a)) return BuildResult::Threw;
+                if (!nodeRef(ev::getElement(evVal, 1), at + "[1]", e.b)) return BuildResult::Threw;
+            } else {
+                if (!nodeRef(ev::getProperty(evVal, "a"), at + ".a", e.a)) return BuildResult::Threw;
+                if (!nodeRef(ev::getProperty(evVal, "b"), at + ".b", e.b)) return BuildResult::Threw;
+            }
+            out.edges.push_back(e);
         }
     }
 
-    readUint32Field(spec, "rootNode", out.rootNode);
+    {
+        Value rv = ev::getProperty(spec, "rootNode");
+        if (!ev::isUndefined(rv) && !nodeRef(rv, std::string(kWhat) + "spec.rootNode", out.rootNode)) {
+            return BuildResult::Threw;
+        }
+    }
+    if (out.rootNode >= out.nodes.size()) {
+        ev::throwRangeError(std::string(kWhat) + "spec.rootNode defaults to " + std::to_string(out.rootNode) +
+                            ", which names no node");
+        return BuildResult::Threw;
+    }
 
     Rooted termsV(ev::getProperty(spec, "terminalNodes"));
     if (ev::isObject(termsV)) {
-        Value lenV = ev::getProperty(termsV, "length");
-        if (ev::isNumber(lenV)) {
-            uint32_t n = static_cast<uint32_t>(ev::toDouble(lenV));
-            out.terminalNodes.reserve(n);
-            for (uint32_t i = 0; i < n; ++i) {
-                out.terminalNodes.push_back(static_cast<uint32_t>(ev::toDouble(ev::getElement(termsV, i))));
+        uint32_t n = 0;
+        if (!lengthOf(termsV, std::string(kWhat) + "spec.terminalNodes.length", n)) return BuildResult::Threw;
+        out.terminalNodes.reserve(n);
+        for (uint32_t i = 0; i < n; ++i) {
+            uint32_t t = 0;
+            if (!nodeRef(ev::getElement(termsV, i),
+                         std::string(kWhat) + "spec.terminalNodes[" + std::to_string(i) + "]", t)) {
+                return BuildResult::Threw;
             }
+            out.terminalNodes.push_back(t);
         }
     }
 
-    return !out.nodes.empty();
+    return BuildResult::Ok;
 }
 
 // ── Climate / shadow readers ───────────────────────────────────────────
@@ -521,19 +629,30 @@ inline void readClimate(Value opts, broflora::GlobalClimate& c) {
     readClimateFields(cv, c);
 }
 
-inline void readShadow(Value opts, broflora::ShadowGrid& g) {
+// The shadow grid's cell budget: 2^26 cells is 256 MB of floats.
+inline constexpr double kMaxShadowCells = 67108864.0;
+
+// Returns false once it has thrown (a bad grid dimension).
+inline bool readShadow(Value opts, broflora::ShadowGrid& g) {
     Rooted sv(ev::getProperty(opts, "shadow"));
     if (ev::isObject(sv)) {
         readVec3Prop  (sv, "origin",   g.origin);
         readFloatField(sv, "cellSize", g.cellSize);
-        readUint32Field(sv, "width",   g.width);
-        readUint32Field(sv, "height",  g.height);
-        readUint32Field(sv, "depth",   g.depth);
+        constexpr std::string_view kWhat = "bro.flora.createWorld: shadow.";
+        if (!intField(sv, "width",  std::string(kWhat) + "width",  0.0, kMaxShadowCells, g.width))  return false;
+        if (!intField(sv, "height", std::string(kWhat) + "height", 0.0, kMaxShadowCells, g.height)) return false;
+        if (!intField(sv, "depth",  std::string(kWhat) + "depth",  0.0, kMaxShadowCells, g.depth))  return false;
+        const double cells = static_cast<double>(g.width) * g.height * g.depth;
+        if (cells > kMaxShadowCells) {
+            ev::throwRangeError(std::string(kWhat) + "width * height * depth is " + numberText(cells) +
+                                " cells, over the " + numberText(kMaxShadowCells) + " limit");
+            return false;
+        }
         float fill = 1.0f;
         readFloatField(sv, "fill", fill);
-        const size_t n = static_cast<size_t>(g.width) * g.height * g.depth;
-        g.qg.assign(n, fill);
+        g.qg.assign(static_cast<size_t>(cells), fill);
     }
+    return true;
 }
 
 inline Value protoToSpec(const broflora::BranchModulePrototype& p) {

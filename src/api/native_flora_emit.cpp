@@ -2,14 +2,17 @@
 
 namespace broflora::api {
 
+// Facets around each branch cylinder.
+constexpr double kMinSides = 3.0;
+constexpr double kMaxSides = 256.0;
+
 Value jsEmitMesh(Value /*thisVal*/, std::span<const Value> args) {
     if (args.empty()) return ev::null();
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return ev::null();
     uint32_t sides = 6u;
-    if (args.size() >= 2 && ev::isNumber(args[1])) {
-        uint32_t s = static_cast<uint32_t>(ev::toDouble(args[1]));
-        if (s >= 3) sides = s;
+    if (!optIntArg(args, 1, "bro.flora.FloraWorld.emitMesh: sides", kMinSides, kMaxSides, sides)) {
+        return ev::undefined();
     }
     auto md = std::make_unique<bromesh::MeshData>(broflora::emitWorldMesh(*w->world, sides));
     if (getGlobalWindStrength() != 0.0) {
@@ -81,16 +84,15 @@ Value jsEmitPlantMesh(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 2) return ev::null();
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return ev::null();
-    int plantIdx = static_cast<int>(ev::toDouble(args[1]));
-    if (plantIdx < 0 || static_cast<size_t>(plantIdx) >= w->world->plants.size()) return ev::null();
+    size_t plantIdx = 0;
+    if (!plantIndexOf(args[1], *w->world, plantIdx)) return ev::null();
 
     uint32_t sides = 6u;
-    if (args.size() >= 3 && ev::isNumber(args[2])) {
-        uint32_t s = static_cast<uint32_t>(ev::toDouble(args[2]));
-        if (s >= 3) sides = s;
+    if (!optIntArg(args, 2, "bro.flora.FloraWorld.emitPlantMesh: sides", kMinSides, kMaxSides, sides)) {
+        return ev::undefined();
     }
     auto md = std::make_unique<bromesh::MeshData>(
-        broflora::emitPlantMesh(w->world->plants[static_cast<size_t>(plantIdx)], sides));
+        broflora::emitPlantMesh(w->world->plants[plantIdx], sides));
     if (getGlobalWindStrength() != 0.0) {
         applyWindToMeshData(*md, getGlobalWindTime(), getGlobalWindStrength(), getGlobalWindDirX(), getGlobalWindDirY());
     }
@@ -101,10 +103,10 @@ Value jsEmitPlantSegments(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 2) return createEmptyArray();
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return createEmptyArray();
-    int plantIdx = static_cast<int>(ev::toDouble(args[1]));
-    if (plantIdx < 0 || static_cast<size_t>(plantIdx) >= w->world->plants.size()) return createEmptyArray();
+    size_t plantIdx = 0;
+    if (!plantIndexOf(args[1], *w->world, plantIdx)) return createEmptyArray();
 
-    auto segs = broflora::emitPlantSegments(w->world->plants[static_cast<size_t>(plantIdx)]);
+    auto segs = broflora::emitPlantSegments(w->world->plants[plantIdx]);
     return hostArrayOf(segs.size(), [&](size_t i) {
         const auto& s = segs[i];
         ev::Persistent o(ev::createObject());
@@ -123,10 +125,10 @@ Value jsEmitPlantFoliage(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 2) return createEmptyArray();
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return createEmptyArray();
-    int plantIdx = static_cast<int>(ev::toDouble(args[1]));
-    if (plantIdx < 0 || static_cast<size_t>(plantIdx) >= w->world->plants.size()) return createEmptyArray();
+    size_t plantIdx = 0;
+    if (!plantIndexOf(args[1], *w->world, plantIdx)) return createEmptyArray();
 
-    auto samples = broflora::emitPlantFoliage(w->world->plants[static_cast<size_t>(plantIdx)]);
+    auto samples = broflora::emitPlantFoliage(w->world->plants[plantIdx]);
     return hostArrayOf(samples.size(), [&](size_t i) {
         const auto& s = samples[i];
         ev::Persistent o(ev::createObject());
@@ -146,10 +148,10 @@ Value jsEmitPlantBloomAnchors(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 2) return createEmptyArray();
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return createEmptyArray();
-    int plantIdx = static_cast<int>(ev::toDouble(args[1]));
-    if (plantIdx < 0 || static_cast<size_t>(plantIdx) >= w->world->plants.size()) return createEmptyArray();
+    size_t plantIdx = 0;
+    if (!plantIndexOf(args[1], *w->world, plantIdx)) return createEmptyArray();
 
-    auto anchors = broflora::emitPlantBloomAnchors(w->world->plants[static_cast<size_t>(plantIdx)]);
+    auto anchors = broflora::emitPlantBloomAnchors(w->world->plants[plantIdx]);
     return hostArrayOf(anchors.size(), [&](size_t i) {
         const auto& a = anchors[i];
         ev::Persistent o(ev::createObject());
@@ -176,7 +178,7 @@ Value jsEmitFoliageTransforms(Value /*thisVal*/, std::span<const Value> args) {
 
     bromesh::LeafPlacementOptions opts;
     if (args.size() >= 2 && ev::isObject(args[1])) {
-        readLeafPlacementOptions(args[1], opts);
+        if (!readLeafPlacementOptions(args[1], opts)) return ev::undefined();
     }
     double gDensity = getGlobalDensity();
     if (gDensity >= 0.0) {
@@ -252,7 +254,7 @@ Value jsEmitScatterSegments(Value /*thisVal*/, std::span<const Value> args) {
 
     bromesh::LeafPlacementOptions opts;
     if (args.size() >= 2 && ev::isObject(args[1])) {
-        readLeafPlacementOptions(args[1], opts);
+        if (!readLeafPlacementOptions(args[1], opts)) return ev::undefined();
     }
     double gDensity = getGlobalDensity();
     if (gDensity >= 0.0) {
@@ -291,9 +293,11 @@ Value jsEmitScatterSegments(Value /*thisVal*/, std::span<const Value> args) {
         uint64_t h = opts.seed ^ (static_cast<uint64_t>(i) * 0x9E3779B97F4A7C15ULL);
         h ^= h >> 30; h *= 0xBF58476D1CE4E5B9ULL; h ^= h >> 27;
         float frac = static_cast<float>((h >> 40) * (1.0 / 16777216.0));
-        int count = static_cast<int>(std::floor(expected + frac));
-        if (count <= 0) continue;
-        if (count > 4096) count = 4096;
+        // Clamped as a float first: perUnitLength comes from JS and may be
+        // huge, infinite or NaN, none of which converts to an int.
+        const float want = std::floor(expected + frac);
+        if (!(want >= 1.0f)) continue;
+        const int count = want > 4096.0f ? 4096 : static_cast<int>(want);
 
         float segIdx = static_cast<float>(packed.size() / 8);
         for (int k = 0; k < count; ++k) instSeg.push_back(segIdx);
@@ -407,7 +411,7 @@ Value jsEmitFoliageMesh(Value /*thisVal*/, std::span<const Value> args) {
 
     bromesh::LeafPlacementOptions opts;
     if (args.size() >= 3 && ev::isObject(args[2])) {
-        readLeafPlacementOptions(args[2], opts);
+        if (!readLeafPlacementOptions(args[2], opts)) return ev::undefined();
     }
     double gDensity = getGlobalDensity();
     if (gDensity >= 0.0) {
@@ -514,7 +518,10 @@ Value jsEmitBloomMesh(Value /*thisVal*/, std::span<const Value> args) {
     float bloomLightMin = 0.18f;
     const size_t optsAt = 3;
     if (args.size() > optsAt && ev::isObject(args[optsAt])) {
-        readUint32Field(args[optsAt], "bloomCap", bloomCap);
+        if (!intField(args[optsAt], "bloomCap", "bro.flora.FloraWorld.emitBloomMesh: opts.bloomCap",
+                      0.0, kMaxUint32, bloomCap)) {
+            return ev::undefined();
+        }
         readFloatField(args[optsAt], "bloomLightMin", bloomLightMin);
     }
     if (bloomCap == 0) bloomCap = 1;
@@ -549,13 +556,13 @@ Value jsEmitPlantFoliageMesh(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 3) return ev::null();
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return ev::null();
-    int plantIdx = static_cast<int>(ev::toDouble(args[1]));
-    if (plantIdx < 0 || static_cast<size_t>(plantIdx) >= w->world->plants.size()) return ev::null();
+    size_t plantIdx = 0;
+    if (!plantIndexOf(args[1], *w->world, plantIdx)) return ev::null();
 
     bromesh::MeshData leaf;
     if (!getMeshData(args[2], leaf) || leaf.empty()) return ev::null();
 
-    const auto& plant = w->world->plants[static_cast<size_t>(plantIdx)];
+    const auto& plant = w->world->plants[plantIdx];
     auto segs = broflora::emitPlantSegments(plant);
     if (segs.empty()) {
         return wrapMeshData(std::make_unique<bromesh::MeshData>());
@@ -564,7 +571,7 @@ Value jsEmitPlantFoliageMesh(Value /*thisVal*/, std::span<const Value> args) {
 
     bromesh::LeafPlacementOptions opts;
     if (args.size() >= 4 && ev::isObject(args[3])) {
-        readLeafPlacementOptions(args[3], opts);
+        if (!readLeafPlacementOptions(args[3], opts)) return ev::undefined();
     }
     double gDensity = getGlobalDensity();
     if (gDensity >= 0.0) {
@@ -585,7 +592,7 @@ Value jsLeafCluster(Value /*thisVal*/, std::span<const Value> args) {
     broflora::LeafClusterOptions opts;
     if (!args.empty()) {
         if (ev::isObject(args[0]) && !ev::isNumber(args[0]) && !ev::isString(args[0])) {
-            readLeafClusterOptions(args[0], opts);
+            if (!readLeafClusterOptions(args[0], opts)) return ev::undefined();
             Value pv = ev::getProperty(args[0], "phyllotaxy");
             if (!ev::isUndefined(pv) && !ev::isNull(pv)) {
                 phyl = parsePhyllotaxy(pv);
@@ -593,7 +600,7 @@ Value jsLeafCluster(Value /*thisVal*/, std::span<const Value> args) {
         } else {
             phyl = parsePhyllotaxy(args[0]);
             if (args.size() >= 2 && ev::isObject(args[1])) {
-                readLeafClusterOptions(args[1], opts);
+                if (!readLeafClusterOptions(args[1], opts)) return ev::undefined();
             }
         }
     }
@@ -605,15 +612,15 @@ Value jsEmitPlantSdfMesh(Value /*thisVal*/, std::span<const Value> args) {
     if (args.size() < 2) return ev::null();
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return ev::null();
-    int plantIdx = static_cast<int>(ev::toDouble(args[1]));
-    if (plantIdx < 0 || static_cast<size_t>(plantIdx) >= w->world->plants.size()) return ev::null();
+    size_t plantIdx = 0;
+    if (!plantIndexOf(args[1], *w->world, plantIdx)) return ev::null();
 
     broflora::SdfMeshOptions opts;
     if (args.size() >= 3 && ev::isObject(args[2])) {
         readSdfMeshOptions(args[2], opts);
     }
     auto md = std::make_unique<bromesh::MeshData>(
-        broflora::emitPlantSdfMesh(w->world->plants[static_cast<size_t>(plantIdx)], opts));
+        broflora::emitPlantSdfMesh(w->world->plants[plantIdx], opts));
     return wrapMeshData(std::move(md));
 }
 

@@ -286,6 +286,85 @@ static void test_api_instance_layout() {
     )JS");
 }
 
+// Counts, sizes and node references are validated, not cast: a negative,
+// NaN or fractional one used to wrap to ~4e9 in a static_cast (a 4-billion
+// sided tube, a 4-billion-cell shadow grid, an out-of-range node index the
+// simulation reads unchecked). Plant indices keep their documented
+// null / false / [] answer but no longer go through an int cast.
+static void test_api_count_validation() {
+    runScript("count validation", R"JS(
+        const F = bro.flora;
+        const fail = (m) => { throw new Error(m); };
+        const throwsKind = (fn, Kind, what) => {
+            try { fn(); } catch (e) {
+                if (!(e instanceof Kind)) fail(what + ": threw the wrong kind: " + e);
+                return;
+            }
+            fail(what + ": did not throw");
+        };
+        F.clear();
+        const w = F.createWorld({ rngSeed: 1 });
+        const pi = w.addPrototype(F.prototypes.straight());
+        w.addPlant({ origin: [0, 0, 0], prototypeIndex: pi });
+        for (let i = 0; i < 8; i++) w.step(0.25);
+
+        for (const bad of [-1, NaN, 2.5, 2, Infinity, 1e10]) {
+            throwsKind(() => w.emitMesh(bad), RangeError, "emitMesh(" + bad + ")");
+            throwsKind(() => w.emitPlantMesh(0, bad), RangeError, "emitPlantMesh(0, " + bad + ")");
+        }
+        throwsKind(() => w.emitMesh("6"), TypeError, "emitMesh('6')");
+        if (!(w.emitMesh(3).vertexCount > 0) || !(w.emitMesh().vertexCount > 0)) fail("valid sides refused");
+
+        throwsKind(() => F.prototypes.whorl(-1), RangeError, "whorl(-1)");
+        throwsKind(() => F.prototypes.whorl(2.5), RangeError, "whorl(2.5)");
+        throwsKind(() => F.prototypes.monopodial(NaN), RangeError, "monopodial(NaN)");
+        throwsKind(() => F.prototypes.horizontalTier(-3), RangeError, "horizontalTier(-3)");
+        throwsKind(() => F.prototypes.tier(-3), RangeError, "tier(-3)");
+        if (F.prototypes.whorl(0).nodes.length < 3) fail("whorl(0) should clamp to 2 arms");
+
+        throwsKind(() => F.leafCluster("spiral", { count: -1 }), RangeError, "leafCluster count -1");
+        throwsKind(() => F.leafCluster({ count: 1.5 }), RangeError, "leafCluster count 1.5");
+        throwsKind(() => w.emitFoliageTransforms({ minDepth: 0.5 }), RangeError, "minDepth 0.5");
+        throwsKind(() => w.emitFoliageMesh(F.leafCluster(), { densityWeight: { length: -1 } }),
+                   RangeError, "densityWeight length -1");
+        throwsKind(() => w.emitBloomMesh(F.leafCluster(), null, { bloomCap: -1 }), RangeError, "bloomCap -1");
+
+        throwsKind(() => F.createWorld({ shadow: { width: -1, height: 4, depth: 4 } }), RangeError, "shadow width -1");
+        throwsKind(() => F.createWorld({ shadow: { width: 4, height: 4.5, depth: 4 } }), RangeError, "shadow height 4.5");
+        throwsKind(() => F.createWorld({ shadow: { width: 5000, height: 5000, depth: 5000 } }), RangeError, "shadow too big");
+
+        throwsKind(() => w.addVoronoiSite(-1), RangeError, "addVoronoiSite(-1)");
+        throwsKind(() => w.addPlant({ prototypeIndex: -1 }), RangeError, "addPlant prototypeIndex -1");
+        const node = { position: [0, 0, 0] }, tip = { position: [0, 1, 0] };
+        throwsKind(() => w.addPrototype({ nodes: [node, tip], rootNode: 3 }), RangeError, "rootNode 3");
+        throwsKind(() => w.addPrototype({ nodes: [node, tip], edges: [[0, 5]] }), RangeError, "edge [0, 5]");
+        throwsKind(() => w.addPrototype({ nodes: [node, tip], edges: [{ a: -1, b: 1 }] }), RangeError, "edge a -1");
+        throwsKind(() => w.addPrototype({ nodes: [node, tip], terminalNodes: [-1] }), RangeError, "terminal -1");
+        if (w.addPrototype({ nodes: [node, tip], edges: [[0, 1]], terminalNodes: [1] }) < 0) fail("a valid spec refused");
+        if (w.addPrototype({ nodes: [] }) !== -1) fail("an empty spec should still answer -1");
+
+        throwsKind(() => F.addPlacement({ count: -1 }), RangeError, "addPlacement count -1");
+        throwsKind(() => F.addPlacement({ count: 2.5 }), RangeError, "addPlacement count 2.5");
+        throwsKind(() => F.addPlacement({ count: "3" }), TypeError, "addPlacement count '3'");
+        if (F.addPlacement({ count: 2 }).transforms.length !== 32) fail("addPlacement count 2");
+
+        for (const idx of [-1, NaN, 0.5, 1e20]) {
+            if (w.plantInfo(idx) !== null) fail("plantInfo(" + idx + ") should be null");
+            if (w.removePlant(idx) !== false) fail("removePlant(" + idx + ") should be false");
+            if (w.emitPlantSegments(idx).length !== 0) fail("emitPlantSegments(" + idx + ") should be empty");
+            if (w.emitPlantMesh(idx) !== null) fail("emitPlantMesh(" + idx + ") should be null");
+        }
+
+        const s = F.createWorld({ shadow: { origin: [0, 0, 0], cellSize: 1, width: 4, height: 4, depth: 4, fill: 0.5 } });
+        if (s.sampleShadow([0.5, 0.5, 0.5]) !== 0.5) fail("sampleShadow inside");
+        for (const p of [[-0.5, 0.5, 0.5], [1e30, 0, 0], [NaN, 0, 0], [0, -1e30, 0]]) {
+            if (s.sampleShadow(p) !== null) fail("sampleShadow(" + p + ") should be null");
+        }
+        F.clear();
+        "SUCCESS";
+    )JS");
+}
+
 static void test_api_in_realm() {
     ev::Realm* realm = ev::createRealm();
     {
@@ -296,6 +375,7 @@ static void test_api_in_realm() {
         test_api_option_readers();
         test_api_wind_paths_agree();
         test_api_instance_layout();
+        test_api_count_validation();
     }
     ev::destroyRealm(realm);
 }
