@@ -482,9 +482,9 @@ static void test_wind_transforms_and_normals() {
     TEST_CHECK(md.normals[1] < 0.999f);
 }
 
-// An instance matrix at p and a mesh vertex at p get the same wind: the
-// translation lands where the vertex lands, and each basis column turns
-// exactly as a normal along that axis does.
+// An instance matrix is swayed along its height: its origin lands where a
+// mesh vertex at the origin lands, and each basis column turns exactly as a
+// normal at the instance's tip (origin + the +Y basis column) does.
 static void test_wind_instance_matches_mesh() {
     const double time = 0.83, dirX = -0.3, dirY = 0.9;
     const float p[3] = {0.7f, 2.4f, -1.1f};
@@ -497,12 +497,16 @@ static void test_wind_instance_matches_mesh() {
         };
         broflora::api::applyWindToTransforms(m, 1, time, strength, dirX, dirY);
 
+        bromesh::MeshData origin;
+        origin.positions = {p[0], p[1], p[2]};
+        broflora::api::applyWindToMeshData(origin, time, strength, dirX, dirY);
         bromesh::MeshData md;
-        md.positions = {p[0], p[1], p[2], p[0], p[1], p[2], p[0], p[1], p[2]};
+        const float t[3] = {p[0], p[1] + 1.0f, p[2]};
+        md.positions = {t[0], t[1], t[2], t[0], t[1], t[2], t[0], t[1], t[2]};
         md.normals = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
         broflora::api::applyWindToMeshData(md, time, strength, dirX, dirY);
 
-        TEST_CHECK(m[3] == md.positions[0] && m[7] == md.positions[1] && m[11] == md.positions[2]);
+        TEST_CHECK(m[3] == origin.positions[0] && m[7] == origin.positions[1] && m[11] == origin.positions[2]);
         TEST_CHECK(std::abs(m[3] - p[0]) > 1e-3f);  // it did move
         for (int k = 0; k < 3; ++k) {
             TEST_CHECK(m[k] == md.normals[k * 3 + 0]);
@@ -525,7 +529,7 @@ static void test_wind_instance_matches_mesh() {
     // Rooted: nothing at ground level moves, in either path.
     float g[16] = {1, 0, 0, 3.0f, 0, 1, 0, 0.0f, 0, 0, 1, -2.0f, 1, 1, 1, 1};
     broflora::api::applyWindToTransforms(g, 1, time, 5.0, dirX, dirY);
-    TEST_CHECK(g[3] == 3.0f && g[7] == 0.0f && g[11] == -2.0f && g[5] == 1.0f);
+    TEST_CHECK(g[3] == 3.0f && g[7] == 0.0f && g[11] == -2.0f);
     bromesh::MeshData base;
     base.positions = {3.0f, 0.0f, -2.0f};
     base.normals = {0.0f, 1.0f, 0.0f};
@@ -534,11 +538,67 @@ static void test_wind_instance_matches_mesh() {
     TEST_CHECK(base.normals[1] == 1.0f);
 }
 
+// An instance standing on the ground (origin at y = 0) still sways: the wind
+// is zero at y = 0, so evaluating it at the instance's base (the e813878
+// model) left every ground placement rigid. It stays rooted and bends by
+// its height, and a taller instance (a longer +Y basis column) bends more.
+static void test_wind_ground_instance_sways() {
+    const double time = 0.4, dirX = 1.0, dirY = 0.0;
+    auto tiltOf = [&](float height) {
+        float m[16] = {1, 0, 0, 10.0f, 0, height, 0, 0.0f, 0, 0, 1, 5.0f, 1, 1, 1, 1};
+        broflora::api::applyWindToTransforms(m, 1, time, 3.0, dirX, dirY);
+        TEST_CHECK(m[3] == 10.0f && m[7] == 0.0f && m[11] == 5.0f);    // rooted
+        TEST_CHECK(m[12] == 1.0f && m[13] == 1.0f && m[14] == 1.0f && m[15] == 1.0f);
+        const float len = std::sqrt(m[1] * m[1] + m[5] * m[5] + m[9] * m[9]);
+        TEST_CHECK(std::abs(len - height) < 1e-4f * height);           // rigid
+        return std::acos(std::clamp(m[5] / len, -1.0f, 1.0f));
+    };
+    const float unit = tiltOf(1.0f);
+    const float tall = tiltOf(4.0f);
+    TEST_CHECK(unit > 1e-3f);
+    TEST_CHECK(tall > unit);
+    TEST_CHECK(tall <= 0.35f + 1e-5f);
+
+    // The same through a placement batch, the path bro's
+    // flora/test_wind_density_batches.js drives.
+    ev::Realm* realm = ev::createRealm();
+    {
+        ev::RealmScope scope(realm);
+        broflora::api::installFlora();
+        runScript("ground batch sway", R"JS(
+            const F = bro.flora;
+            const fail = (m) => { throw new Error(m); };
+            F.clear();
+            const rest = new Float32Array([
+                1, 0, 0, 10,  0, 1, 0, 0,  0, 0, 1, 5,  0.2, 0.4, 0.6, 1,
+                1, 0, 0, 20,  0, 1, 0, 0,  0, 0, 1, 15, 1, 1, 1, 1,
+            ]);
+            const b = F.placement({ transforms: rest });
+            F.setWind(3.0, 1.0, 0.0);
+            F.update(0.2);
+            const t = b.transforms;
+            let bent = false;
+            for (let i = 0; i < t.length; i++) if (Math.abs(t[i] - rest[i]) > 1e-4) bent = true;
+            if (!bent) fail("a ground-standing batch did not sway");
+            for (let o = 0; o < t.length; o += 16) {
+                if (t[o + 3] !== rest[o + 3] || t[o + 7] !== 0 || t[o + 11] !== rest[o + 11])
+                    fail("instance " + o / 16 + " left its root");
+                for (let k = 12; k < 16; k++)
+                    if (t[o + k] !== rest[o + k]) fail("instance " + o / 16 + " tint float " + k + " changed");
+            }
+            F.clear();
+            "SUCCESS";
+        )JS");
+    }
+    ev::destroyRealm(realm);
+}
+
 int main() {
     std::cout << "Running broflora API test..." << std::endl;
     test_api_in_realm();
     test_wind_transforms_and_normals();
     test_wind_instance_matches_mesh();
+    test_wind_ground_instance_sways();
     std::cout << "All broflora API tests passed!" << std::endl;
     return 0;
 }

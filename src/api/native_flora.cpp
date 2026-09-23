@@ -151,16 +151,24 @@ void applyWindToTransforms(float* transforms, size_t count,
     if (!transforms || count == 0 || windStrength == 0.0) return;
     for (size_t i = 0; i < count; ++i) {
         float* m = transforms + i * 16;
-        const WindSway w = windSwayAt(m[3], m[7], m[11], windTime, windStrength, dirX, dirY);
-        m[3]  += w.offset[0];
-        m[7]  += w.offset[1];
-        m[11] += w.offset[2];
+        // The origin (floats 3 / 7 / 11) moves as a mesh vertex there would,
+        // so a rooted instance stays rooted. The basis turns by the wind at
+        // the instance's tip, the end of its local +Y axis (column 1 of the
+        // basis, which carries the instance's scale): an instance standing
+        // on the ground still bends by its own height, where the wind at its
+        // base would be zero.
+        const WindSway base = windSwayAt(m[3], m[7], m[11], windTime, windStrength, dirX, dirY);
+        const WindSway tip = windSwayAt(m[3] + m[1], m[7] + m[5], m[11] + m[9],
+                                        windTime, windStrength, dirX, dirY);
+        m[3]  += base.offset[0];
+        m[7]  += base.offset[1];
+        m[11] += base.offset[2];
         // R * B for the row-major 3x3 basis B (floats 0-2 / 4-6 / 8-10).
         for (int k = 0; k < 3; ++k) {
             const float b0 = m[k], b1 = m[4 + k], b2 = m[8 + k];
-            m[k]     = w.rot[0][0] * b0 + w.rot[0][1] * b1 + w.rot[0][2] * b2;
-            m[4 + k] = w.rot[1][0] * b0 + w.rot[1][1] * b1 + w.rot[1][2] * b2;
-            m[8 + k] = w.rot[2][0] * b0 + w.rot[2][1] * b1 + w.rot[2][2] * b2;
+            m[k]     = tip.rot[0][0] * b0 + tip.rot[0][1] * b1 + tip.rot[0][2] * b2;
+            m[4 + k] = tip.rot[1][0] * b0 + tip.rot[1][1] * b1 + tip.rot[1][2] * b2;
+            m[8 + k] = tip.rot[2][0] * b0 + tip.rot[2][1] * b1 + tip.rot[2][2] * b2;
         }
     }
 }

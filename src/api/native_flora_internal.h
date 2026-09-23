@@ -57,11 +57,14 @@ void clearGlobalWind();
 // displacement (along the wind, growing with height above y = 0 and zero at
 // the ground so a rooted trunk stays put, with a small dip so the bend reads
 // as an arc) and a rigid rotation (about the horizontal axis perpendicular
-// to the wind, tilting +Y toward it). An instance matrix moves its
-// translation by the displacement and turns its basis by the rotation; a
-// mesh vertex moves by the displacement and turns its normal by the
-// rotation. So a leaf drawn from an instance matrix and the same leaf
-// stamped into a mesh sway identically, and neither path shears.
+// to the wind, tilting +Y toward it). A mesh vertex moves by the
+// displacement at the vertex and turns its normal by the rotation there. An
+// instance matrix is evaluated along its height: its translation moves by
+// the displacement at its origin (so a rooted instance stays put) and its
+// basis turns by the rotation at its tip, origin + the basis's +Y column (so
+// a ground-standing instance still bends). So an instance's origin lands
+// where a mesh vertex at that origin does, its basis turns as a normal at
+// its tip does, and neither path shears.
 struct WindSway {
     float offset[3];
     float rot[3][3];  // row-major, orthonormal
