@@ -20,16 +20,24 @@ using bromath::lerp;
 namespace {
 
 // Find the ShadowGrid cell containing world-space `p`. Returns false if
-// outside the grid.
+// outside the grid. The float coordinates are range-checked BEFORE the
+// integer conversion: a float-to-uint32 cast of a value past 2^32 (a module
+// far outside the grid) or of NaN is undefined behaviour, not a large index
+// the bounds test would then reject.
 bool shadowCellOf(const ShadowGrid& g, Vec3 p, uint32_t& x, uint32_t& y, uint32_t& z) {
-    if (g.cellSize <= 0.0f) return false;
-    float fx = (p.x - g.origin.x) / g.cellSize;
-    float fy = (p.y - g.origin.y) / g.cellSize;
-    float fz = (p.z - g.origin.z) / g.cellSize;
-    if (fx < 0.0f || fy < 0.0f || fz < 0.0f) return false;
+    if (!(g.cellSize > 0.0f)) return false;
+    const float fx = (p.x - g.origin.x) / g.cellSize;
+    const float fy = (p.y - g.origin.y) / g.cellSize;
+    const float fz = (p.z - g.origin.z) / g.cellSize;
+    if (!(fx >= 0.0f && fx < static_cast<float>(g.width) &&
+          fy >= 0.0f && fy < static_cast<float>(g.height) &&
+          fz >= 0.0f && fz < static_cast<float>(g.depth))) {
+        return false;
+    }
     x = static_cast<uint32_t>(fx);
     y = static_cast<uint32_t>(fy);
     z = static_cast<uint32_t>(fz);
+    // float(width) can round up past width for a width above 2^24.
     return x < g.width && y < g.height && z < g.depth;
 }
 

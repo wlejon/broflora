@@ -82,3 +82,44 @@ TEST(isolated_module_keeps_full_light) {
     float l = world.plants[0].modules[0].light;
     ASSERT(l >= 0.999f, "isolated module gets ~full light");
 }
+
+// A module far outside the shadow grid casts no shade into it. shadowCellOf
+// used to cast the cell coordinate to uint32 before the bounds test: at
+// x = 2^32 cells that conversion is undefined, and on x86-64 it wraps to
+// cell 0, so a plant four billion units away shaded the grid's first column.
+TEST(far_module_casts_no_shade_into_grid) {
+    static BranchModulePrototype proto;
+    proto.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    proto.edges.push_back({0, 1});
+    proto.rootNode = 0;
+    proto.terminalNodes = {1};
+
+    WorldState world;
+    world.shadow.width = world.shadow.height = world.shadow.depth = 4;
+    world.shadow.cellSize = 1.0f;
+    world.shadow.origin = {0.0f, 0.0f, 0.0f};
+    world.shadow.qg.assign(4 * 4 * 4, 1.0f);
+
+    for (float x : {4294967296.0f, 8589934592.0f, 1e30f}) {
+        Plant p;
+        p.species = {};
+        p.effectiveRootVigorMax = p.species.rootVigorMax;
+        p.origin = {x, 2.0f, 0.5f};
+        BranchModuleInstance m;
+        m.prototype = &proto;
+        m.parent = UINT32_MAX;
+        m.age = 5.0f;
+        m.vigor = 0.5f;
+        m.light = 1.0f;
+        p.modules.push_back(m);
+        world.plants.push_back(p);
+    }
+
+    step(world, 0.1f);
+    step(world, 0.1f);
+    ASSERT(!world.plants.empty(), "the far plants are still simulated");
+    bool fullSun = true;
+    for (float q : world.shadow.qg) fullSun = fullSun && q == 1.0f;
+    ASSERT(fullSun, "no shadow cell is shaded by a module outside the grid");
+}
