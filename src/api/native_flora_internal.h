@@ -152,10 +152,16 @@ inline bool intField(Value obj, std::string_view prop, std::string_view what,
     return true;
 }
 
+// Longest list option a reader copies element by element (nodes, edges,
+// terminals, densityWeight): 2^24. The readers size a vector by the length
+// up front, and a bad_alloc cannot cross into compiled JS, so an array-like
+// claiming 4e9 elements is a RangeError rather than a crash.
+inline constexpr double kMaxListLength = 16777216.0;
+
 // The element count of an array or array-like option value.
 inline bool lengthOf(Value arr, std::string_view what, uint32_t& out) {
     out = 0;
-    return intField(arr, "length", what, 0.0, kMaxUint32, out);
+    return intField(arr, "length", what, 0.0, kMaxListLength, out);
 }
 
 // A plant index. Not a throwing argument: an index that names no plant

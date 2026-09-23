@@ -308,10 +308,15 @@ Value jsRemovePlant(Value /*thisVal*/, std::span<const Value> args) {
 Value jsStep(Value /*thisVal*/, std::span<const Value> args) {
     if (args.empty()) return ev::undefined();
     auto* w = getWrapper(args[0]);
-    if (w && w->world && args.size() >= 2 && ev::isNumber(args[1])) {
-        float dt = static_cast<float>(ev::toDouble(args[1]));
-        broflora::step(*w->world, dt);
-    }
+    if (!w || !w->world) return args[0];
+    if (args.size() < 2 || !ev::isNumber(args[1]))
+        return ev::throwTypeError("step: dt must be a number");
+    // A NaN, infinite or negative dt would poison simTime and every plant's
+    // age for the life of the world, so it is refused rather than applied.
+    const double dt = ev::toDouble(args[1]);
+    if (!(dt >= 0.0 && dt <= 3.4e38))
+        return ev::throwRangeError("step: dt must be a finite number >= 0");
+    broflora::step(*w->world, static_cast<float>(dt));
     return args[0];
 }
 

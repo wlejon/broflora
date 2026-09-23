@@ -327,6 +327,18 @@ static void test_api_count_validation() {
         throwsKind(() => w.emitFoliageTransforms({ minDepth: 0.5 }), RangeError, "minDepth 0.5");
         throwsKind(() => w.emitFoliageMesh(F.leafCluster(), { densityWeight: { length: -1 } }),
                    RangeError, "densityWeight length -1");
+        // A claimed length past the list cap is refused before anything is
+        // sized by it (the vector would otherwise be allocated first).
+        throwsKind(() => w.emitFoliageMesh(F.leafCluster(), { densityWeight: { length: 4294967295 } }),
+                   RangeError, "densityWeight length 2^32-1");
+        throwsKind(() => w.addPrototype({ nodes: { length: 33554432 } }), RangeError, "nodes length 2^25");
+
+        // dt is a finite number >= 0; anything else would poison simTime.
+        for (const dt of [NaN, -1, Infinity, -Infinity, 1e39])
+            throwsKind(() => w.step(dt), RangeError, "step(" + dt + ")");
+        throwsKind(() => w.step("0.1"), TypeError, "step('0.1')");
+        if (w.step(0) !== w) fail("step(0) should be accepted");
+        if (!Number.isFinite(w.simTime)) fail("simTime should stay finite");
         throwsKind(() => w.emitBloomMesh(F.leafCluster(), null, { bloomCap: -1 }), RangeError, "bloomCap -1");
 
         throwsKind(() => F.createWorld({ shadow: { width: -1, height: 4, depth: 4 } }), RangeError, "shadow width -1");
