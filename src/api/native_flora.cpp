@@ -198,22 +198,25 @@ void applyWindToMeshData(bromesh::MeshData& md,
 namespace {
 
 Value jsCreateWorld(Value /*thisVal*/, std::span<const Value> args) {
+    // Rooting (embed.h: a raw Value is stale after any allocating call).
+    // args[0] is a live root the collector updates, so every option read
+    // goes through it rather than a copy. Each Value read below is consumed
+    // by the very next call (as that call's receiver or argument) before
+    // anything else allocates, and the prototype, which is held across the
+    // world's construction, is rooted.
     auto world = std::make_unique<broflora::WorldState>();
     if (!args.empty() && ev::isObject(args[0])) {
-        // args[i] is a live root; a copy of it would go stale at the first read.
-        Value seedV = ev::getProperty(args[0], "rngSeed");
-        if (ev::isNumber(seedV)) {
-            world->rngState = seedOf(ev::toDouble(seedV));
+        if (!seedField(args[0], "rngSeed", "bro.flora.createWorld: rngSeed", world->rngState)) {
+            return ev::undefined();
         }
         readClimate(args[0], world->climate);
         if (!readShadow(args[0], world->shadow)) return ev::undefined();
     }
-    auto* wrap = new FloraWorldWrapper{std::move(world)};
 
-    Value proto = ev::undefined();
+    Rooted proto(ev::undefined());
     ev::GlobalValue fwGlobal = ev::globalValue("FloraWorld");
     if (fwGlobal.found && ev::isObject(fwGlobal.value)) {
-        proto = ev::getProperty(fwGlobal.value, "prototype");
+        proto.p.set(ev::getProperty(fwGlobal.value, "prototype"));
     } else {
         ev::GlobalValue broGlobal = ev::globalValue("bro");
         if (broGlobal.found && ev::isObject(broGlobal.value)) {
@@ -221,15 +224,17 @@ Value jsCreateWorld(Value /*thisVal*/, std::span<const Value> args) {
             if (ev::isObject(flora)) {
                 Value fw = ev::getProperty(flora, "FloraWorld");
                 if (ev::isObject(fw)) {
-                    proto = ev::getProperty(fw, "prototype");
+                    proto.p.set(ev::getProperty(fw, "prototype"));
                 }
             }
         }
     }
     // The 4-argument form is fatal on a non-object prototype, so a world made
     // before flora.js mounted FloraWorld is a bare handle (createWorld's JS
-    // side re-parents it).
-    return makeFloraWorldHandle(wrap, proto);
+    // side re-parents it). The wrapper is made last, after every call that
+    // can run user code (a getter), so an early return cannot leak it.
+    auto* wrap = new FloraWorldWrapper{std::move(world)};
+    return makeFloraWorldHandle(wrap, proto.get());
 }
 
 Value jsAddPrototype(Value /*thisVal*/, std::span<const Value> args) {

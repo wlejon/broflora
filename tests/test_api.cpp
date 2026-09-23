@@ -332,6 +332,27 @@ static void test_api_count_validation() {
         throwsKind(() => w.emitFoliageMesh(F.leafCluster(), { densityWeight: { length: 4294967295 } }),
                    RangeError, "densityWeight length 2^32-1");
         throwsKind(() => w.addPrototype({ nodes: { length: 33554432 } }), RangeError, "nodes length 2^25");
+        // A length under the cap that lies is read element by element and
+        // stops at the first missing one, having allocated nothing by it.
+        throwsKind(() => w.addPrototype({ nodes: { length: 16777216 } }), TypeError, "nodes length 2^24, no nodes");
+        throwsKind(() => w.emitFoliageMesh(F.leafCluster(), { densityWeight: { length: 16777216 } }),
+                   TypeError, "densityWeight length 2^24, no weights");
+        throwsKind(() => F.addPlacement({ transforms: { length: 16 * 16777217 } }), RangeError,
+                   "addPlacement 2^24 + 1 instances");
+        throwsKind(() => F.addPlacement({ transforms: new Array(16777217) }), RangeError,
+                   "addPlacement sparse 2^24 + 1 array");
+
+        // Seeds are integers in [0, 2^53 - 1]; a negative one used to wrap
+        // and NaN to read as 0.
+        for (const bad of [-1, 1.5, NaN, Infinity, -Infinity, 2 ** 53]) {
+            throwsKind(() => F.createWorld({ rngSeed: bad }), RangeError, "rngSeed " + bad);
+            throwsKind(() => w.emitFoliageTransforms({ seed: bad }), RangeError, "foliage seed " + bad);
+        }
+        throwsKind(() => F.createWorld({ rngSeed: "7" }), TypeError, "rngSeed '7'");
+        throwsKind(() => w.emitScatterSegments({ seed: "7" }), TypeError, "scatter seed '7'");
+        if (!F.createWorld({ rngSeed: 0 }) || !F.createWorld({ rngSeed: 2 ** 53 - 1 })) fail("valid rngSeed refused");
+        const sa = w.emitFoliageTransforms({ seed: 2 ** 53 - 1, perUnitLength: 20, terminalOnly: false });
+        if (!(sa instanceof Float32Array)) fail("valid foliage seed refused");
 
         // dt is a finite number >= 0; anything else would poison simTime.
         for (const dt of [NaN, -1, Infinity, -Infinity, 1e39])

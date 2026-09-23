@@ -53,6 +53,16 @@
         var windFactor = typeof cfg.windFactor === 'number' ? cfg.windFactor : 1.0;
 
         var rawT = cfg.transforms !== undefined ? cfg.transforms : (cfg.instances !== undefined ? cfg.instances : null);
+        // A batch holds at most 2^24 instances, the cap every flora list has:
+        // past it the copies below would size gigabyte buffers.
+        if (rawT && typeof rawT.length === 'number') {
+            var claimed = (Array.isArray(rawT) && rawT.length > 0 && typeof rawT[0] !== 'number')
+                ? rawT.length : rawT.length / 16;
+            if (claimed > 16777216) {
+                throw new RangeError("bro.flora.addPlacement: config.transforms holds " + Math.floor(claimed) +
+                                     " instances, over the 16777216 limit");
+            }
+        }
         var count = 0;
         var baseTransforms = null;
         var transforms = null;

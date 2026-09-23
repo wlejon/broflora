@@ -161,6 +161,12 @@ inline bool intField(Value obj, std::string_view prop, std::string_view what,
 // claiming 4e9 elements is a RangeError rather than a crash.
 inline constexpr double kMaxListLength = 16777216.0;
 
+// Most elements a copy loop reserves up front. Past it the vector grows as
+// elements are actually read, so an array-like whose `length` lies (an
+// object claiming 2^24 elements it does not have) stops at its first bad
+// element instead of having sized an allocation first.
+inline constexpr uint32_t kReserveCap = 1u << 16;
+
 // The element count of an array or array-like option value.
 inline bool lengthOf(Value arr, std::string_view what, uint32_t& out) {
     out = 0;
@@ -179,16 +185,17 @@ inline bool plantIndexOf(Value v, const broflora::WorldState& world, size_t& out
     return true;
 }
 
-// A seed: any number, converted without undefined behaviour. Non-negative
-// integers keep their value; a negative one wraps as two's complement;
-// NaN and infinities read as 0.
-inline uint64_t seedOf(double d) {
-    if (!std::isfinite(d)) return 0;
-    d = std::trunc(d);
-    if (d >= 18446744073709551615.0) return UINT64_MAX;
-    if (d >= 0.0) return static_cast<uint64_t>(d);
-    if (d <= -9223372036854775808.0) return static_cast<uint64_t>(INT64_MIN);
-    return static_cast<uint64_t>(static_cast<int64_t>(d));
+// Largest seed: 2^53 - 1, the largest integer a JS number holds exactly.
+inline constexpr double kMaxSeed = 9007199254740991.0;
+
+// A seed option field (rngSeed, seed). Undefined leaves `out` (the default)
+// alone; anything else must be an integer in [0, 2^53 - 1]: a non-number is
+// a TypeError, a negative, fractional, NaN or infinite one a RangeError. (A
+// negative seed used to wrap as two's complement and NaN read as 0, so two
+// different arguments silently seeded alike.) Returns false once it has
+// thrown.
+inline bool seedField(Value obj, std::string_view prop, std::string_view what, uint64_t& out) {
+    return intField(obj, prop, what, 0.0, kMaxSeed, out);
 }
 
 // ── Property reading helpers ───────────────────────────────────────────
@@ -471,16 +478,22 @@ inline bool readLeafPlacementOptions(Value in, bromesh::LeafPlacementOptions& op
     readFloatField(o, "scaleByRadius",   opts.scaleByRadius);
     readFloatField(o, "dedupRadius",     opts.dedupRadius);
 
-    Value seedV = ev::getProperty(o, "seed");
-    if (ev::isNumber(seedV)) opts.seed = seedOf(ev::toDouble(seedV));
+    if (!seedField(o, "seed", "leaf placement opts.seed", opts.seed)) return false;
 
     Rooted dw(ev::getProperty(o, "densityWeight"));
     if (ev::isObject(dw)) {
         uint32_t n = 0;
         if (!lengthOf(dw, "leaf placement opts.densityWeight.length", n)) return false;
-        opts.densityWeight.resize(n);
+        // Grown as read, not sized by the claimed length: an array-like
+        // whose length lies stops at its first non-number.
+        opts.densityWeight.reserve(std::min<uint32_t>(n, kReserveCap));
         for (uint32_t i = 0; i < n; ++i) {
-            opts.densityWeight[i] = static_cast<float>(ev::toDouble(ev::getElement(dw, i)));
+            Value e = ev::getElement(dw, i);
+            if (!ev::isNumber(e)) {
+                ev::throwTypeError("leaf placement opts.densityWeight[" + std::to_string(i) + "] must be a number");
+                return false;
+            }
+            opts.densityWeight.push_back(static_cast<float>(ev::toDouble(e)));
         }
     }
     return true;
@@ -546,9 +559,13 @@ inline BuildResult buildPrototype(Value in,
     if (ev::isObject(nodesV)) {
         uint32_t n = 0;
         if (!lengthOf(nodesV, std::string(kWhat) + "spec.nodes.length", n)) return BuildResult::Threw;
-        out.nodes.reserve(n);
+        out.nodes.reserve(std::min(n, kReserveCap));
         for (uint32_t i = 0; i < n; ++i) {
             Rooted nv(ev::getElement(nodesV, i));
+            if (!ev::isObject(nv)) {
+                ev::throwTypeError(std::string(kWhat) + "spec.nodes[" + std::to_string(i) + "] must be an object");
+                return BuildResult::Threw;
+            }
             broflora::ModuleNode mn;
             readVec3Prop  (nv, "position",    mn.position);
             readFloatField(nv, "ageAtBirth",  mn.ageAtBirth);
@@ -570,7 +587,7 @@ inline BuildResult buildPrototype(Value in,
     if (ev::isObject(edgesV)) {
         uint32_t n = 0;
         if (!lengthOf(edgesV, std::string(kWhat) + "spec.edges.length", n)) return BuildResult::Threw;
-        out.edges.reserve(n);
+        out.edges.reserve(std::min(n, kReserveCap));
         for (uint32_t i = 0; i < n; ++i) {
             Rooted evVal(ev::getElement(edgesV, i));
             const std::string at = std::string(kWhat) + "spec.edges[" + std::to_string(i) + "]";
@@ -611,7 +628,7 @@ inline BuildResult buildPrototype(Value in,
     if (ev::isObject(termsV)) {
         uint32_t n = 0;
         if (!lengthOf(termsV, std::string(kWhat) + "spec.terminalNodes.length", n)) return BuildResult::Threw;
-        out.terminalNodes.reserve(n);
+        out.terminalNodes.reserve(std::min(n, kReserveCap));
         for (uint32_t i = 0; i < n; ++i) {
             uint32_t t = 0;
             if (!nodeRef(ev::getElement(termsV, i),
