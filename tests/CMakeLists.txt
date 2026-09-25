@@ -41,8 +41,9 @@ endif()
 add_test(NAME test_sdf_mesh COMMAND test_sdf_mesh)
 
 # The api test installs bro.flora into a bronze realm and drives it. The
-# JavaScript half is js/flora.js compiled by the bronze CLI, and bronze emits
-# x86_64 only, so on Apple Silicon the api carries a no-op entry instead
+# JavaScript half is js/flora.js compiled by the bronze CLI, which needs a
+# brass code generator for the target (BRASS_HOST_BACKEND; x86_64 and AArch64
+# have one). Where there is none the api carries a no-op entry instead
 # (src/api/CMakeLists.txt) and there is nothing for the test to see: it is
 # not registered there rather than registered to fail.
 if(TARGET broflora_api AND NOT BROFLORA_API_COMPILED_JS)

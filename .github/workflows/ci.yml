@@ -28,8 +28,8 @@ concurrency:
 # the job's own compiler and CRT — the api is bound across bronze's C++ embed
 # boundary, so a prebuilt bronze would be an unverifiable ABI hazard. That is
 # what makes broflora_api_test the check that the library works the way bro
-# uses it. On macos-arm64 there is no compiled JS (bronze emits x86_64 only)
-# and that test is not registered; the api is still built there.
+# uses it. brass has native x86_64 and AArch64 code generators, so the JS is
+# compiled and the test runs on every row, macos-arm64 included.
 #
 # Release, not Debug: broflora links bromesh, whose meshoptimizer Debug
 # assertions surface as a modal abort() on Windows. Default CMake generator, not
