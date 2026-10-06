@@ -8,8 +8,16 @@ A C++20 library for **multi-scale plant ecosystem simulation**. Stateful
 runtime sim — branch modules, plants, and ecosystems — that ticks forward
 in time and emits geometry at the boundary (via `bromesh`).
 
-Sibling to `bromesh`, `broaudio`, `brogameagent`; consumed by the `bro`
-runtime as a static library.
+broflora is one of the engine libraries of the
+[bro ecosystem](https://github.com/wlejon/bro/blob/main/docs/ecosystem.md).
+It builds on [bromath](https://github.com/wlejon/bromath) and
+[bromesh](https://github.com/wlejon/bromesh), and [bro](https://github.com/wlejon/bro)
+links it (under `BRO_WITH_FLORA`) and exposes it to apps as `bro.flora`
+through the JavaScript binding in `src/api/` (`broflora_api`), which needs
+[bronze](https://github.com/wlejon/bronze) and [brass](https://github.com/wlejon/brass).
+
+The simulation runs on the CPU (OpenMP where the compiler has it). It is built
+and tested on Windows (MSVC), Linux (GCC and Clang) and macOS (arm64).
 
 ## Features
 
@@ -27,16 +35,34 @@ fork / whorl) and an optional per-phase `StepObserver` round it out. See
 ```sh
 cmake -S . -B build
 cmake --build build --config Release
-
-# Tests
-./build/tests/Release/broflora_test     # Windows / MSVC
-./build/tests/broflora_test             # single-config generators
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-CMake 3.24+, C++20 (MSVC 2022, GCC 12+, Clang 15+). Depends on sibling
-`../bromath` (header-only) and `../bromesh` (geometry emit target); both
-are added via `add_subdirectory` when not already provided by the
-enclosing build.
+CMake 3.24+, C++20 (MSVC 2022, GCC 12+, Clang 15+).
+
+bromath and bromesh resolve the way every repo in the ecosystem resolves a
+sibling: an existing target wins (bro adds both first), then a checkout beside
+this one (`../bromath`, `../bromesh`; override with `-DBROMATH_DIR` /
+`-DBROMESH_DIR`), then the `third_party/` submodules, which carry both:
+
+```sh
+# Sibling layout (development): bromath, bromesh, bronze, brass beside broflora
+cmake -S . -B build
+
+# Fresh clone: bromath and bromesh come from third_party/
+git clone --recursive https://github.com/wlejon/broflora
+```
+
+The JavaScript binding needs bronze and brass beside this repository in either
+layout (or `-DBRONZE_DIR=<path>`); they have no submodule, because the binding
+has to be compiled against the same bronze as the program that loads it.
+
+`ctest` runs `broflora_test` (the simulation and emit suite), `test_sdf_mesh`
+and the binding's `broflora_api_test`. `examples/grove.cpp` (`broflora_grove`)
+is a minimal end-to-end driver that grows a world and writes it out as OBJ.
+CI builds and tests on Linux (GCC and Clang), Windows (MSVC) and macOS/arm64
+against the siblings' main branches, builds once more from the `third_party/`
+submodules alone, and reports coverage of `include/broflora/` and `src/`.
 
 ## What this implements
 
@@ -68,6 +94,15 @@ straight into `bromesh::MeshData` and `bromesh::BranchSegment`:
 - `emitPlantBloomAnchors` / `emitWorldBloomAnchors` — world-space
   bloom / fruit `BloomAnchor` candidates on terminal twigs of flowering
   plants.
+
+Beyond the paper, two emit paths build finished geometry:
+
+- `broflora/leaf_cluster.h` — botanical leaf arrangement (alternate,
+  opposite, spiral, pine fascicle, compound pinnate phyllotaxy) on twigs and
+  shoots, through bromesh's leaf and scatter generators.
+- `broflora/sdf_mesh.h` — a whole plant or world as one watertight organic
+  mesh: branch capsules smooth-unioned in a `bromesh::SdfGraph` and meshed by
+  surface nets or marching cubes (JIT-compiled through brass).
 
 `include/broflora/prototypes.h` ships ready-made `straightModule`,
 `forkModule`, and `whorlModule` templates so callers get full crowns

@@ -54,32 +54,42 @@ else()
     target_compile_options(broflora PRIVATE -Wall -Wextra)
 endif()
 
-# --- Required bromath dependency (sibling header-only library) ---
-# Guard against double-add — bro adds bromath before broflora, as does
-# bromesh below. First-loader wins.
-if(NOT TARGET bromath)
-    set(BROMATH_DIR "${CMAKE_SOURCE_DIR}/../bromath" CACHE PATH "bromath sibling")
-    if(EXISTS "${BROMATH_DIR}/CMakeLists.txt")
-        add_subdirectory("${BROMATH_DIR}" "${CMAKE_BINARY_DIR}/bromath" EXCLUDE_FROM_ALL)
-        message(STATUS "broflora: using sibling bromath at ${BROMATH_DIR}")
-    else()
-        message(FATAL_ERROR "bromath not found at ${BROMATH_DIR}")
+# --- Siblings: bromath (header-only) + bromesh ---
+# Each resolves like every repo in the bro ecosystem: an existing target (bro
+# adds both before broflora; first loader wins); otherwise a checkout beside the
+# top-level project (../<name>, overridable with -D<NAME>_DIR=<path>);
+# otherwise the top-level project's third_party/<name> submodule (`git
+# submodule update --init --recursive`). third_party/ is flat: it carries every
+# sibling broflora needs, transitive ones included. bromath is resolved first
+# so bromesh finds the target and the diamond resolves once.
+function(broflora_sibling name what)
+    if(TARGET ${name})
+        return()
     endif()
-endif()
+    string(TOUPPER "${name}" _upper)
+    set(${_upper}_DIR "${CMAKE_SOURCE_DIR}/../${name}" CACHE PATH
+        "Path to standalone ${name} repo (set to a missing path to force submodule fallback)")
+    if(EXISTS "${${_upper}_DIR}/CMakeLists.txt")
+        message(STATUS "broflora: ${name} from ${${_upper}_DIR}")
+        add_subdirectory("${${_upper}_DIR}" "${CMAKE_BINARY_DIR}/${name}" EXCLUDE_FROM_ALL)
+    elseif(EXISTS "${CMAKE_SOURCE_DIR}/third_party/${name}/CMakeLists.txt")
+        message(STATUS "broflora: ${name} from ${CMAKE_SOURCE_DIR}/third_party/${name} (submodule)")
+        add_subdirectory("${CMAKE_SOURCE_DIR}/third_party/${name}" "${CMAKE_BINARY_DIR}/${name}" EXCLUDE_FROM_ALL)
+    else()
+        message(FATAL_ERROR
+            "broflora needs ${name} (${what}): not found at ${${_upper}_DIR} or "
+            "${CMAKE_SOURCE_DIR}/third_party/${name}. Clone https://github.com/wlejon/${name} next "
+            "to this repo, run `git submodule update --init --recursive`, or override with "
+            "-D${_upper}_DIR=...")
+    endif()
+endfunction()
+
+broflora_sibling(bromath "math headers")
 target_link_libraries(broflora PUBLIC bromath::bromath)
 
-# --- Required bromesh dependency (sibling library) ---
 # broflora emits geometry as bromesh::MeshData and is meaningless without
-# bromesh in the picture. Same double-add guard pattern as bromath.
-if(NOT TARGET bromesh)
-    set(BROMESH_DIR "${CMAKE_SOURCE_DIR}/../bromesh" CACHE PATH "bromesh sibling")
-    if(EXISTS "${BROMESH_DIR}/CMakeLists.txt")
-        add_subdirectory("${BROMESH_DIR}" "${CMAKE_BINARY_DIR}/bromesh" EXCLUDE_FROM_ALL)
-        message(STATUS "broflora: using sibling bromesh at ${BROMESH_DIR}")
-    else()
-        message(FATAL_ERROR "bromesh not found at ${BROMESH_DIR}")
-    endif()
-endif()
+# bromesh in the picture.
+broflora_sibling(bromesh "mesh geometry")
 target_link_libraries(broflora PUBLIC bromesh)
 
 # --- bronze, the JavaScript runtime the api binds and the compiler for src/api/js ---
@@ -97,6 +107,10 @@ if(NOT TARGET bronze_runtime_shared)
         # Explicit BRONZE_DIR supplied
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../bronze/CMakeLists.txt")
         set(BRONZE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../bronze" CACHE PATH "bronze source tree")
+    elseif(EXISTS "${CMAKE_SOURCE_DIR}/../bronze/CMakeLists.txt")
+        # Beside the top-level project: this repo is a third_party/ submodule
+        # of the project being built.
+        set(BRONZE_DIR "${CMAKE_SOURCE_DIR}/../bronze" CACHE PATH "bronze source tree")
     endif()
 
     if(NOT BRONZE_DIR OR NOT EXISTS "${BRONZE_DIR}/CMakeLists.txt")
