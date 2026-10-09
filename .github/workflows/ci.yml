@@ -14,7 +14,7 @@ concurrency:
 # tree beside it. Its dependencies — bromath, bromesh (with bromesh's own
 # third-party libraries), and bronze, the JavaScript runtime broflora_api binds
 # and the compiler that builds src/api/js/flora.js, with brass, its code
-# generator — come from the commits CMakeLists.txt pins (cmake/bro_deps.cmake),
+# generator — come from the heads of their main branches (cmake/bro_deps.cmake),
 # fetched at configure. There are no submodules and no sibling checkouts.
 #
 # bronze and brass compile inside this build tree with the job's own compiler

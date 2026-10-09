@@ -32,7 +32,7 @@ jobs:
           path: broflora
 
       # The dependencies — bromath, bromesh, and bronze (with brass) — are
-      # fetched at configure from the pinned commits. bronze is needed at
+      # fetched at configure from the heads of their main branches. bronze is needed at
       # configure for the api; it is not built here, since only the broflora
       # target is traced.
 

@@ -56,9 +56,9 @@ endif()
 
 # --- Dependencies ---
 # Resolved by cmake/bro_deps.cmake, like every repo in the bro ecosystem: an
-# existing target (bro adds these before broflora, and its pins win) first;
+# existing target (bro adds these before broflora, and its choice wins) first;
 # otherwise the ../<name> working tree beside the top-level project; otherwise
-# the commit pinned here, fetched at configure. Leaves first: bromath before
+# the head of its main, fetched at configure. Leaves first: bromath before
 # bromesh, so the diamond resolves once.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bro_deps.cmake)
 
