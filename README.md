@@ -40,29 +40,21 @@ ctest --test-dir build -C Release --output-on-failure
 
 CMake 3.24+, C++20 (MSVC 2022, GCC 12+, Clang 15+).
 
-bromath and bromesh resolve the way every repo in the ecosystem resolves a
-sibling: an existing target wins (bro adds both first), then a checkout beside
-this one (`../bromath`, `../bromesh`; override with `-DBROMATH_DIR` /
-`-DBROMESH_DIR`), then the `third_party/` submodules, which carry both:
-
-```sh
-# Sibling layout (development): bromath, bromesh, bronze, brass beside broflora
-cmake -S . -B build
-
-# Fresh clone: bromath and bromesh come from third_party/
-git clone --recursive https://github.com/wlejon/broflora
-```
-
-The JavaScript binding needs bronze and brass beside this repository in either
-layout (or `-DBRONZE_DIR=<path>`); they have no submodule, because the binding
+A plain clone is all it takes. Every dependency — bromath, bromesh, and
+bronze with brass — is pinned to a commit in `CMakeLists.txt`
+(`bro_dependency()`, `cmake/bro_deps.cmake`) and resolves the way every repo in
+the ecosystem resolves one: an existing target wins (bro adds them first), then
+a working tree beside this one (`../bromath`, `../bromesh`, `../bronze`, ...),
+then the pinned commit, fetched at configure.
+`-DFETCHCONTENT_SOURCE_DIR_<NAME>=<path>` points one dependency anywhere else.
+bronze and brass compile inside this build tree, because the JavaScript binding
 has to be compiled against the same bronze as the program that loads it.
 
 `ctest` runs `broflora_test` (the simulation and emit suite), `test_sdf_mesh`
 and the binding's `broflora_api_test`. `examples/grove.cpp` (`broflora_grove`)
 is a minimal end-to-end driver that grows a world and writes it out as OBJ.
-CI builds and tests on Linux (GCC and Clang), Windows (MSVC) and macOS/arm64
-against the siblings' main branches, builds once more from the `third_party/`
-submodules alone, and reports coverage of `include/broflora/` and `src/`.
+CI builds and tests a plain clone on Linux (GCC and Clang), Windows (MSVC) and
+macOS/arm64 against the pinned dependencies, and reports coverage of `include/broflora/` and `src/`.
 
 ## What this implements
 

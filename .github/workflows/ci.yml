@@ -10,26 +10,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# broflora requires both bromath (../bromath) and bromesh (../bromesh) — the
-# CMakeLists FATAL_ERRORs without them — and bromesh in turn vendors seven
-# submodules. So every job reconstructs the sibling layout and checks bromesh
-# out with submodules:
+# Every job builds a plain clone, checked out under broflora/ with the build
+# tree beside it. Its dependencies — bromath, bromesh (with bromesh's own
+# third-party libraries), and bronze, the JavaScript runtime broflora_api binds
+# and the compiler that builds src/api/js/flora.js, with brass, its code
+# generator — come from the commits CMakeLists.txt pins (cmake/bro_deps.cmake),
+# fetched at configure. There are no submodules and no sibling checkouts.
 #
-#     $GITHUB_WORKSPACE/
-#       broflora/   <- this repo, checked out into a named path
-#       bromath/
-#       bromesh/    <- with submodules (broflora links it)
-#       bronze/     <- the JavaScript runtime broflora_api binds, and the
-#                      compiler that builds src/api/js/flora.js
-#       brass/      <- bronze's code generator
-#
-# bronze and brass are laid out by bronze's checkout-toolchain action and
-# compiled inside this build tree (bronze add_subdirectory()s brass), with
-# the job's own compiler and CRT — the api is bound across bronze's C++ embed
-# boundary, so a prebuilt bronze would be an unverifiable ABI hazard. That is
-# what makes broflora_api_test the check that the library works the way bro
-# uses it. brass has native x86_64 and AArch64 code generators, so the JS is
-# compiled and the test runs on every row, macos-arm64 included.
+# bronze and brass compile inside this build tree with the job's own compiler
+# and CRT — the api is bound across bronze's C++ embed boundary, so a prebuilt
+# bronze would be an unverifiable ABI hazard. That is what makes
+# broflora_api_test the check that the library works the way bro uses it. brass
+# has native x86_64 and AArch64 code generators, so the JS is compiled and the
+# test runs on every row, macos-arm64 included.
 #
 # Release, not Debug: broflora links bromesh, whose meshoptimizer Debug
 # assertions surface as a modal abort() on Windows. Default CMake generator, not
@@ -53,19 +46,6 @@ jobs:
         with:
           path: broflora
 
-      - uses: actions/checkout@v7
-        with:
-          repository: wlejon/bromath
-          path: bromath
-
-      - uses: actions/checkout@v7
-        with:
-          repository: wlejon/bromesh
-          path: bromesh
-          submodules: recursive
-
-      - uses: wlejon/bronze/.github/actions/checkout-toolchain@main
-
       - name: Configure
         env:
           CC: ${{ matrix.cc }}
@@ -79,46 +59,10 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
-  # ── Submodule fallback ────────────────────────────────────────────────────
-  #
-  # No sibling checkouts: bromath and bromesh (with bromesh's own vendored
-  # submodules) come from the flat third_party/ submodules at the commits this
-  # repo pins, as they do for a fresh `git clone --recursive`. bronze and brass
-  # are the documented exception (no submodule; the api has to compile against
-  # the bronze of the program that loads it) and are laid out beside the repo
-  # as in the other jobs. The configure step checks each sibling really took
-  # the submodule path.
-  submodule:
-    name: Submodule fallback · ubuntu-24.04
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          path: broflora
-          submodules: recursive
-
-      - uses: wlejon/bronze/.github/actions/checkout-toolchain@main
-
-      - name: Configure
-        shell: bash
-        run: |
-          test ! -e bromath && test ! -e bromesh
-          cmake -S broflora -B build -DCMAKE_BUILD_TYPE=Release | tee configure.log
-          for s in bromath bromesh; do
-            grep -q "broflora: $s from .*third_party/$s (submodule)" configure.log
-          done
-
-      - name: Build
-        run: cmake --build build --parallel 4
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
-
   # ── Coverage ──────────────────────────────────────────────────────────────
   #
   # Debug + --coverage on Linux. --filter scopes the numbers to broflora's own
-  # code (include/broflora/ + src/); the siblings and their vendored submodules
-  # are excluded.
+  # code (include/broflora/ + src/); the dependencies are excluded.
   coverage:
     name: Coverage
     runs-on: ubuntu-24.04
@@ -126,19 +70,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: broflora
-
-      - uses: actions/checkout@v7
-        with:
-          repository: wlejon/bromath
-          path: bromath
-
-      - uses: actions/checkout@v7
-        with:
-          repository: wlejon/bromesh
-          path: bromesh
-          submodules: recursive
-
-      - uses: wlejon/bronze/.github/actions/checkout-toolchain@main
 
       - name: Install gcovr
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gcovr
@@ -177,7 +108,7 @@ jobs:
           {
             echo '## Coverage — `include/broflora/` + `src/`'
             echo
-            echo 'The bromath/bromesh siblings and their vendored code are filtered out.'
+            echo 'The bromath/bromesh dependencies and their third-party code are filtered out.'
             echo
             echo '```'
             cat coverage-summary.txt

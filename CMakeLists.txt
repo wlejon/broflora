@@ -54,73 +54,28 @@ else()
     target_compile_options(broflora PRIVATE -Wall -Wextra)
 endif()
 
-# --- Siblings: bromath (header-only) + bromesh ---
-# Each resolves like every repo in the bro ecosystem: an existing target (bro
-# adds both before broflora; first loader wins); otherwise a checkout beside the
-# top-level project (../<name>, overridable with -D<NAME>_DIR=<path>);
-# otherwise the top-level project's third_party/<name> submodule (`git
-# submodule update --init --recursive`). third_party/ is flat: it carries every
-# sibling broflora needs, transitive ones included. bromath is resolved first
-# so bromesh finds the target and the diamond resolves once.
-function(broflora_sibling name what)
-    if(TARGET ${name})
-        return()
-    endif()
-    string(TOUPPER "${name}" _upper)
-    set(${_upper}_DIR "${CMAKE_SOURCE_DIR}/../${name}" CACHE PATH
-        "Path to standalone ${name} repo (set to a missing path to force submodule fallback)")
-    if(EXISTS "${${_upper}_DIR}/CMakeLists.txt")
-        message(STATUS "broflora: ${name} from ${${_upper}_DIR}")
-        add_subdirectory("${${_upper}_DIR}" "${CMAKE_BINARY_DIR}/${name}" EXCLUDE_FROM_ALL)
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/third_party/${name}/CMakeLists.txt")
-        message(STATUS "broflora: ${name} from ${CMAKE_SOURCE_DIR}/third_party/${name} (submodule)")
-        add_subdirectory("${CMAKE_SOURCE_DIR}/third_party/${name}" "${CMAKE_BINARY_DIR}/${name}" EXCLUDE_FROM_ALL)
-    else()
-        message(FATAL_ERROR
-            "broflora needs ${name} (${what}): not found at ${${_upper}_DIR} or "
-            "${CMAKE_SOURCE_DIR}/third_party/${name}. Clone https://github.com/wlejon/${name} next "
-            "to this repo, run `git submodule update --init --recursive`, or override with "
-            "-D${_upper}_DIR=...")
-    endif()
-endfunction()
+# --- Dependencies ---
+# Resolved by cmake/bro_deps.cmake, like every repo in the bro ecosystem: an
+# existing target (bro adds these before broflora, and its pins win) first;
+# otherwise the ../<name> working tree beside the top-level project; otherwise
+# the commit pinned here, fetched at configure. Leaves first: bromath before
+# bromesh, so the diamond resolves once.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bro_deps.cmake)
 
-broflora_sibling(bromath "math headers")
+bro_dependency(bromath GITHUB wlejon/bromath REF 8b511fbd69c014bf0584d2b42e6c96a8cf720f6a TARGET bromath::bromath)
 target_link_libraries(broflora PUBLIC bromath::bromath)
 
 # broflora emits geometry as bromesh::MeshData and is meaningless without
 # bromesh in the picture.
-broflora_sibling(bromesh "mesh geometry")
+bro_dependency(bromesh GITHUB wlejon/bromesh REF fe7fdc1801f96d246d34e3f33b706ba9359cd217)
 target_link_libraries(broflora PUBLIC bromesh)
 
-# --- bronze, the JavaScript runtime the api binds and the compiler for src/api/js ---
-# A checkout beside this one (../bronze, with ../brass beside it — bronze
-# resolves and add_subdirectory()s its own code generator), the layout of a
-# bro tree and of CI (bronze's .github/actions/checkout-toolchain), or an
-# explicit -DBRONZE_DIR. No vendored fallback: the api is bound across
-# bronze's C++ embed boundary, so it has to build against the bronze the
-# surrounding tree builds against. Under bro this block is skipped, bro having
-# added bronze already.
-if(NOT TARGET bronze_runtime_shared)
-    set(BRONZE_BUILD_SHARED_RUNTIME ON CACHE BOOL "" FORCE)
-    set(BRONZE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    if(DEFINED BRONZE_DIR AND EXISTS "${BRONZE_DIR}/CMakeLists.txt")
-        # Explicit BRONZE_DIR supplied
-    elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../bronze/CMakeLists.txt")
-        set(BRONZE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../bronze" CACHE PATH "bronze source tree")
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/../bronze/CMakeLists.txt")
-        # Beside the top-level project: this repo is a third_party/ submodule
-        # of the project being built.
-        set(BRONZE_DIR "${CMAKE_SOURCE_DIR}/../bronze" CACHE PATH "bronze source tree")
-    endif()
-
-    if(NOT BRONZE_DIR OR NOT EXISTS "${BRONZE_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR
-            "bronze not found: check it out beside this repository (../bronze, with ../brass beside it) "
-            "or pass -DBRONZE_DIR=<path>.")
-    endif()
-
-    add_subdirectory("${BRONZE_DIR}" "${CMAKE_BINARY_DIR}/bronze-build" EXCLUDE_FROM_ALL)
-endif()
+# bronze, the JavaScript runtime the api binds and the compiler for src/api/js
+# (it brings brass, its code generator). The api is bound across bronze's C++
+# embed boundary, so it has to build against the bronze the surrounding tree
+# builds against.
+bro_dependency(bronze GITHUB wlejon/bronze REF 15ce4cf5fc25d8afe03882985ae95adcba46a6a9 TARGET bronze_runtime_shared
+               OPTIONS BRONZE_BUILD_SHARED_RUNTIME=ON BRONZE_BUILD_TESTS=OFF)
 
 # --- Standalone Bronze JavaScript API ---
 add_subdirectory(src/api)

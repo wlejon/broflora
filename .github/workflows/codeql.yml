@@ -31,27 +31,17 @@ jobs:
         with:
           path: broflora
 
-      - uses: actions/checkout@v7
-        with:
-          repository: wlejon/bromath
-          path: bromath
-
-      - uses: actions/checkout@v7
-        with:
-          repository: wlejon/bromesh
-          path: bromesh
-          submodules: recursive
-
-      # bronze (and through it brass) is needed at configure for the api;
-      # neither is built here, since only the broflora target is traced.
-      - uses: wlejon/bronze/.github/actions/checkout-toolchain@main
+      # The dependencies — bromath, bromesh, and bronze (with brass) — are
+      # fetched at configure from the pinned commits. bronze is needed at
+      # configure for the api; it is not built here, since only the broflora
+      # target is traced.
 
       # Debug / -O0 keeps the extracted IR close to the source so dataflow paths
       # in the results point at code a human can act on.
       - name: Configure
         run: cmake -S broflora -B build -DCMAKE_BUILD_TYPE=Debug
 
-      # The sibling bromesh library and the seven submodules it vendors are
+      # The bromesh dependency and the seven third-party libraries it pins are
       # compiled here, ahead of `init`. For a compiled language CodeQL only
       # extracts what it observes the compiler build while tracing, so anything
       # already built when `init` runs is never analysed. That is the exclusion
@@ -73,7 +63,7 @@ jobs:
           build-mode: manual
           queries: security-extended
           # Relative to the workspace root; this repo is checked out into
-          # broflora/ (not the root) so the siblings can sit beside it.
+          # broflora/ (not the root), with the build tree beside it.
           # paths-ignore is the second line of defence, catching any finding that
           # originates in a sibling *header* pulled into a broflora TU.
           config-file: broflora/.github/codeql/codeql-config.yml

@@ -3,14 +3,12 @@ name: broflora CodeQL config
 queries:
   - uses: security-extended
 
-# The sibling bromesh library and its vendored submodules are kept out of the
+# The bromesh dependency and its third-party libraries are kept out of the
 # analysis by build order (see the pre-build step in codeql.yml) — that is what
 # excludes their compiled TUs. This paths-ignore is the complement: it drops any
-# finding that originates in a sibling *header* pulled into a broflora
+# finding that originates in a dependency *header* pulled into a broflora
 # translation unit, which build order cannot catch. Together they scope the
-# Security tab to broflora's own code.
+# Security tab to broflora's own code. Every dependency is fetched under the
+# build tree's _deps/.
 paths-ignore:
-  - bromath
-  - bromesh
-  - bronze
-  - brass
+  - build/_deps
