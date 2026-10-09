@@ -62,19 +62,19 @@ endif()
 # bromesh, so the diamond resolves once.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bro_deps.cmake)
 
-bro_dependency(bromath GITHUB wlejon/bromath REF 8b511fbd69c014bf0584d2b42e6c96a8cf720f6a TARGET bromath::bromath)
+bro_dependency(bromath GITHUB wlejon/bromath TARGET bromath::bromath)
 target_link_libraries(broflora PUBLIC bromath::bromath)
 
 # broflora emits geometry as bromesh::MeshData and is meaningless without
 # bromesh in the picture.
-bro_dependency(bromesh GITHUB wlejon/bromesh REF fe7fdc1801f96d246d34e3f33b706ba9359cd217)
+bro_dependency(bromesh GITHUB wlejon/bromesh)
 target_link_libraries(broflora PUBLIC bromesh)
 
 # bronze, the JavaScript runtime the api binds and the compiler for src/api/js
 # (it brings brass, its code generator). The api is bound across bronze's C++
 # embed boundary, so it has to build against the bronze the surrounding tree
 # builds against.
-bro_dependency(bronze GITHUB wlejon/bronze REF 15ce4cf5fc25d8afe03882985ae95adcba46a6a9 TARGET bronze_runtime_shared
+bro_dependency(bronze GITHUB wlejon/bronze TARGET bronze_runtime_shared
                OPTIONS BRONZE_BUILD_SHARED_RUNTIME=ON BRONZE_BUILD_TESTS=OFF)
 
 # --- Standalone Bronze JavaScript API ---
