@@ -131,7 +131,8 @@ from.
   `vulkan/shaders/scene_grass.glsl`, `scene_mesh_drawer_grass.cpp`; API in
   bro `docs/scene-nodes-api.js`). Dense's meadow, ported: no per-blade data,
   three rings of cells around the camera (6 cm, 20 cm, 55 cm cells out to
-  20 / 55 / 150 m at the default range), each one instanced draw over only
+  20 / 55 / 150 m at the default range; step 5 made them four rings of
+  tufts), each one instanced draw over only
   the cells of its visible sector. Each blade comes from its cell's hash, the
   clump noise and the node's **field**: a grid of ground height, density,
   dryness and a height multiplier that the JS side bakes once from the ground
@@ -334,11 +335,100 @@ Each cell is frame / without grass / leaves.
 
 **Still open:**
 
-- Grass has the same per-instance front-end cost (1.0-1.3 ms).
 - The leaves' pose is computed per vertex, though all 24 vertices of a leaf
   share it.
 - `windSwayReach` (the shadow-tile cull margin) still uses the old sway
   model's formula, which bounds the grove's motion.
+
+## Step 5 as built: a lush sward
+
+Step 3's near grass covered about half the ground with one 2 cm blade per
+6 cm cell (about 280 blades a square metre), over soil the colour of the
+blades. Real meadow blades are 3 to 6 mm wide, thousands to the square
+metre.
+
+### Tufts and rings
+
+An instance is now a cell's several blades: the ring mesh is that many
+copies of the blade end to end, and the shader finds its blade from the
+vertex index (`GrassNode::ringMesh`, `scene_grass.glsl`). Four rings, at the
+default range of 150 m:
+
+| Ring | Out to | Cell | Blades a cell | Segments | Width | Blades a m² |
+|---|---|---|---|---|---|---|
+| 0 | 7 m | 10 cm | 14, a tuft | 4 | 4 mm | 1400 |
+| 1 | 20 m | 16 cm | 8, a tuft | 3 | 1.6 cm | 310 |
+| 2 | 55 m | 30 cm | 5, over the cell | 2 | 4 cm | 55 |
+| 3 | 150 m | 75 cm | 5, over the cell | 2 | 10 cm | 9 |
+
+- **Cover is the invariant.** Blades a square metre times width (the
+  blades' share of a view across the ground) stays about level from ring to
+  ring, while vertices a square metre fall about tenfold each step. Widths
+  also grow 3% a metre and never fall under two thirds of a pixel.
+- **Thinning.** Past half its outer edge, rings 0 and 1 keep `thinFrom / d`
+  of a cell's blades (at least half), each widened by the inverse, so the
+  outer edge of a ring already looks like the next.
+- **Tufts.** A blade stands up to half a cell from the root, uniform over the
+  disc. It leans out from the root, outer blades most (`fan`: 0.5 rad near,
+  0.35 in ring 1), with its face turned out. The density thins blade by
+  blade, so a thin patch is sparse tufts rather than missing ones.
+- **Soil.** The grove's soil is darker and cooler than the blades (lush
+  `[0.028, 0.038, 0.022]`): the shade at the foot of a sward, so the gaps
+  read as depth.
+
+The bulk normal, gusts, movers and dithered handovers are unchanged.
+
+### Cost
+
+A vertex costs about the same whether the shader culls it at its first test
+or draws it. So culling inside the shader saves nothing; only not issuing
+the vertex does. Two changes follow from that:
+
+- **Tiles in view.** The drawer splits each ring's visible box into tiles of
+  16 x 16 cells. It keeps only the tiles that reach the ring, where
+  something grows, and whose box (ground to the tallest blade) is in the
+  view frustum. The field's coarse blocks (`GrassNode::fieldRange`) give
+  each tile's height range. It issues one draw per run of kept tiles in a
+  row, with the run's cell rectangle in the model matrix's first row.
+- **Shadow casters.** These keep a third of the near ring's blades,
+  widened. A grass caster costs little; what costs is that a casting grass
+  makes the whole shadow map re-render every frame (about 0.5 ms in the
+  grove, mostly the leaves).
+
+GPU ms from `capture.js perf` at 1280x720, RTX 4090, 4x MSAA, mean
+`perf.gpuFrameMs` over 60 frames, grass casting:
+
+| Shot | Frame before | Frame after | Cells issued before | Cells issued after |
+|---|---|---|---|---|
+| ground (in the grass) | 5.18 | 4.72 | 211k / 112k / 100k | 9k / 17k / 28k / 12k |
+| meadow | 6.49 | 5.98 | 206k / 109k / 97k | 9k / 18k / 29k / 16k |
+| grove | 6.61 | 5.75 | 213k / 114k / 101k | 0 / 15k / 29k / 17k |
+
+The grass's own share (frame minus frame without it) in the ground shot fell
+from 1.35 to 0.89 ms.
+
+### What the forest LOD step should know
+
+- **Blade work is per vertex issued.** Budget grass by vertices issued, not
+  by blades drawn. The tile cull is the lever. A tighter cull would pay too:
+  for example by the depth of the trees in front, or a GPU compaction pass.
+- **Under a canopy.** `groundCover` thins the grass in shade, but the cells
+  are still issued and culled vertex by vertex. A forest floor wants the
+  density in the field's coarse blocks: `fieldRange` already skips tiles
+  where density is 0. A density floor under it (0 below some shade) would
+  skip whole tiles under closed canopy.
+- **From above the canopy.** The rings follow the eye's x and z only. Seen
+  from 50 m up, ring 0 is issued under the camera and is all sub-pixel. The
+  rings should scale with the eye's height above the ground, or start
+  thinning by distance in 3D rather than across the ground.
+- **One shadow-map cost.** A casting grass re-renders the whole shadow map
+  every frame. At forest scale, grass should cast only into the nearest
+  cascade (or a tile of its own), or not cast and take a contact-shadow
+  term instead.
+- **Far turf.** Ring 3 out to 150 m is cheap in a meadow, but a forest view
+  hides most of it behind trunks. Past the trees' impostor distance, the
+  ground's own colour (darkened by the same dry and density masks) can stand
+  in for blades.
 
 ## Order
 
@@ -348,6 +438,8 @@ Each cell is frame / without grass / leaves.
 3. Grass: the grass node on the same wind, parted by movers.
 4. Wood and leaves: cantilever terms from the geometry, damped-oscillator
    response, the leaf layer, softer leaf light, MSAA, seamless tubes.
+5. Lush grass: tufts of fine blades an instance, four rings at a level
+   cover, view-culled tiles, darker soil.
 
 Each step is judged by motion strips and short videos next to the reference
 galleries, not by stills.
