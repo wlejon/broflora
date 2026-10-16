@@ -276,6 +276,130 @@
         weeping: function weeping(spread, droop) { return _native ? _native.protoWeeping(spread, droop) : null; },
     });
 
+    // ---- Forests -------------------------------------------------------------
+
+    // A 32-bit hash to [0, 1) (triple32-lite).
+    function _hash01(x) {
+        x = x >>> 0;
+        x ^= x >>> 16; x = Math.imul(x, 0x7feb352d);
+        x ^= x >>> 15; x = Math.imul(x, 0x846ca68b);
+        x ^= x >>> 16;
+        return (x >>> 0) / 4294967296;
+    }
+    function _cellHash(i, j, seed, k) {
+        return _hash01(Math.imul(i, 0x27d4eb2d) ^ Math.imul(j, 0x165667b1) ^ Math.imul(seed + k, 0x9e3779b9));
+    }
+    function _numberOr(v, d) { return typeof v === 'number' && isFinite(v) ? v : d; }
+
+    // Instances for a forest emit (world.emitForest): its specimens planted
+    // many times over an area, x, y, z, scale, yaw, specimen, 0, 0 each (the
+    // layout scene.createForest's `instances` takes; yaw turns a specimen
+    // about +Y: local (x, z) -> (x cos + z sin, -x sin + z cos)).
+    //   area      [x0, z0, x1, z1] (world metres)
+    //   spacing   mean distance between neighbouring trees (default 7 m)
+    //   jitter    how far a tree strays from its grid cell's centre, in
+    //             spacings (default 0.42)
+    //   ground    (x, z) -> y, the height the trees stand on (default 0)
+    //   density   number or (x, z) -> 0..1: the chance a cell holds a tree
+    //   scale     the node scale the specimens are drawn at, a number or
+    //             [min, max] (default 1)
+    //   sink      how far a root sits below the ground (default 0.1 m)
+    //   specimens which specimens to use (indices; default all), or
+    //             weights per specimen
+    //   seed
+    fn(ns_flora, "plantForest", function plantForest(forest, opts) {
+        const o = opts || {};
+        const area = o.area || [-50, -50, 50, 50];
+        const spacing = Math.max(0.5, _numberOr(o.spacing, 7));
+        const jitter = _numberOr(o.jitter, 0.42);
+        const ground = typeof o.ground === 'function' ? o.ground : () => 0;
+        const density = typeof o.density === 'function' ? o.density : () => _numberOr(o.density, 1);
+        const scale = Array.isArray(o.scale) ? o.scale : [_numberOr(o.scale, 1), _numberOr(o.scale, 1)];
+        const sink = _numberOr(o.sink, 0.1);
+        const seed = _numberOr(o.seed, 1) | 0;
+        const count = forest && forest.specimenCount ? forest.specimenCount | 0 : 0;
+        if (count <= 0) return new Float32Array(0);
+        let pool = [];
+        if (Array.isArray(o.specimens) && o.specimens.length === count && o.specimens.every((v) => typeof v === 'number' && v <= 1)) {
+            // Weights per specimen.
+            let sum = 0;
+            for (let i = 0; i < count; i++) sum += Math.max(0, o.specimens[i]);
+            let acc = 0;
+            for (let i = 0; i < count; i++) { acc += Math.max(0, o.specimens[i]) / (sum || 1); pool.push([acc, i]); }
+        } else {
+            const ids = Array.isArray(o.specimens) ? o.specimens.filter((i) => i >= 0 && i < count) : [...Array(count).keys()];
+            ids.forEach((id, k) => pool.push([(k + 1) / ids.length, id]));
+        }
+        const pick = (u) => { for (const [c, id] of pool) if (u < c) return id; return pool[pool.length - 1][1]; };
+        const out = [];
+        const i0 = Math.floor(area[0] / spacing), i1 = Math.ceil(area[2] / spacing);
+        const j0 = Math.floor(area[1] / spacing), j1 = Math.ceil(area[3] / spacing);
+        for (let j = j0; j <= j1; j++) {
+            for (let i = i0; i <= i1; i++) {
+                const x = (i + 0.5 + jitter * 2 * (_cellHash(i, j, seed, 1) - 0.5)) * spacing;
+                const z = (j + 0.5 + jitter * 2 * (_cellHash(i, j, seed, 2) - 0.5)) * spacing;
+                if (x < area[0] || x > area[2] || z < area[1] || z > area[3]) continue;
+                if (_cellHash(i, j, seed, 3) >= Math.min(1, Math.max(0, density(x, z)))) continue;
+                const s = scale[0] + (scale[1] - scale[0]) * _cellHash(i, j, seed, 4);
+                out.push(x, ground(x, z) - sink, z, s, _cellHash(i, j, seed, 5) * 6.283185307, pick(_cellHash(i, j, seed, 6)), 0, 0);
+            }
+        }
+        return new Float32Array(out);
+    });
+
+    // Ground cover under a forest (scene.createGrass `density`): a function
+    // (x, z) -> 0..1 that is 0 under a closed canopy, thin in the crowns'
+    // shade, clear at each trunk, full in the open. `instances` defaults to
+    // the forest's own. `floor` is the shade's least cover before the canopy
+    // closes; `closed` the crown overlap at which nothing grows.
+    fn(ns_flora, "forestCover", function forestCover(forest, opts) {
+        const o = opts || {};
+        const inst = o.instances || (forest && forest.instances) || new Float32Array(0);
+        const spec = forest && forest.specimens ? forest.specimens : new Float32Array(0);
+        const floor = _numberOr(o.floor, 0.35);
+        const closed = _numberOr(o.closed, 1.6);
+        const clear = _numberOr(o.trunkClear, 0.7);
+        const n = (inst.length / 8) | 0;
+        const cell = 16;
+        const grid = new Map();
+        let reach = 1;
+        const trees = [];
+        for (let i = 0; i < n; i++) {
+            const sp = inst[i * 8 + 5] | 0, s = inst[i * 8 + 3];
+            if (sp * 16 + 15 >= spec.length) continue;
+            const cr = spec[sp * 16 + 7] * s, yaw = inst[i * 8 + 4];
+            const cx = spec[sp * 16 + 8] * s, cz = spec[sp * 16 + 10] * s;
+            const t = {
+                x: inst[i * 8], z: inst[i * 8 + 2],
+                cx: inst[i * 8] + cx * Math.cos(yaw) + cz * Math.sin(yaw),
+                cz: inst[i * 8 + 2] - cx * Math.sin(yaw) + cz * Math.cos(yaw),
+                r: Math.max(cr, 0.5),
+            };
+            trees.push(t);
+            reach = Math.max(reach, t.r);
+            const k = Math.floor(t.cx / cell) + ',' + Math.floor(t.cz / cell);
+            if (!grid.has(k)) grid.set(k, []);
+            grid.get(k).push(t);
+        }
+        const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+        const span = Math.ceil(reach / cell);
+        return function cover(x, z) {
+            let canopy = 0, trunk = 1;
+            const gi = Math.floor(x / cell), gj = Math.floor(z / cell);
+            for (let dj = -span; dj <= span; dj++) for (let di = -span; di <= span; di++) {
+                const list = grid.get((gi + di) + ',' + (gj + dj));
+                if (!list) continue;
+                for (const t of list) {
+                    const d = Math.hypot(x - t.cx, z - t.cz) / t.r;
+                    if (d < 1.15) canopy += 1 - smooth(0.55, 1.15, d);
+                    trunk = Math.min(trunk, smooth(clear, clear * 3.5, Math.hypot(x - t.x, z - t.z)));
+                }
+            }
+            const lit = 1 - Math.min(1, canopy / closed);
+            return trunk * (1 - smooth(0.7 * closed, closed, canopy)) * (floor + (1 - floor) * lit * lit);
+        };
+    });
+
     // ---- bro.flora.FloraWorld ------------------------------------------------
     function FloraWorld() {
         throw new TypeError("bro.flora.FloraWorld is not constructible: instances come from the natives that return one");
@@ -423,6 +547,14 @@
 
     fn(FloraWorld.prototype, "emitClumps", function emitClumps(opts) {
         return _native ? _native.emitClumps(this, opts) : null;
+    });
+
+    // Every plant as a specimen for bro.scene's forest node
+    // (scene.createForest): bark thickest first, crown clumps, leaves in a
+    // thinning order, one instance per plant where it grew. Swap
+    // `instances` (bro.flora.plantForest) to draw the specimens many times.
+    fn(FloraWorld.prototype, "emitForest", function emitForest(opts) {
+        return _native ? _native.emitForest(this, opts) : null;
     });
 
     fn(FloraWorld.prototype, "emitScatterSegments", function emitScatterSegments(opts) {

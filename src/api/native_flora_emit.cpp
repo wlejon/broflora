@@ -374,62 +374,22 @@ Value jsEmitBranchTubes(Value /*thisVal*/, std::span<const Value> args) {
     float bmax[3] = { -1e30f, -1e30f, -1e30f };
     float maxR = 0.0f;
 
-    // Each segment's continuation: its thickest child. A joint between a
-    // segment and its continuation is mitred on the plane halfway between
-    // the two, so the tube bends there without a crack or an overlap.
-    std::vector<int> mainChild(segs.size(), -1);
-    for (size_t i = 0; i < segs.size(); ++i) {
-        const int p = segs[i].parent;
-        if (p < 0 || static_cast<size_t>(p) >= segs.size()) continue;
-        if (mainChild[p] < 0 || segs[i].radius > segs[mainChild[p]].radius) mainChild[p] = static_cast<int>(i);
-    }
-    auto dirOf = [&](size_t i) {
-        const bromath::Vec3 d = segs[i].to - segs[i].from;
-        const float l = bromath::vlen(d);
-        return l > 1e-6f ? d * (1.0f / l) : bromath::Vec3{0.0f, 1.0f, 0.0f};
-    };
-    auto bisect = [](const bromath::Vec3& a, const bromath::Vec3& b) {
-        const bromath::Vec3 s = a + b;
-        const float l = bromath::vlen(s);
-        return l > 0.2f ? s * (1.0f / l) : b;
-    };
-
-    for (size_t i = 0; i < segs.size(); ++i) {
-        const auto& s = segs[i];
-        bromath::Vec3 d = s.to - s.from;
-        if (bromath::vlen(d) < 1e-6f) continue;
-        if (s.radius < minRadius) continue;
-
-        // A continuation starts at its parent's radius, so the bark runs on
-        // unbroken; a side shoot starts a little swollen (a collar) and
-        // starts inside the parent's wood.
-        float rTo = s.radius;
-        float rFrom = rTo;
-        int p = s.parent;
-        if (p >= 0 && static_cast<size_t>(p) < segs.size() && segs[p].radius > 0.0f) {
-            rFrom = mainChild[p] == static_cast<int>(i) ? segs[p].radius
-                                                        : std::min(segs[p].radius, 1.5f * rTo);
-        }
-
-        packed.push_back(s.from.x); packed.push_back(s.from.y);
-        packed.push_back(s.from.z); packed.push_back(rFrom);
-        packed.push_back(s.to.x);   packed.push_back(s.to.y);
-        packed.push_back(s.to.z);   packed.push_back(rTo);
-        if (i < sway.size()) broflora::appendSegmentVegetation(vegetation, sway[i]);
-
-        const bromath::Vec3 di = dirOf(i);
-        const bool continues = p >= 0 && static_cast<size_t>(p) < segs.size() && mainChild[p] == static_cast<int>(i);
-        const bromath::Vec3 tFrom = continues ? bisect(dirOf(static_cast<size_t>(p)), di) : di;
-        const bromath::Vec3 tTo = mainChild[i] >= 0 ? bisect(di, dirOf(static_cast<size_t>(mainChild[i]))) : di;
-        tangents.insert(tangents.end(), {tFrom.x, tFrom.y, tFrom.z, tTo.x, tTo.y, tTo.z});
-
-        maxR = std::max({ maxR, rFrom, rTo });
-        bmin[0] = std::min({ bmin[0], s.from.x, s.to.x });
-        bmin[1] = std::min({ bmin[1], s.from.y, s.to.y });
-        bmin[2] = std::min({ bmin[2], s.from.z, s.to.z });
-        bmax[0] = std::max({ bmax[0], s.from.x, s.to.x });
-        bmax[1] = std::max({ bmax[1], s.from.y, s.to.y });
-        bmax[2] = std::max({ bmax[2], s.from.z, s.to.z });
+    // A continuation starts at its parent's radius and a side shoot with a
+    // collar; a joint with the continuation is mitred on the bisector, so the
+    // tube bends there without a crack or an overlap (broflora::tubeSegments).
+    for (const broflora::TubeSegment& t : broflora::tubeSegments(segs, minRadius)) {
+        packed.insert(packed.end(), {t.from.x, t.from.y, t.from.z, t.rFrom, t.to.x, t.to.y, t.to.z, t.rTo});
+        if (static_cast<size_t>(t.segment) < sway.size())
+            broflora::appendSegmentVegetation(vegetation, sway[static_cast<size_t>(t.segment)]);
+        tangents.insert(tangents.end(), {t.tangentFrom.x, t.tangentFrom.y, t.tangentFrom.z,
+                                         t.tangentTo.x, t.tangentTo.y, t.tangentTo.z});
+        maxR = std::max({ maxR, t.rFrom, t.rTo });
+        bmin[0] = std::min({ bmin[0], t.from.x, t.to.x });
+        bmin[1] = std::min({ bmin[1], t.from.y, t.to.y });
+        bmin[2] = std::min({ bmin[2], t.from.z, t.to.z });
+        bmax[0] = std::max({ bmax[0], t.from.x, t.to.x });
+        bmax[1] = std::max({ bmax[1], t.from.y, t.to.y });
+        bmax[2] = std::max({ bmax[2], t.from.z, t.to.z });
     }
 
     size_t segCount = packed.size() / 8;

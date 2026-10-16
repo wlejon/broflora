@@ -652,6 +652,7 @@ void registerFloraNativeHelpers() {
     REG_FN(emitFoliageVegetation, 2, jsEmitFoliageVegetation);
     REG_FN(emitSegmentVegetation, 1, jsEmitSegmentVegetation);
     REG_FN(emitClumps, 2, jsEmitClumps);
+    REG_FN(emitForest, 2, jsEmitForest);
     REG_FN(emitFoliageMesh, 3, jsEmitFoliageMesh);
     REG_FN(emitBloomMesh, 4, jsEmitBloomMesh);
     REG_FN(emitPlantFoliageMesh, 4, jsEmitPlantFoliageMesh);

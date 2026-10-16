@@ -120,6 +120,71 @@ Value scatterClumps(const broflora::WorldState& world, Value opts) {
     return obj.get();
 }
 
+// world.emitForest(opts) -> every plant as a specimen for bro.scene's forest
+// node (broflora/forest.h): typed arrays plus the leaf placement, and one
+// instance per specimen where its plant stands. The clump options read as
+// the foliage emits'; `minRadius` drops thin bark; `shuffleSeed` seeds the
+// leaves' thinning order.
+Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.empty()) return ev::createObject();
+    auto* w = getWrapper(args[0]);
+    if (!w || !w->world) return ev::createObject();
+    const Rooted optsV(args.size() >= 2 ? args[1] : ev::undefined());
+    broflora::ForestOptions fo;
+    if (!readClumpOptions(optsV, fo.clumps, fo.leaves)) return ev::undefined();
+    const double g = getGlobalDensity();
+    if (g >= 0.0) fo.leaves.perArea *= static_cast<float>(g);
+    if (ev::isObject(optsV)) {
+        readFloatField(optsV, "minRadius", fo.minRadius);
+        uint64_t s = fo.seed;
+        if (!seedField(optsV, "shuffleSeed", "emitForest opts.shuffleSeed", s)) return ev::undefined();
+        fo.seed = s;
+    }
+    const broflora::ForestEmit f = broflora::emitForest(*w->world, fo);
+
+    // Per specimen: segStart, segCount, clumpStart, clumpCount, leafStart,
+    // leafCount, height, crownRadius, crown.xyz (relative), plant index,
+    // origin.xyz, 0.
+    std::vector<float> spec, inst;
+    for (const auto& s : f.specimens) {
+        spec.insert(spec.end(), {static_cast<float>(s.segStart), static_cast<float>(s.segCount),
+                                 static_cast<float>(s.clumpStart), static_cast<float>(s.clumpCount),
+                                 static_cast<float>(s.leafStart), static_cast<float>(s.leafCount),
+                                 s.height, s.crownRadius, s.crown.x, s.crown.y, s.crown.z,
+                                 static_cast<float>(s.plant), s.origin.x, s.origin.y, s.origin.z, 0.0f});
+        // x, y, z, scale, yaw, specimen, 0, 0: drawn where the plant grew.
+        inst.insert(inst.end(), {s.origin.x, s.origin.y, s.origin.z, 1.0f, 0.0f,
+                                 static_cast<float>(inst.size() / 8), 0.0f, 0.0f});
+    }
+    ev::Persistent obj(ev::createObject());
+    const auto put = [&](const char* name, const std::vector<float>& v) {
+        ev::Persistent a(makeFloat32Array(v.empty() ? nullptr : v.data(), v.size()));
+        obj.set(ev::setProperty(obj.get(), name, a.get()));
+    };
+    put("specimens", spec);
+    put("instances", inst);
+    put("segments", f.segments);
+    put("tangents", f.tangents);
+    put("segmentVegetation", f.segmentVegetation);
+    put("keepRadius", f.keepRadius);
+    put("clumps", f.clumps);
+    put("clumpVegetation", f.clumpVegetation);
+    {
+        // Leaf (clump, key) pairs stay integers: a world's keys pass 2^24.
+        ev::Persistent a(makeUint32Array(f.leaves.empty() ? nullptr : f.leaves.data(), f.leaves.size()));
+        obj.set(ev::setProperty(obj.get(), "leaves", a.get()));
+    }
+    obj.set(ev::setProperty(obj.get(), "specimenCount", ev::fromDouble(static_cast<double>(f.specimens.size()))));
+    obj.set(ev::setProperty(obj.get(), "leafCount", ev::fromDouble(static_cast<double>(f.leaves.size() / 2))));
+    obj.set(ev::setProperty(obj.get(), "seed", ev::fromDouble(static_cast<double>(f.leafOptions.seed))));
+    obj.set(ev::setProperty(obj.get(), "upBias", ev::fromDouble(f.leafOptions.upBias)));
+    obj.set(ev::setProperty(obj.get(), "tiltJitter", ev::fromDouble(f.leafOptions.tiltJitter)));
+    obj.set(ev::setProperty(obj.get(), "shell", ev::fromDouble(f.leafOptions.shell)));
+    obj.set(ev::setProperty(obj.get(), "baseScale", ev::fromDouble(f.leafOptions.baseScale)));
+    obj.set(ev::setProperty(obj.get(), "scaleJitter", ev::fromDouble(f.leafOptions.scaleJitter)));
+    return obj.get();
+}
+
 // world.emitClumps(opts) -> [{ center, radius, dir, density, segment }]
 Value jsEmitClumps(Value /*thisVal*/, std::span<const Value> args) {
     if (args.empty()) return createEmptyArray();
