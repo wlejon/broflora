@@ -145,11 +145,13 @@ TEST(look_clumps_sit_on_leafy_twigs_apart) {
     for (size_t i = 0; i < pl.count(); ++i) {
         const float* r = &veg[i * kVegetationFloats];
         const auto& s = sway[static_cast<size_t>(clumps[static_cast<size_t>(pl.segment[i])].segment)];
-        const float axis = std::sqrt(r[12] * r[12] + r[13] * r[13] + r[14] * r[14]);
-        ok = ok && r[8] == pl.transforms[i * 16 + 3] && r[11] == s.weightTo && r[15] == s.phase &&
+        const bromath::Vec3 a = unpackSwayAxis(r[12]);
+        const float axis = bromath::vlen(a);
+        ok = ok && r[8] == pl.transforms[i * 16 + 3] && r[11] == s.weightTo &&
+             r[13] == packSwayTwig(s.phase, s.twig) && r[14] == packSwayLimb(s.limb) &&
              std::fabs(axis - 1.0f) < 1e-3f && r[7] > 0.0f;
     }
-    ASSERT(ok, "anchor at the leaf, its twig tip's weight, its limb's phase, a unit stem axis");
+    ASSERT(ok, "anchor at the leaf, its twig tip's weight, its limb's terms, a unit stem axis");
 }
 
 TEST(look_segment_records_carry_the_tip) {
@@ -162,7 +164,8 @@ TEST(look_segment_records_carry_the_tip) {
         ASSERT(rec[4] == segs[i].to.x && rec[5] == segs[i].to.y && rec[6] == segs[i].to.z, "tip in the crown floats");
         ASSERT(std::fabs(rec[7] + 1.0f + sway[i].weightTo) < 1e-6f, "-(1 + weightTo) marks the form");
         ASSERT(rec[8] == segs[i].from.x && rec[11] == sway[i].weightFrom, "base and its weight");
-        ASSERT(rec[12] == 0.0f && rec[13] == 0.0f && rec[14] == 0.0f, "wood: no flutter axis");
+        ASSERT(rec[12] == 0.0f, "wood: no flutter axis");
+        ASSERT(rec[15] == packSwayTrunk(sway[i].trunk), "the plant's trunk terms");
         // The child's base weight is this tip's: the joint bends as one.
         for (size_t k = 0; k < segs.size(); ++k) {
             if (segs[k].parent == static_cast<int>(i) && sway[i].weightTo > 0.0f) {

@@ -41,7 +41,7 @@ weighted by vertex colour R, with no gusts and no hierarchy.
 ## Step 1 as built: the vegetation records
 
 broflora computes one `SegmentSway` per segment (`emitPlantSway` /
-`emitWorldSway`, `include/broflora/mesh_emit.h` "Wind sway") and every
+`emitWorldSway`, `include/broflora/sway.h`) and every
 geometry emitter turns it into **vegetation records**, the data bro.scene's
 vegetation shaders (`src/scene/vulkan/shaders/scene_vegetation.glsl`) sway in
 the scene's wind field. Per vertex (`MeshData::vegetation`, bromesh) or per
@@ -52,17 +52,18 @@ instance a record is 16 floats in the emit's space:
 | 0-3 | root.xyz, height: the plant's origin and height above it |
 | 4-7 | crown.xyz, crownRadius: the leaf-mass weighted crown centre and the farthest leafy segment end from it; radius 0 on wood (no bulk normal) |
 | 8-11 | anchor.xyz, branch weight: a leaf's or bloom's attachment point on its segment, or a bark vertex's skeleton point; the weight there |
-| 12-15 | axis.xyz, phase: a leaf's stem (tip) direction, zero on wood (no flutter); the limb's phase |
+| 12-15 | axis, twig, limb, trunk: packed words (step 4): a leaf's stem direction, 0 on wood (no flutter); the limb's phase and its sprays' cantilever; the limb's; the trunk's |
 
-Per segment (the GPU tube and scatter paths) it is 12 floats: root.xyz,
-height, crown.xyz, crownRadius, weightFrom, weightTo, phase, 0.
+Per segment (the GPU tube and scatter paths) it is 16 floats too: root.xyz,
+height, crown.xyz, crownRadius, weightFrom, weightTo, 0, 0, 0, twig, limb,
+trunk. (Steps 1-3 had axis.xyz and phase in 12-15 and 12 floats a segment.)
 
 | Emitter | Records |
 |---|---|
 | `emitPlantMesh` / `emitWorldMesh` (`bakeVegetation`) | per bark vertex, wood, the weight at its ring |
 | leaf meshes (JS `emitFoliageMesh`, `emitPlantFoliageMesh`; C++ `leafVegetation` over `LeafPlacements::segment`) | per leaf vertex: anchor = placement point, axis = leaf forward |
 | bloom meshes (`emitBloomMesh`) | per bloom vertex: anchor = the bloom, axis = its normal, from `BloomAnchor::segment` |
-| `emitBranchTubes`, `emitScatterSegments` | 12 per kept segment (`appendSegmentVegetation`) |
+| `emitBranchTubes`, `emitScatterSegments` | 16 per kept segment (`appendSegmentVegetation`) |
 | `emitFoliageVegetation`, `emitSegmentVegetation` | 16 per leaf / segment instance, in lockstep with the transforms |
 
 bro's side (the wind field, `setWind` / `windAt`, the shaders, the shadow
@@ -169,12 +170,184 @@ light; a flattened lane is visible but quieter than a walker's in dense; the
 far ring's sunlit hills still show individual blades rather than a texture;
 only the near ring casts shadows, and none by default.
 
+## Step 4 as built: wood and leaves that move like wood and leaves
+
+### The model
+
+A plant is three levels of **cantilever**, each a beam fixed at its base in
+its first bending mode (`include/broflora/sway.h`, `src/sway.cpp`):
+
+- **trunk**: the leader chain, root to the plant's height;
+- **limb**: each subtree leaving the trunk, from where it leaves to its
+  farthest tip;
+- **spray**: the leafy shoots at a limb's tips. The simulation stops
+  resolving shoots at its thinnest segment (about 2 cm through), so a spray
+  is at least `kSwaySprayLength` (0.5 m) long and at most
+  `kSwaySprayDiameter` (8 mm) thick at its base.
+
+Each level has two terms, baked once at emit from the simulation's geometry
+(the pipe model's diameters and lengths, the foliage):
+
+- **freq**, `sqrt(k / m) / 2 pi` (Rayleigh). The tip stiffness is
+  `k = 3 E I / L^3`, with `I = pi d^4 / 64` at the base diameter. The
+  mass the mode moves is `m`: every segment's wood and leaves times
+  `phi(s)^2`, where `phi = s^2 (3 - s) / 2` at its place `s` along the
+  level.
+  - For a bare beam this is Euler-Bernoulli's `f ~ d / L^2`, to 1.4%.
+    Thick and short is quick, long and slender is slow.
+  - What a stem holds far out slows it further.
+  - So the trunk, long and holding the crown, is the slowest even though
+    it is the thickest.
+- **sway**, the static tip deflection over the length at 10 m/s:
+  `F / (k L)`.
+  - `F` is the drag on the leaves the level carries,
+    `0.5 rho Cd A U^2`, each piece weighted by `phi(s)`.
+  - `A` is the crown's leaf face: `kSwayCrownFill` (half) of the disc of
+    its radius. It is shared among segments by foliage (the simulation's
+    density times length is only relative).
+  - At one length and load, twice as thick deflects 16x less, and twice as
+    long deflects 4x more (the new `sway_cantilever_terms` test).
+
+The physical constants are textbook values: green hardwood E 9 GPa and
+800 kg/m^3, Cd 0.3 for a crown streamlined at 10 m/s, and 0.5 kg of leaves
+per m^2 of leaf face. The **gains** divide each level's stiffness for what
+a uniform beam on a rigid footing leaves out:
+
+- trunk 10: its taper and the root plate turning in the soil;
+- limb 4: the give at its fork;
+- spray 1.
+
+They were set against field ranges. The grove's trees (about 10 m drawn)
+come out like this:
+
+| Level | Frequency | Deflection at 10 m/s |
+|---|---|---|
+| Trunk | 0.56-0.74 Hz | 1.2-1.9% of height |
+| Limb (median) | 0.53 Hz | 2.9% |
+| Spray | 5.6 Hz | 2.9% of 0.76 m |
+
+bro.scene (`scene_vegetation.glsl`) drives each level with the drag at the
+plant, `(U / 10 m/s)^1.3`; a crown streamlines, so its drag grows slower
+than `U^2`. Each level answers as a **forced, damped oscillator**:
+
+- **Mean bend**: its static bend under the drag a quarter period back, so a
+  heavy trunk lags the gust.
+- **Ringing** at its own frequency, combining two RMS terms:
+  - the turbulence the gust field does not resolve, at resonance. This is
+    the narrow-band response to a -5/3 spectrum: mean drag times
+    `f^-1/3 / sqrt(zeta)`.
+  - the gusts' own change over its last half period. Only a level slower
+    than that change rings from it.
+- **Damping ratios**: trunk 0.15, limb 0.08, spray 0.05. The trunk is
+  damped most because its limbs take its energy (multiple-mass damping,
+  James et al.).
+- **Shape and hierarchy**: a level bends in a loaded cantilever's shape
+  `phi(s)`, and the levels add down the hierarchy.
+- **Rotation**: the wood rotates with the bend's slope, so bark normals
+  follow it.
+- **The drag's past** is the travelling gust field read at t, t - 0.4 s and
+  t - 1.3 s: three reads a vertex, shared by the levels.
+
+**The oracle** is broworkshop `demos/grove/sway_check.js`. It reads the
+grove's own terms from the records, then compares the shader's response,
+ported line for line, against an integrated damped oscillator. The
+oscillator runs under the same drag over 60 s, plus 15% unresolved
+turbulence. Deflection RMS and speed agree within 15% at every level, in
+breeze and in gusty.
+
+### Leaves
+
+`vegLeaf` adds three motions on top of the wood:
+
+- A leaf **turns with the wood it hangs from** (the pose's rotation at its
+  anchor), so its normal and shading follow its limb.
+- It **flutters about its petiole**: a twist about its stem and a smaller
+  pitch, at 3-9 Hz on its own phase. The amplitude is `0.35 sqrt(drag)` in
+  bursts, so a calm is still.
+- In a **gust** (drag past a light breeze's) it **turns part way downwind**
+  and **folds along its midrib**, both halves rising.
+
+### Leaf shading and edges
+
+- **Lighting** (`scene_lighting.glsl`): a leaf's diffuse wraps past the
+  terminator, `(N.L + 0.3) / 1.3`.
+- **Shadow**: one shadow lookup with a filter twice as wide, floored at
+  0.1, shared by the direct and the through-leaf light. Before, two lookups
+  stepped hard from leaf to leaf.
+- **Cup**: the grove's card is cupped (`cup` 0.55; bromesh `leafCard`
+  recomputes normals), so its normal varies across the blade.
+- **Edges**: leaves are cut-out geometry, not alpha-tested, so the grove
+  turns on 4x MSAA.
+
+### Trunks close up
+
+- Tube rings are framed by a minimal rotation from +Y to the joint's
+  tangent (`tubeRingFrame`), not `cross(axis, Y)`, which flipped on
+  near-vertical trunks.
+- The rings are placed in the joint plane at the segment's end point, so
+  the two segments share the ring and its normals: there is no seam, crease
+  or twist, and the kink stays.
+- The grove draws 10 sides.
+
+### Forest scale: what the LOD step should know
+
+The pose is two layers:
+
+- **`vegPose(VegPlant, VegLimb, VegWind, rest, weight)`** is the shared one.
+  Every tier calls it with the same data and gets the same offset and
+  rotation, so tiers crossfade without swimming:
+  - per tree (`VegPlant`): the root, the height and the trunk word, from
+    record floats 0-3 and 15;
+  - per limb (`VegLimb`): the twig word (phase and spray cantilever) and the
+    limb word, floats 13 and 14;
+  - per point: its rest position and its branch weight (floats 8-11, or a
+    segment's interpolated weight);
+  - `VegWind`: the drag taps at the root, computed once per vertex.
+
+  A clump card or an impostor needs only those three words plus a weight
+  per point. One tree's whole motion fits in one record.
+- **`vegLeaf`** is the near tier's own leaf layer (flutter, gust turn and
+  fold), and needs the leaf's axis (float 12).
+
+### Cost
+
+GPU ms from `capture.js perf` at 1280x720 on an RTX 4090, mean
+`perf.gpuFrameMs` over 60 frames:
+
+| Shot | Before step 4 | After, no MSAA | After, 4x MSAA (the grove's default) |
+|---|---|---|---|
+| grove | 12.95 / 11.33 / leaves 11.02 | 4.94 / 3.67 / 3.33 | 6.75 / 5.45 / 5.06 |
+| tree | 13.06 / 11.23 | 4.95 / 3.78 | 7.35 / 5.13 |
+| close | 12.91 / 11.18 | 4.85 / 3.59 | 5.84 / 4.79 |
+
+Each cell is frame / without grass / leaves.
+
+- **Draw batching.** The 11 ms was not shading but the GPU front end paying
+  per instance: 398k leaves, one 24-vertex instance each. The scatter now
+  draws K copies of the leaf mesh per instance, each copy about a thousand
+  vertices, with the leaf index computed from the instance and vertex.
+  Leaves fell to 3.5 ms (bro 7a5974ab).
+- **The new motion** costs no more than the old per vertex: leaves went
+  from 3.48 to 3.33 ms over 9.6M leaf vertices a pass. That is 3 gust reads,
+  3 cantilever levels (one `pow` each) and 2 small rotations.
+- **MSAA** is the new cost: 2x adds about 0.8 ms, 4x about 1.7 ms.
+
+**Still open:**
+
+- Grass has the same per-instance front-end cost (1.0-1.3 ms).
+- The leaves' pose is computed per vertex, though all 24 vertices of a leaf
+  share it.
+- `windSwayReach` (the shadow-tile cull margin) still uses the old sway
+  model's formula, which bounds the grove's motion.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
    bro.scene; broflora emits the sway data; the lab shows it.
 2. Look: crown clumps, kinked bark, interior depth, leaf underside.
 3. Grass: the grass node on the same wind, parted by movers.
+4. Wood and leaves: cantilever terms from the geometry, damped-oscillator
+   response, the leaf layer, softer leaf light, MSAA, seamless tubes.
 
 Each step is judged by motion strips and short videos next to the reference
 galleries, not by stills.

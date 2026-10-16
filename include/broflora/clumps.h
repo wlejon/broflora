@@ -59,7 +59,7 @@ std::vector<float> clumpLeafVegetation(const bromesh::LeafPlacements& pl,
                                        const std::vector<bromesh::LeafClump>& clumps,
                                        const std::vector<SegmentSway>& sway);
 
-/// The 12-float record bro.scene's scatter node takes per clump: the
+/// The 16-float record bro.scene's scatter node takes per clump: the
 /// clump's twig sway, its weight the twig tip's at both ends.
 void appendClumpVegetation(std::vector<float>& out, const SegmentSway& s);
 

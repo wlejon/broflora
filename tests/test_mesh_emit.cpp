@@ -1058,7 +1058,7 @@ TEST(sway_trunk_limbs_and_twigs) {
         const float* r = &mesh.vegetation[v * kVegetationFloats];
         wMin = std::min(wMin, r[11]);
         wMax = std::max(wMax, r[11]);
-        wood = wood && r[7] == 0.0f && r[12] == 0.0f && r[13] == 0.0f && r[14] == 0.0f;
+        wood = wood && r[7] == 0.0f && r[12] == 0.0f;
     }
     ASSERT(wood, "bark records are wood");
     ASSERT(wMin == 0.0f && wMax > 0.99f, "bark weights span trunk to tip");
@@ -1076,11 +1076,120 @@ TEST(sway_trunk_limbs_and_twigs) {
     bool leafOk = true;
     for (size_t i = 0; i < pl.count(); ++i) {
         const float* r = &veg[i * kVegetationFloats];
-        const float axisLen = std::sqrt(r[12] * r[12] + r[13] * r[13] + r[14] * r[14]);
-        leafOk = leafOk && std::fabs(axisLen - 1.0f) < 1e-3f && r[7] > 0.0f &&
+        const bromath::Vec3 axis = unpackSwayAxis(r[12]);
+        const bromath::Vec3 F{pl.transforms[i * 16 + 2], pl.transforms[i * 16 + 6], pl.transforms[i * 16 + 10]};
+        float phase = -1.0f;
+        unpackSwayTwig(r[13], &phase);
+        const float want = sway[static_cast<size_t>(pl.segment[i])].phase;
+        leafOk = leafOk && std::fabs(bromath::vlen(axis) - 1.0f) < 1e-3f &&
+                 bromath::vdot(axis, F) > 0.999f * bromath::vlen(F) && r[7] > 0.0f &&
                  r[8] == pl.transforms[i * 16 + 3] && r[11] > 0.0f &&
-                 r[15] == sway[static_cast<size_t>(pl.segment[i])].phase;
+                 std::fabs(phase - want) <= 1.0f / 64.0f;
     }
-    ASSERT(leafOk, "leaf records: unit axis, crown radius, anchor at the leaf, its limb's phase");
+    ASSERT(leafOk, "leaf records: unit axis along the leaf, crown radius, anchor at the leaf, its limb's phase");
+
+    // The levels as cantilevers: one trunk a plant; each limb and its twigs
+    // share terms down the limb; the twigs are no slower than their limb.
+    // (This plant is small and stout, so its limbs and sprays both ring at
+    // the 12 Hz cap; its limbs are as long as its trunk, so a limb need not
+    // be quicker than the trunk; it carries no leaves, so nothing deflects.)
+    for (size_t i = 0; i < segs.size(); ++i) {
+        ASSERT(sway[i].trunk.freq == sway[0].trunk.freq && sway[i].trunk.sway == sway[0].trunk.sway,
+               "one trunk a plant");
+        const int p = segs[i].parent;
+        if (p >= 0 && sway[p].limb.freq > 0.0f) {
+            ASSERT(sway[i].limb.freq == sway[p].limb.freq && sway[i].twig.freq == sway[p].twig.freq,
+                   "a limb's segments share its terms");
+        }
+    }
+    ASSERT(sway[0].limb.freq == 0.0f && sway[0].limb.sway == 0.0f, "the trunk is no limb");
+    ASSERT(sway[0].trunk.freq > 0.0f && std::fabs(sway[0].trunk.length - sway[0].height) < 1e-5f,
+           "the trunk is the plant's height");
+    for (size_t i = 1; i < 3; ++i) {
+        ASSERT(sway[i].limb.freq > 0.0f && sway[i].limb.length > 1.0f, "each limb is a cantilever");
+        ASSERT(sway[i].twig.freq >= sway[i].limb.freq && sway[i].twig.length < sway[i].limb.length,
+               "a twig is shorter and no slower than its limb");
+        ASSERT(sway[i].limb.sway == 0.0f && sway[i].twig.sway == 0.0f, "no leaves, no deflection");
+    }
+}
+
+// The stiffness terms: a cantilever's first mode by Rayleigh, f = sqrt(k / m)
+// / 2 pi with k = 3 E I / L^3, and its tip deflection under drag F / k.
+TEST(sway_cantilever_terms) {
+    const float pi = 3.14159265f;
+    auto rel = [](float a, float b) { return std::fabs(a / b - 1.0f); };
+    auto bare = [](float d, float L, float area) { return CantileverLoad{swayBeamMass(d, L), area}; };
+
+    // A bare uniform beam rings at Euler-Bernoulli's first mode,
+    // (1.875^2 / 2 pi) sqrt(E I / (mu L^4)): Rayleigh's cubic shape is within 2%.
+    const Cantilever base = swayCantilever(0.05f, 3.0f, bare(0.05f, 3.0f, 0.5f), 1.0f);
+    const float mu = kSwayWoodDensity * pi * 0.25f * 0.05f * 0.05f;
+    const float I = pi * std::pow(0.05f, 4.0f) / 64.0f;
+    const float euler = 1.875f * 1.875f / (2.0f * pi) * std::sqrt(kSwayWoodModulus * I / (mu * std::pow(3.0f, 4.0f)));
+    ASSERT(rel(base.freq, euler) < 0.02f, "a bare beam rings at Euler-Bernoulli's first mode");
+    ASSERT(base.length == 3.0f, "the length is kept");
+    // Its deflection is the drag over the tip stiffness.
+    const float F = 0.5f * kSwayAirDensity * kSwayDrag * 0.5f * kSwayReferenceWind * kSwayReferenceWind;
+    ASSERT(rel(base.sway * 3.0f, F / (3.0f * kSwayWoodModulus * I / 27.0f)) < 1e-4f, "sway = F / (k L)");
+
+    // Thicker, at one length and load: stiffer, so it deflects less (d^-4)
+    // and rings faster (d, as a bare beam).
+    const Cantilever thick = swayCantilever(0.10f, 3.0f, bare(0.10f, 3.0f, 0.5f), 1.0f);
+    ASSERT(rel(thick.sway * 16.0f, base.sway) < 1e-4f, "twice as thick deflects 16x less");
+    ASSERT(rel(thick.freq, 2.0f * base.freq) < 1e-4f, "twice as thick rings twice as fast");
+
+    // Longer, at one diameter and load: slower (L^-2) and floppier (L^2).
+    const Cantilever longer = swayCantilever(0.05f, 6.0f, bare(0.05f, 6.0f, 0.5f), 1.0f);
+    ASSERT(rel(longer.freq * 4.0f, base.freq) < 1e-4f, "twice as long rings 4x slower");
+    ASSERT(rel(longer.sway, 4.0f * base.sway) < 1e-4f, "twice as long deflects 4x more");
+
+    // More leaf face: more drag, more deflection, no change in frequency.
+    const Cantilever leafy = swayCantilever(0.05f, 3.0f, bare(0.05f, 3.0f, 1.0f), 1.0f);
+    ASSERT(rel(leafy.sway, 2.0f * base.sway) < 1e-4f, "deflection follows the leaf face");
+    ASSERT(leafy.freq == base.freq, "the face sets no frequency");
+
+    // What it carries slows it: four times the mode's mass, half the frequency.
+    const Cantilever laden = swayCantilever(0.05f, 3.0f, CantileverLoad{4.0f * swayBeamMass(0.05f, 3.0f), 0.5f}, 1.0f);
+    ASSERT(rel(laden.freq, 0.5f * base.freq) < 1e-4f && laden.sway == base.sway, "carried mass slows, not bends");
+
+    // The gain softens: a quarter of the stiffness, half the frequency, 4x the sway.
+    const Cantilever soft = swayCantilever(0.05f, 3.0f, bare(0.05f, 3.0f, 0.5f), 4.0f);
+    ASSERT(rel(soft.freq, 0.5f * base.freq) < 1e-4f && rel(soft.sway, 4.0f * base.sway) < 1e-4f,
+           "the gain divides the stiffness");
+
+    // At a tree's proportions the thickest is the slowest: a 10 m trunk of
+    // 0.4 m holding a crown (its wood and leaves, 2 t in the mode) against a
+    // leafy spray. The trunk also deflects less for its length.
+    const Cantilever trunk = swayCantilever(0.4f, 10.0f, CantileverLoad{2000.0f, 30.0f}, kSwayTrunkGain);
+    const Cantilever spray = swayCantilever(kSwaySprayDiameter, kSwaySprayLength,
+                                            CantileverLoad{swayBeamMass(kSwaySprayDiameter, kSwaySprayLength) + 0.01f, 0.04f},
+                                            kSwayTwigGain);
+    ASSERT(trunk.freq < 1.0f && trunk.freq > 0.1f, "a 10 m tree sways below 1 Hz");
+    ASSERT(spray.freq > 3.0f * trunk.freq, "a spray is quicker than its tree");
+    ASSERT(trunk.sway < spray.sway, "and the trunk deflects less for its length");
+
+    // The mode's shape and the clamps.
+    ASSERT(swayModeShape(0.0f) == 0.0f && swayModeShape(1.0f) == 1.0f && rel(swayModeShape(0.5f), 0.3125f) < 1e-6f,
+           "mode shape s^2 (3 - s) / 2");
+    ASSERT(swayCantilever(1.0f, 0.01f, CantileverLoad{}, 1.0f).freq == 12.0f, "frequency capped at 12 Hz");
+    ASSERT(swayCantilever(0.001f, 50.0f, bare(0.001f, 50.0f, 100.0f), 1.0f).sway == 0.5f,
+           "deflection capped at half the length");
+    ASSERT(swayCantilever(0.05f, 3.0f, bare(0.05f, 3.0f, 0.0f), 1.0f).sway == 0.0f, "no leaves, no deflection");
+
+    // The packed words round-trip within their quantisation.
+    const Cantilever back = unpackSwayLimb(packSwayLimb(base));
+    ASSERT(std::fabs(back.freq / base.freq - 1.0f) < 0.03f && std::fabs(back.sway / base.sway - 1.0f) < 0.03f &&
+           std::fabs(back.length / base.length - 1.0f) < 0.03f, "limb word round-trips");
+    const Cantilever tback = unpackSwayTrunk(packSwayTrunk(trunk));
+    ASSERT(std::fabs(tback.freq / trunk.freq - 1.0f) < 0.003f && std::fabs(tback.sway / trunk.sway - 1.0f) < 0.003f,
+           "trunk word round-trips");
+    float phase = 0.0f;
+    const Cantilever wback = unpackSwayTwig(packSwayTwig(0.53f, spray), &phase);
+    ASSERT(std::fabs(phase - 0.53f) <= 1.0f / 64.0f && std::fabs(wback.freq / spray.freq - 1.0f) < 0.12f,
+           "twig word round-trips");
+    ASSERT(packSwayLimb(Cantilever{}) == 0.0f, "no limb packs to zero");
+    const bromath::Vec3 ax = unpackSwayAxis(packSwayAxis(bromath::Vec3{0.3f, -0.8f, -0.52f}));
+    ASSERT(bromath::vdot(ax, bromath::vnorm(bromath::Vec3{0.3f, -0.8f, -0.52f})) > 0.9999f, "axis round-trips");
+    ASSERT(packSwayAxis(bromath::Vec3{0.0f, 0.0f, 0.0f}) == 0.0f, "no axis is wood");
 }
 

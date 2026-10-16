@@ -59,7 +59,7 @@ bool clumpLeaves(const broflora::WorldState& world, const broflora::Plant* plant
 }
 
 // The clump-mode emitScatterSegments object: per clump (centre, radius),
-// (twig dir, 0); per leaf its clump; 12 vegetation floats per clump; and
+// (twig dir, 0); per leaf its clump; 16 vegetation floats per clump; and
 // the placement parameters the scene's scatter node reads, so the object
 // alone configures it.
 Value scatterClumps(const broflora::WorldState& world, Value opts) {
@@ -73,7 +73,7 @@ Value scatterClumps(const broflora::WorldState& world, Value opts) {
 
     std::vector<float> packed, instSeg, vegetation;
     packed.reserve(clumps.size() * 8);
-    vegetation.reserve(clumps.size() * 12);
+    vegetation.reserve(clumps.size() * broflora::kSegmentVegetationFloats);
     float bmin[3] = {1e30f, 1e30f, 1e30f}, bmax[3] = {-1e30f, -1e30f, -1e30f};
     for (size_t i = 0; i < clumps.size(); ++i) {
         const auto& c = clumps[i];
@@ -109,7 +109,7 @@ Value scatterClumps(const broflora::WorldState& world, Value opts) {
     obj.set(ev::setProperty(obj.get(), "shell", ev::fromDouble(lo.shell)));
     obj.set(ev::setProperty(obj.get(), "baseScale", ev::fromDouble(lo.baseScale)));
     obj.set(ev::setProperty(obj.get(), "scaleJitter", ev::fromDouble(lo.scaleJitter)));
-    if (vegetation.size() == clumps.size() * 12) {
+    if (vegetation.size() == clumps.size() * broflora::kSegmentVegetationFloats) {
         ev::Persistent vegArr(makeFloat32Array(vegetation.empty() ? nullptr : vegetation.data(), vegetation.size()));
         obj.set(ev::setProperty(obj.get(), "vegetation", vegArr.get()));
     }

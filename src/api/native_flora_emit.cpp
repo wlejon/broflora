@@ -274,7 +274,7 @@ Value jsEmitScatterSegments(Value /*thisVal*/, std::span<const Value> args) {
     fillFoliageDensity(samples, segs.size(), opts);
 
     std::vector<float> vegetation;
-    vegetation.reserve(segs.size() * 12);
+    vegetation.reserve(segs.size() * broflora::kSegmentVegetationFloats);
 
     std::vector<int> childCount(segs.size(), 0);
     for (size_t i = 0; i < segs.size(); ++i) {
@@ -339,7 +339,7 @@ Value jsEmitScatterSegments(Value /*thisVal*/, std::span<const Value> args) {
     obj.set(ev::setProperty(obj.get(), "instSeg", instSegArr.get()));
     obj.set(ev::setProperty(obj.get(), "segCount", ev::fromDouble(static_cast<double>(segCount))));
     obj.set(ev::setProperty(obj.get(), "instanceCount", ev::fromDouble(static_cast<double>(instSeg.size()))));
-    if (vegetation.size() == segCount * 12) {
+    if (vegetation.size() == segCount * broflora::kSegmentVegetationFloats) {
         ev::Persistent vegArr(makeFloat32Array(vegetation.empty() ? nullptr : vegetation.data(), vegetation.size()));
         obj.set(ev::setProperty(obj.get(), "vegetation", vegArr.get()));
     }
@@ -365,7 +365,7 @@ Value jsEmitBranchTubes(Value /*thisVal*/, std::span<const Value> args) {
     }
 
     std::vector<float> vegetation;
-    vegetation.reserve(segs.size() * 12);
+    vegetation.reserve(segs.size() * broflora::kSegmentVegetationFloats);
     std::vector<float> packed;
     packed.reserve(segs.size() * 8);
     std::vector<float> tangents;
@@ -443,7 +443,7 @@ Value jsEmitBranchTubes(Value /*thisVal*/, std::span<const Value> args) {
     ev::Persistent segsArr(makeFloat32Array(packed.empty() ? nullptr : packed.data(), packed.size()));
     obj.set(ev::setProperty(obj.get(), "segments", segsArr.get()));
     obj.set(ev::setProperty(obj.get(), "segCount", ev::fromDouble(static_cast<double>(segCount))));
-    if (vegetation.size() == segCount * 12) {
+    if (vegetation.size() == segCount * broflora::kSegmentVegetationFloats) {
         ev::Persistent vegArr(makeFloat32Array(vegetation.empty() ? nullptr : vegetation.data(), vegetation.size()));
         obj.set(ev::setProperty(obj.get(), "vegetation", vegArr.get()));
     }

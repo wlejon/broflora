@@ -181,7 +181,7 @@ static void test_api_option_readers() {
         if (scc.clumps !== true || scc.segCount !== cl.length || scc.instSeg.length !== scc.instanceCount) {
             fail("emitScatterSegments clumps: " + scc.segCount + " vs " + cl.length);
         }
-        if (scc.vegetation.length !== scc.segCount * 12) fail("one vegetation record per clump");
+        if (scc.vegetation.length !== scc.segCount * 16) fail("one vegetation record per clump");
         const spray = w.emitScatterSegments({ clumps: false, perUnitLength: 40, maxRadius: 10 });
         if (spray.clumps === true || spray.segCount === 0) fail("clumps: false sprays along the twigs");
         const ct = w.emitFoliageTransforms({ maxRadius: 10, seed: 3 });
