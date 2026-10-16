@@ -631,11 +631,11 @@ void appendStamped(bromesh::MeshData& target, const bromesh::MeshData& src,
     // rebased, that would name another stamp's vertex or run off the end, so
     // such a triangle is dropped (as is a trailing partial one).
     for (size_t t = 0; t + 3 <= src.indices.size(); t += 3) {
-        const uint32_t a = src.indices[t], b = src.indices[t + 1], c = src.indices[t + 2];
-        if (a >= nv || b >= nv || c >= nv) continue;
-        target.indices.push_back(baseIndex + a);
-        target.indices.push_back(baseIndex + b);
-        target.indices.push_back(baseIndex + c);
+        const uint32_t i0 = src.indices[t], i1 = src.indices[t + 1], i2 = src.indices[t + 2];
+        if (i0 >= nv || i1 >= nv || i2 >= nv) continue;
+        target.indices.push_back(baseIndex + i0);
+        target.indices.push_back(baseIndex + i1);
+        target.indices.push_back(baseIndex + i2);
     }
 }
 
