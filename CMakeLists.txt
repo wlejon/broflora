@@ -26,6 +26,7 @@ add_library(broflora STATIC
     src/mesh_emit.cpp
     src/sway.cpp
     src/clumps.cpp
+    src/forest.cpp
     src/prototypes.cpp
     src/leaf_cluster.cpp
     src/sdf_mesh.cpp
