@@ -302,6 +302,12 @@ inline Value wrapMeshData(std::unique_ptr<bromesh::MeshData> md) {
     ev::Persistent u(makeFloat32Array(md->uvs.data(), md->uvs.size()));
     ev::Persistent c(makeFloat32Array(md->colors.data(), md->colors.size()));
     ev::Persistent idx(makeUint32Array(md->indices.data(), md->indices.size()));
+    // Tangents and the wind-sway records (mesh_emit.h "Wind sway") ride
+    // along when the mesh has whole streams of them.
+    const bool hasTan = md->hasTangents();
+    const bool hasVeg = md->hasVegetation();
+    ev::Persistent tan(makeFloat32Array(md->tangents.data(), hasTan ? md->tangents.size() : 0));
+    ev::Persistent veg(makeFloat32Array(md->vegetation.data(), hasVeg ? md->vegetation.size() : 0));
 
     ev::GlobalValue meshCtor = ev::globalValue("Mesh");
     if (meshCtor.found && ev::isFunction(meshCtor.value)) {
@@ -312,6 +318,8 @@ inline Value wrapMeshData(std::unique_ptr<bromesh::MeshData> md) {
         opts.set(ev::setProperty(opts.get(), "uvs", u.get()));
         opts.set(ev::setProperty(opts.get(), "colors", c.get()));
         opts.set(ev::setProperty(opts.get(), "indices", idx.get()));
+        if (hasTan) opts.set(ev::setProperty(opts.get(), "tangents", tan.get()));
+        if (hasVeg) opts.set(ev::setProperty(opts.get(), "vegetation", veg.get()));
         Value optVal = opts.get();
         ev::CallResult res = ev::construct(ctor.get(), std::span<const Value>(&optVal, 1));
         if (!res.thrown) return res.value;
@@ -323,6 +331,8 @@ inline Value wrapMeshData(std::unique_ptr<bromesh::MeshData> md) {
     obj.set(ev::setProperty(obj.get(), "uvs", u.get()));
     obj.set(ev::setProperty(obj.get(), "colors", c.get()));
     obj.set(ev::setProperty(obj.get(), "indices", idx.get()));
+    if (hasTan) obj.set(ev::setProperty(obj.get(), "tangents", tan.get()));
+    if (hasVeg) obj.set(ev::setProperty(obj.get(), "vegetation", veg.get()));
     uint32_t vc = static_cast<uint32_t>(md->vertexCount());
     uint32_t tc = static_cast<uint32_t>(md->triangleCount());
     obj.set(ev::setProperty(obj.get(), "vertexCount", ev::fromDouble(vc)));

@@ -379,6 +379,18 @@
         return _native ? _native.emitSegmentTransforms(this) : null;
     });
 
+    // Vegetation records (16 floats per instance) in lockstep with
+    // emitFoliageTransforms(opts) / emitSegmentTransforms(): pass them as
+    // createInstancedMesh's `vegetation` and the instances sway in the
+    // scene's wind.
+    fn(FloraWorld.prototype, "emitFoliageVegetation", function emitFoliageVegetation(opts) {
+        return _native ? _native.emitFoliageVegetation(this, opts) : null;
+    });
+
+    fn(FloraWorld.prototype, "emitSegmentVegetation", function emitSegmentVegetation() {
+        return _native ? _native.emitSegmentVegetation(this) : null;
+    });
+
     fn(FloraWorld.prototype, "emitScatterSegments", function emitScatterSegments(opts) {
         return _native ? _native.emitScatterSegments(this, opts) : null;
     });

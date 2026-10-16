@@ -6,6 +6,7 @@
 // downstream, leaf scatter, foliage anchors) without copying.
 
 #include <bromesh/mesh_data.h>
+#include <bromesh/procedural/leaf_scatter.h>
 #include <bromesh/procedural/space_colonization.h>
 
 #include "broflora/plant.h"
@@ -201,6 +202,12 @@ struct BloomAnchor {
     // — lets a consumer keep blooms on the lit canopy surface and skip ones
     // buried in deep interior shade.
     float lightExposure01 = 1.0f;
+
+    // Index of the twig segment ending at the anchor, into
+    // `emitPlantSegments` (per-plant anchors) or `emitWorldSegments` (world
+    // anchors); -1 when the terminal has no incoming edge. Lets a bloom take
+    // its twig's SegmentSway.
+    int32_t segment = -1;
 };
 
 // Per-segment foliage state for the same segment order `emitPlantSegments`
@@ -226,5 +233,78 @@ std::vector<BloomAnchor> emitPlantBloomAnchors(const Plant& plant);
 // keep-out spheres) to thin the candidates down to a non-overlapping
 // subset before instancing flower meshes at each survivor.
 std::vector<BloomAnchor> emitWorldBloomAnchors(const WorldState& world);
+
+// ---- Wind sway -----------------------------------------------------------
+//
+// What a renderer needs to bend a plant in wind the way a tree moves: the
+// trunk leaning from its root, each limb on its own phase, the leaves
+// fluttering about their stems, and the crown lit as one form. One
+// SegmentSway per segment, in lockstep with `emitPlantSegments` /
+// `emitWorldSegments`.
+//
+//   - `root`, `height`    the plant's base (its origin) and its height
+//                          above it (top of the highest segment). The
+//                          trunk's lean grows with (y / height)^2.
+//   - `crown`, `crownRadius`  centre and radius of the leafy volume: the
+//                          foliage-mass-weighted centre of the leaf-bearing
+//                          segments and the distance to the farthest one.
+//                          A leaf's normal blends toward its centre-out
+//                          direction ("bulk normals") so a crown shades as
+//                          one form, and leaves deep inside darken.
+//   - `weightFrom`, `weightTo`  branch weight at the two ends: 0 on the trunk
+//                          and where a limb leaves it, rising along the limb
+//                          to 1 at every twig tip (distance travelled over
+//                          distance travelled plus the longest way still to
+//                          go). A limb's own motion scales with weight^2.
+//   - `phase`             in [0, 1): one per limb, so limbs move out of
+//                          step; every side shoot takes its limb's phase
+//                          exactly, so a limb moves as one piece and no
+//                          joint opens.
+//
+// The trunk is the leader chain from the thickest root segment: the
+// thickest child at each fork while it keeps at least 80% of its parent's
+// radius and 35% of the base radius.
+struct SegmentSway {
+    bromath::Vec3 root{};
+    float height = 1.0f;
+    bromath::Vec3 crown{};
+    float crownRadius = 0.0f;
+    float weightFrom = 0.0f;
+    float weightTo = 0.0f;
+    float phase = 0.0f;
+};
+
+std::vector<SegmentSway> emitPlantSway(const Plant& plant);
+std::vector<SegmentSway> emitWorldSway(const WorldState& world);
+
+// Per-vertex / per-instance vegetation records: 16 floats each, four vec4s,
+//   (root.xyz, height) (crown.xyz, crownRadius) (anchor.xyz, weight) (axis.xyz, phase)
+// The layout bromesh::MeshData::vegetation and bro.scene read. `anchor` is
+// the point a leaf hangs from and `axis` its stem direction (unit; zero on
+// bark, which does not flutter); `crownRadius` is zero on bark, which takes
+// no bulk normal.
+inline constexpr size_t kVegetationFloats = 16;
+
+// Write one record. `weight` is the branch weight at this point; pass a zero
+// axis for wood.
+void writeVegetation(float* out, const SegmentSway& s, const bromath::Vec3& anchor,
+                     float weight, const bromath::Vec3& axis, bool leaf);
+
+// Vegetation records for leaves placed by `bromesh::placeLeavesOnBranches`
+// over `segs` (`sway` aligned with them): one per placement, the anchor at
+// the leaf's origin, the axis its +Z (the tip direction), the weight
+// interpolated along its segment.
+std::vector<float> leafVegetation(const bromesh::LeafPlacements& pl,
+                                  const std::vector<bromesh::BranchSegment>& segs,
+                                  const std::vector<SegmentSway>& sway);
+
+// Repeat each 16-float record over `verts` consecutive vertices: per-leaf
+// records onto a mesh stamped `verts` vertices per leaf.
+std::vector<float> vegetationPerVertex(const std::vector<float>& perItem, size_t verts);
+
+// Per-segment vegetation blocks for bro.scene's tube / scatter records,
+// 12 floats per segment: (root.xyz, height) (crown.xyz, crownRadius)
+// (weightFrom, weightTo, phase, 0).
+void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s);
 
 } // namespace broflora

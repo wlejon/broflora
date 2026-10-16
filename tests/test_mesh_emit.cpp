@@ -975,3 +975,112 @@ TEST(mesh_emit_wind_deformation_vertex_attributes) {
     ASSERT(minStiffness < 0.2f, "terminal tip has low stiffness");
 }
 
+// A trunk that forks into two limbs, each carrying a twig: the sway data a
+// renderer bends the tree with.
+TEST(sway_trunk_limbs_and_twigs) {
+    static BranchModulePrototype stem;
+    stem.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    stem.nodes.push_back({{0.0f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    stem.edges.push_back({0, 1});
+    stem.rootNode = 0;
+    stem.terminalNodes = {1};
+    static BranchModulePrototype fork;
+    fork.nodes.push_back({{ 0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    fork.nodes.push_back({{ 0.4f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    fork.nodes.push_back({{-0.4f, 1.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    fork.edges.push_back({0, 1});
+    fork.edges.push_back({0, 2});
+    fork.rootNode = 0;
+    fork.terminalNodes = {1, 2};
+
+    Plant plant;
+    plant.species.leafDiameter = 0.02f;
+    plant.origin = {2.0f, 0.0f, -1.0f};
+    auto module = [&](const BranchModulePrototype* p, uint32_t parent, uint32_t attach,
+                      bromath::Vec3 pos, float diameter) {
+        BranchModuleInstance m;
+        m.prototype = p;
+        m.parent = parent;
+        m.parentAttachTerminal = attach;
+        m.worldPos = pos;
+        m.diameter = diameter;
+        return m;
+    };
+    plant.modules = {
+        module(&stem, UINT32_MAX, 0, {2.0f, 0.0f, -1.0f}, 0.40f),
+        module(&fork, 0, 1, {2.0f, 1.0f, -1.0f}, 0.20f),
+        module(&stem, 1, 1, {2.4f, 2.0f, -1.0f}, 0.04f),
+        module(&stem, 1, 2, {1.6f, 2.0f, -1.0f}, 0.04f),
+    };
+
+    const auto segs = emitPlantSegments(plant);
+    const auto sway = emitPlantSway(plant);
+    ASSERT(segs.size() == 5u && sway.size() == segs.size(), "one sway per segment");
+
+    bool finite = true, inRange = true, continuous = true;
+    float tipMax = 0.0f;
+    for (size_t i = 0; i < segs.size(); ++i) {
+        const auto& s = sway[i];
+        finite = finite && std::isfinite(s.weightFrom) && std::isfinite(s.weightTo) &&
+                 std::isfinite(s.phase) && std::isfinite(s.crownRadius) && std::isfinite(s.height);
+        inRange = inRange && s.weightFrom >= 0.0f && s.weightTo <= 1.0001f &&
+                  s.weightFrom <= s.weightTo + 1e-6f && s.phase >= 0.0f && s.phase < 1.0f;
+        const int p = segs[i].parent;
+        if (p >= 0 && sway[p].weightTo > 0.0f) {
+            continuous = continuous && std::fabs(s.weightFrom - sway[p].weightTo) < 1e-5f &&
+                         s.phase == sway[p].phase;
+        }
+        tipMax = std::max(tipMax, s.weightTo);
+    }
+    ASSERT(finite, "sway finite");
+    ASSERT(inRange, "weights in [0, 1] rising along a branch, phase in [0, 1)");
+    ASSERT(continuous, "a twig takes its limb's weight and phase where it joins");
+
+    // Segment 0 is the trunk: rooted at the plant's origin, it does not bend
+    // as a limb. The fork's two edges start the limbs at weight 0.
+    ASSERT(sway[0].weightFrom == 0.0f && sway[0].weightTo == 0.0f, "trunk weight 0");
+    ASSERT(sway[1].weightFrom == 0.0f && sway[2].weightFrom == 0.0f, "limbs leave the trunk at weight 0");
+    ASSERT(sway[1].phase != sway[2].phase, "limbs move on their own phases");
+    ASSERT(std::fabs(tipMax - 1.0f) < 1e-5f, "twig tips reach weight 1");
+    ASSERT(std::fabs(sway[0].root.x - 2.0f) < 1e-6f && std::fabs(sway[0].root.z + 1.0f) < 1e-6f,
+           "root is the plant's origin");
+    ASSERT(sway[0].height > 1.5f, "height reaches the twig tips");
+    ASSERT(sway[0].crownRadius > 0.1f && sway[0].crown.y > 1.0f, "crown sits up in the branches");
+
+    // The bark mesh carries the records: 16 floats a vertex, wood (no
+    // flutter axis, no crown radius), weights from the trunk's 0 to 1.
+    MeshData mesh = emitPlantMesh(plant, 6u);
+    ASSERT(mesh.hasVegetation(), "bark mesh carries vegetation");
+    ASSERT(mesh.validate(), "mesh validates with vegetation");
+    float wMin = 1.0f, wMax = 0.0f;
+    bool wood = true;
+    for (size_t v = 0; v < mesh.vertexCount(); ++v) {
+        const float* r = &mesh.vegetation[v * kVegetationFloats];
+        wMin = std::min(wMin, r[11]);
+        wMax = std::max(wMax, r[11]);
+        wood = wood && r[7] == 0.0f && r[12] == 0.0f && r[13] == 0.0f && r[14] == 0.0f;
+    }
+    ASSERT(wood, "bark records are wood");
+    ASSERT(wMin == 0.0f && wMax > 0.99f, "bark weights span trunk to tip");
+
+    // Leaves placed on the twigs take their segment's sway, anchored at the
+    // leaf with its +Z as the axis.
+    bromesh::LeafPlacementOptions lo;
+    lo.maxRadius = 1.0f;
+    lo.minDepth = 2;
+    lo.perUnitLength = 20.0f;
+    auto pl = bromesh::placeLeavesOnBranches(segs, lo);
+    ASSERT(pl.count() > 0u && pl.segment.size() == pl.count(), "leaves know their segment");
+    auto veg = leafVegetation(pl, segs, sway);
+    ASSERT(veg.size() == pl.count() * kVegetationFloats, "one record per leaf");
+    bool leafOk = true;
+    for (size_t i = 0; i < pl.count(); ++i) {
+        const float* r = &veg[i * kVegetationFloats];
+        const float axisLen = std::sqrt(r[12] * r[12] + r[13] * r[13] + r[14] * r[14]);
+        leafOk = leafOk && std::fabs(axisLen - 1.0f) < 1e-3f && r[7] > 0.0f &&
+                 r[8] == pl.transforms[i * 16 + 3] && r[11] > 0.0f &&
+                 r[15] == sway[static_cast<size_t>(pl.segment[i])].phase;
+    }
+    ASSERT(leafOk, "leaf records: unit axis, crown radius, anchor at the leaf, its limb's phase");
+}
+

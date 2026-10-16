@@ -76,6 +76,7 @@ Value jsEmitBloomAnchors(Value /*thisVal*/, std::span<const Value> args) {
         o.set(ev::setProperty(o.get(), "vigor01", ev::fromDouble(a.vigor01)));
         o.set(ev::setProperty(o.get(), "lightExposure01", ev::fromDouble(a.lightExposure01)));
         o.set(ev::setProperty(o.get(), "senescence01", ev::fromDouble(a.senescence01)));
+        o.set(ev::setProperty(o.get(), "segment", ev::fromDouble(static_cast<double>(a.segment))));
         return o.get();
     });
 }
@@ -163,6 +164,7 @@ Value jsEmitPlantBloomAnchors(Value /*thisVal*/, std::span<const Value> args) {
         o.set(ev::setProperty(o.get(), "vigor01", ev::fromDouble(a.vigor01)));
         o.set(ev::setProperty(o.get(), "lightExposure01", ev::fromDouble(a.lightExposure01)));
         o.set(ev::setProperty(o.get(), "senescence01", ev::fromDouble(a.senescence01)));
+        o.set(ev::setProperty(o.get(), "segment", ev::fromDouble(static_cast<double>(a.segment))));
         return o.get();
     });
 }
@@ -251,6 +253,7 @@ Value jsEmitScatterSegments(Value /*thisVal*/, std::span<const Value> args) {
 
     auto segs = broflora::emitWorldSegments(*w->world);
     auto samples = broflora::emitWorldFoliage(*w->world);
+    auto sway = broflora::emitWorldSway(*w->world);
 
     bromesh::LeafPlacementOptions opts;
     if (args.size() >= 2 && ev::isObject(args[1])) {
@@ -261,6 +264,9 @@ Value jsEmitScatterSegments(Value /*thisVal*/, std::span<const Value> args) {
         opts.perUnitLength *= static_cast<float>(gDensity);
     }
     fillFoliageDensity(samples, segs.size(), opts);
+
+    std::vector<float> vegetation;
+    vegetation.reserve(segs.size() * 12);
 
     std::vector<int> childCount(segs.size(), 0);
     for (size_t i = 0; i < segs.size(); ++i) {
@@ -306,6 +312,7 @@ Value jsEmitScatterSegments(Value /*thisVal*/, std::span<const Value> args) {
         packed.push_back(s.from.z); packed.push_back(s.radius);
         packed.push_back(d.x); packed.push_back(d.y);
         packed.push_back(d.z); packed.push_back(0.0f);
+        if (i < sway.size()) broflora::appendSegmentVegetation(vegetation, sway[i]);
 
         float tox = s.to.x, toy = s.to.y, toz = s.to.z;
         bmin[0] = std::min({ bmin[0], s.from.x, tox });
@@ -324,6 +331,10 @@ Value jsEmitScatterSegments(Value /*thisVal*/, std::span<const Value> args) {
     obj.set(ev::setProperty(obj.get(), "instSeg", instSegArr.get()));
     obj.set(ev::setProperty(obj.get(), "segCount", ev::fromDouble(static_cast<double>(segCount))));
     obj.set(ev::setProperty(obj.get(), "instanceCount", ev::fromDouble(static_cast<double>(instSeg.size()))));
+    if (vegetation.size() == segCount * 12) {
+        ev::Persistent vegArr(makeFloat32Array(vegetation.empty() ? nullptr : vegetation.data(), vegetation.size()));
+        obj.set(ev::setProperty(obj.get(), "vegetation", vegArr.get()));
+    }
 
     if (segCount == 0) { bmin[0]=bmin[1]=bmin[2]=bmax[0]=bmax[1]=bmax[2]=0.0f; }
     ev::Persistent bminA(hostArrayOf(3, [&](size_t i) { return ev::fromDouble(bmin[i]); }));
@@ -339,11 +350,14 @@ Value jsEmitBranchTubes(Value /*thisVal*/, std::span<const Value> args) {
     if (!w || !w->world) return ev::createObject();
 
     auto segs = broflora::emitWorldSegments(*w->world);
+    auto sway = broflora::emitWorldSway(*w->world);
     float minRadius = 0.0f;
     if (args.size() >= 2 && ev::isObject(args[1])) {
         readFloatField(args[1], "minRadius", minRadius);
     }
 
+    std::vector<float> vegetation;
+    vegetation.reserve(segs.size() * 12);
     std::vector<float> packed;
     packed.reserve(segs.size() * 8);
     float bmin[3] = { 1e30f, 1e30f, 1e30f };
@@ -366,6 +380,7 @@ Value jsEmitBranchTubes(Value /*thisVal*/, std::span<const Value> args) {
         packed.push_back(s.from.z); packed.push_back(rFrom);
         packed.push_back(s.to.x);   packed.push_back(s.to.y);
         packed.push_back(s.to.z);   packed.push_back(rTo);
+        if (i < sway.size()) broflora::appendSegmentVegetation(vegetation, sway[i]);
 
         maxR = std::max({ maxR, rFrom, rTo });
         bmin[0] = std::min({ bmin[0], s.from.x, s.to.x });
@@ -387,12 +402,87 @@ Value jsEmitBranchTubes(Value /*thisVal*/, std::span<const Value> args) {
     ev::Persistent segsArr(makeFloat32Array(packed.empty() ? nullptr : packed.data(), packed.size()));
     obj.set(ev::setProperty(obj.get(), "segments", segsArr.get()));
     obj.set(ev::setProperty(obj.get(), "segCount", ev::fromDouble(static_cast<double>(segCount))));
+    if (vegetation.size() == segCount * 12) {
+        ev::Persistent vegArr(makeFloat32Array(vegetation.empty() ? nullptr : vegetation.data(), vegetation.size()));
+        obj.set(ev::setProperty(obj.get(), "vegetation", vegArr.get()));
+    }
 
     ev::Persistent bminA(hostArrayOf(3, [&](size_t i) { return ev::fromDouble(bmin[i]); }));
     ev::Persistent bmaxA(hostArrayOf(3, [&](size_t i) { return ev::fromDouble(bmax[i]); }));
     obj.set(ev::setProperty(obj.get(), "boundsMin", bminA.get()));
     obj.set(ev::setProperty(obj.get(), "boundsMax", bmaxA.get()));
     return obj.get();
+}
+
+namespace {
+
+// Leaves stamped along `segs` with their vegetation records (`sway` aligned
+// with `segs`): the leaf meshes emitFoliageMesh / emitPlantFoliageMesh return.
+std::unique_ptr<bromesh::MeshData> foliageMeshWithSway(const std::vector<bromesh::BranchSegment>& segs,
+                                                       const std::vector<broflora::SegmentSway>& sway,
+                                                       const bromesh::MeshData& leaf,
+                                                       const bromesh::LeafPlacementOptions& opts) {
+    auto pl = bromesh::placeLeavesOnBranches(segs, opts);
+    auto md = std::make_unique<bromesh::MeshData>(bromesh::stampMeshAtPlacements(leaf, pl));
+    if (!md->empty()) {
+        md->vegetation = broflora::vegetationPerVertex(broflora::leafVegetation(pl, segs, sway),
+                                                       leaf.vertexCount());
+        if (md->vegetation.size() != md->vertexCount() * broflora::kVegetationFloats) md->vegetation.clear();
+    }
+    return md;
+}
+
+// The leaf placements emitFoliageTransforms makes, for its vegetation twin.
+bool foliagePlacements(FloraWorldWrapper* w, Value optsVal, std::vector<bromesh::BranchSegment>& segs,
+                       bromesh::LeafPlacements& pl) {
+    segs = broflora::emitWorldSegments(*w->world);
+    if (segs.empty()) return true;
+    auto samples = broflora::emitWorldFoliage(*w->world);
+    bromesh::LeafPlacementOptions opts;
+    if (ev::isObject(optsVal)) {
+        if (!readLeafPlacementOptions(optsVal, opts)) return false;
+    }
+    double gDensity = getGlobalDensity();
+    if (gDensity >= 0.0) opts.perUnitLength *= static_cast<float>(gDensity);
+    fillFoliageDensity(samples, segs.size(), opts);
+    pl = bromesh::placeLeavesOnBranches(segs, opts);
+    return true;
+}
+
+} // namespace
+
+// world.emitFoliageVegetation(opts) -> Float32Array, 16 floats per leaf in
+// lockstep with emitFoliageTransforms(opts): the instances' vegetation records.
+Value jsEmitFoliageVegetation(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.empty()) return makeFloat32Array(nullptr, 0);
+    auto* w = getWrapper(args[0]);
+    if (!w || !w->world) return makeFloat32Array(nullptr, 0);
+    std::vector<bromesh::BranchSegment> segs;
+    bromesh::LeafPlacements pl;
+    if (!foliagePlacements(w, args.size() >= 2 ? args[1] : ev::undefined(), segs, pl)) return ev::undefined();
+    if (pl.transforms.empty()) return makeFloat32Array(nullptr, 0);
+    auto veg = broflora::leafVegetation(pl, segs, broflora::emitWorldSway(*w->world));
+    return makeFloat32Array(veg.data(), veg.size());
+}
+
+// world.emitSegmentVegetation() -> Float32Array, 16 floats per segment in
+// lockstep with emitSegmentTransforms(): wood (no flutter, no bulk normal).
+Value jsEmitSegmentVegetation(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.empty()) return makeFloat32Array(nullptr, 0);
+    auto* w = getWrapper(args[0]);
+    if (!w || !w->world) return makeFloat32Array(nullptr, 0);
+    auto segs = broflora::emitWorldSegments(*w->world);
+    auto sway = broflora::emitWorldSway(*w->world);
+    if (segs.empty() || sway.size() != segs.size()) return makeFloat32Array(nullptr, 0);
+    // The instance is a unit cylinder from `from` to `to`; its origin is the
+    // segment's base, so the record carries the base's weight. The tip's
+    // extra bend is not representable per instance.
+    std::vector<float> veg(segs.size() * broflora::kVegetationFloats);
+    for (size_t i = 0; i < segs.size(); ++i) {
+        broflora::writeVegetation(&veg[i * broflora::kVegetationFloats], sway[i], segs[i].from,
+                                  sway[i].weightFrom, bromath::Vec3{0.0f, 0.0f, 0.0f}, false);
+    }
+    return makeFloat32Array(veg.data(), veg.size());
 }
 
 Value jsEmitFoliageMesh(Value /*thisVal*/, std::span<const Value> args) {
@@ -419,8 +509,7 @@ Value jsEmitFoliageMesh(Value /*thisVal*/, std::span<const Value> args) {
     }
     fillFoliageDensity(samples, segs.size(), opts);
 
-    auto md = std::make_unique<bromesh::MeshData>(
-        bromesh::scatterLeaves(segs, leaf, opts));
+    auto md = foliageMeshWithSway(segs, broflora::emitWorldSway(*w->world), leaf, opts);
     if (getGlobalWindStrength() != 0.0) {
         applyWindToMeshData(*md, getGlobalWindTime(), getGlobalWindStrength(), getGlobalWindDirX(), getGlobalWindDirY());
     }
@@ -433,8 +522,16 @@ namespace {
 // by `scale`: the stamp emitBloomMesh makes per anchor. Normals rotate with
 // the geometry; a source without normals gets the up vector.
 void appendStamped(bromesh::MeshData& target, const bromesh::MeshData& src,
-                   const bromath::Vec3& pos, const bromath::Vec3& norm, float scale) {
+                   const bromath::Vec3& pos, const bromath::Vec3& norm, float scale,
+                   const float* vegetation) {
     if (src.empty()) return;
+    // Every stamp carries a vegetation record (all of a stamp's vertices
+    // share it) or none does.
+    if (vegetation) {
+        for (size_t i = 0; i < src.vertexCount(); ++i) {
+            target.vegetation.insert(target.vegetation.end(), vegetation, vegetation + broflora::kVegetationFloats);
+        }
+    }
     const uint32_t baseIndex = static_cast<uint32_t>(target.vertexCount());
     const size_t nv = src.vertexCount();
 
@@ -537,12 +634,19 @@ Value jsEmitBloomMesh(Value /*thisVal*/, std::span<const Value> args) {
     auto centers = std::make_unique<bromesh::MeshData>();
 
     auto anchors = broflora::emitWorldBloomAnchors(*w->world);
+    const auto sway = anchors.empty() ? std::vector<broflora::SegmentSway>{} : broflora::emitWorldSway(*w->world);
     const size_t stride = (anchors.size() > bloomCap) ? (anchors.size() + bloomCap - 1) / bloomCap : 1;
     for (size_t i = 0; i < anchors.size(); i += stride) {
         const auto& a = anchors[i];
         if (a.lightExposure01 < bloomLightMin) continue;
+        // A bloom sways with the tip of its twig and flutters about it.
+        broflora::SegmentSway sw;
+        if (a.segment >= 0 && static_cast<size_t>(a.segment) < sway.size()) sw = sway[static_cast<size_t>(a.segment)];
+        else { sw.root = a.position; sw.weightTo = 1.0f; }
+        float veg[broflora::kVegetationFloats];
+        broflora::writeVegetation(veg, sw, a.position, sw.weightTo, a.normal, true);
         const float s = 0.8f + 0.5f * std::min(1.0f, a.age01);
-        appendStamped(*petals, petal, a.position, a.normal, s);
+        appendStamped(*petals, petal, a.position, a.normal, s, veg);
         if (hasCenter) {
             const float lift = 0.012f * s;
             const bromath::Vec3 cPos = {
@@ -550,7 +654,7 @@ Value jsEmitBloomMesh(Value /*thisVal*/, std::span<const Value> args) {
                 a.position.y + a.normal.y * lift,
                 a.position.z + a.normal.z * lift
             };
-            appendStamped(*centers, center, cPos, a.normal, s);
+            appendStamped(*centers, center, cPos, a.normal, s, veg);
         }
     }
 
@@ -586,8 +690,7 @@ Value jsEmitPlantFoliageMesh(Value /*thisVal*/, std::span<const Value> args) {
     }
     fillFoliageDensity(samples, segs.size(), opts);
 
-    auto md = std::make_unique<bromesh::MeshData>(
-        bromesh::scatterLeaves(segs, leaf, opts));
+    auto md = foliageMeshWithSway(segs, broflora::emitPlantSway(plant), leaf, opts);
     if (getGlobalWindStrength() != 0.0) {
         applyWindToMeshData(*md, getGlobalWindTime(), getGlobalWindStrength(), getGlobalWindDirX(), getGlobalWindDirY());
     }

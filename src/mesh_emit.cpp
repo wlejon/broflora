@@ -190,6 +190,10 @@ void weldBranchJunctions(MeshData& mesh, const std::vector<bromesh::BranchSegmen
     }
 }
 
+// Defined with the wind-sway code below.
+void bakeVegetation(MeshData& mesh, const std::vector<bromesh::BranchSegment>& segs,
+                    const std::vector<SegmentSway>& sway, int sides);
+
 // Bake hierarchical wind deformation parameters into vertex colors:
 // R = wind sway bend deflection in [0, 1]
 // G = normalized branch hierarchy depth in [0, 1]
@@ -381,6 +385,7 @@ MeshData emitPlantMesh(const Plant& plant, uint32_t sides) {
     bromesh::computeNormals(mesh);
     bromesh::generateTangents(mesh);
     bakeWindDeformation(mesh, segs, static_cast<int>(sides), plant.species.leafDiameter);
+    bakeVegetation(mesh, segs, emitPlantSway(plant), static_cast<int>(sides));
     return mesh;
 }
 
@@ -394,6 +399,7 @@ MeshData emitWorldMesh(const WorldState& world, uint32_t sides) {
     bromesh::computeNormals(mesh);
     bromesh::generateTangents(mesh);
     bakeWindDeformation(mesh, segs, static_cast<int>(sides), 0.02f);
+    bakeVegetation(mesh, segs, emitWorldSway(world), static_cast<int>(sides));
     return mesh;
 }
 
@@ -769,16 +775,23 @@ size_t incomingEdgeIndex(const BranchModulePrototype& proto, uint32_t terminalNo
 }
 
 size_t emitPlantBloomAnchorsInto(const Plant& plant,
-                                 std::vector<BloomAnchor>& out) {
+                                 std::vector<BloomAnchor>& out,
+                                 size_t segBase) {
     const size_t startSize = out.size();
     if (!plant.flowering || plant.modules.empty()) return 0;
 
     const auto childCounts = moduleChildCounts(plant);
     const float senescence = senescenceRamp(plant);
 
+    // emitPlantSegmentsInto emits every edge of every module that has a
+    // prototype, module by module: module mi's edge e is segment
+    // segBase + (edges of the modules before it) + e.
+    size_t moduleSegBase = segBase;
     for (size_t mi = 0; mi < plant.modules.size(); ++mi) {
         const auto& m = plant.modules[mi];
         if (!m.prototype) continue;
+        const size_t thisBase = moduleSegBase;
+        moduleSegBase += m.prototype->edges.size();
         if (childCounts[mi] != 0u) continue;  // non-terminal module — no blooms
 
         const auto& sp = plant.species;
@@ -805,6 +818,7 @@ size_t emitPlantBloomAnchorsInto(const Plant& plant,
 
             const size_t edgeIdx = incomingEdgeIndex(*m.prototype, terminalNode);
             if (edgeIdx != SIZE_MAX) {
+                a.segment = static_cast<int32_t>(thisBase + edgeIdx);
                 const auto& e = m.prototype->edges[edgeIdx];
                 const bromath::Vec3 fromPos = worldNodePos(plant.species, m, e.a);
                 const bromath::Vec3 dir = a.position - fromPos;
@@ -823,18 +837,279 @@ size_t emitPlantBloomAnchorsInto(const Plant& plant,
 
 } // namespace
 
+namespace {
+
+size_t plantSegmentCount(const Plant& plant) {
+    size_t n = 0;
+    for (const auto& m : plant.modules) {
+        if (m.prototype && !m.prototype->nodes.empty()) n += m.prototype->edges.size();
+    }
+    return n;
+}
+
+} // namespace
+
 std::vector<BloomAnchor> emitPlantBloomAnchors(const Plant& plant) {
     std::vector<BloomAnchor> out;
-    emitPlantBloomAnchorsInto(plant, out);
+    emitPlantBloomAnchorsInto(plant, out, 0);
     return out;
 }
 
 std::vector<BloomAnchor> emitWorldBloomAnchors(const WorldState& world) {
     std::vector<BloomAnchor> out;
+    size_t segBase = 0;
     for (const auto& plant : world.plants) {
-        emitPlantBloomAnchorsInto(plant, out);
+        emitPlantBloomAnchorsInto(plant, out, segBase);
+        segBase += plantSegmentCount(plant);
     }
     return out;
+}
+
+// ---- Wind sway ---------------------------------------------------------------
+
+namespace {
+
+// A well-mixed hash of an integer into [0, 1).
+float hash01(uint64_t x) {
+    x ^= x >> 33; x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33; x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
+    return static_cast<float>((x >> 40) * (1.0 / 16777216.0));
+}
+
+// The sway of one plant's segments (`segs`, `fol` aligned, parent indices
+// local to `segs`), appended to `out`.
+void computePlantSway(const Plant& plant,
+                      const std::vector<bromesh::BranchSegment>& segs,
+                      const std::vector<FoliageSample>& fol,
+                      std::vector<SegmentSway>& out) {
+    const size_t n = segs.size();
+    const size_t base = out.size();
+    out.resize(base + n);
+    if (n == 0) return;
+
+    SegmentSway common;
+    common.root = plant.origin;
+    float top = plant.origin.y;
+    for (const auto& s : segs) top = std::max({top, s.from.y, s.to.y});
+    common.height = std::max(0.05f, top - plant.origin.y);
+
+    std::vector<std::vector<int>> children(n);
+    std::vector<float> len(n);
+    for (size_t i = 0; i < n; ++i) {
+        len[i] = bromath::vlen(segs[i].to - segs[i].from);
+        const int p = segs[i].parent;
+        // Emit order puts every parent before its children; anything else
+        // is treated as a root.
+        if (p >= 0 && static_cast<size_t>(p) < i) children[p].push_back(static_cast<int>(i));
+    }
+    auto parentOf = [&](size_t i) -> int {
+        const int p = segs[i].parent;
+        return (p >= 0 && static_cast<size_t>(p) < i) ? p : -1;
+    };
+
+    // The trunk: the leader chain from the thickest root segment, taking the
+    // thickest child at each fork while it stays dominant (>= 80% of its
+    // parent; a fork into equal limbs ends the trunk) and >= 35% of the base.
+    std::vector<char> trunk(n, 0);
+    int cur = -1;
+    for (size_t i = 0; i < n; ++i) {
+        if (parentOf(i) < 0 && (cur < 0 || segs[i].radius > segs[cur].radius)) cur = static_cast<int>(i);
+    }
+    const float baseR = cur >= 0 ? segs[cur].radius : 0.0f;
+    while (cur >= 0) {
+        trunk[cur] = 1;
+        int next = -1;
+        for (int c : children[cur]) {
+            if (next < 0 || segs[c].radius > segs[next].radius) next = c;
+        }
+        if (next < 0) break;
+        const float r = segs[next].radius;
+        if (r < 0.35f * baseR || r < 0.8f * segs[cur].radius) break;
+        cur = next;
+    }
+
+    // Longest way from each segment's tip to a twig tip, off the trunk.
+    std::vector<float> rest(n, 0.0f);
+    for (size_t k = n; k-- > 0; ) {
+        for (int c : children[k]) {
+            if (!trunk[c]) rest[k] = std::max(rest[k], len[c] + rest[c]);
+        }
+    }
+
+    // Branch weight, continuous along every path: 0 on the trunk and where a
+    // limb leaves it, then each segment covers its share of what is left to
+    // the farthest tip beyond it, reaching 1 at every tip. Limbs (the
+    // subtrees leaving the trunk, or rooted beside it) each draw a phase.
+    const uint64_t plantSeed = static_cast<uint64_t>(std::llround(plant.origin.x * 1013.0f)) * 0x9E3779B97F4A7C15ULL
+                             ^ static_cast<uint64_t>(std::llround(plant.origin.z * 7919.0f));
+    for (size_t i = 0; i < n; ++i) {
+        SegmentSway& s = out[base + i];
+        s = common;
+        if (trunk[i]) continue;
+        const int p = parentOf(i);
+        const bool limbStart = (p < 0) || trunk[p];
+        s.weightFrom = limbStart ? 0.0f : out[base + p].weightTo;
+        const float span = len[i] + rest[i];
+        s.weightTo = span > 1e-6f ? s.weightFrom + (1.0f - s.weightFrom) * len[i] / span : 1.0f;
+        s.phase = limbStart ? hash01(plantSeed + i * 0x2545F4914F6CDD1DULL) : out[base + p].phase;
+    }
+
+    // The crown: where the foliage mass sits, and how far it reaches.
+    bromath::Vec3 c{0.0f, 0.0f, 0.0f};
+    float wsum = 0.0f;
+    for (int pass = 0; pass < 2 && wsum <= 0.0f; ++pass) {
+        for (size_t i = 0; i < n; ++i) {
+            if (trunk[i]) continue;
+            const float w = (pass == 0 ? (i < fol.size() ? fol[i].mass : 0.0f) : 1.0f) * len[i];
+            if (!(w > 0.0f)) continue;
+            c = c + (segs[i].from + segs[i].to) * (0.5f * w);
+            wsum += w;
+        }
+    }
+    float crownR = 0.0f;
+    if (wsum > 0.0f) {
+        c = c * (1.0f / wsum);
+        const bool byMass = [&] {
+            for (size_t i = 0; i < n && i < fol.size(); ++i) if (!trunk[i] && fol[i].mass > 0.0f) return true;
+            return false;
+        }();
+        for (size_t i = 0; i < n; ++i) {
+            if (trunk[i] || (byMass && !(i < fol.size() && fol[i].mass > 0.0f))) continue;
+            crownR = std::max(crownR, bromath::vlen(segs[i].to - c));
+        }
+    } else {
+        c = plant.origin + bromath::Vec3{0.0f, 0.5f * common.height, 0.0f};
+    }
+    for (size_t i = 0; i < n; ++i) {
+        out[base + i].crown = c;
+        out[base + i].crownRadius = crownR;
+    }
+}
+
+// Bark-mesh vegetation, laid out like bromesh::meshBranches' chains (the
+// walk bakeWindDeformation makes): ring 0 at the chain's first `from`, ring
+// r + 1 at its r-th segment's `to`, then the start / end caps.
+void bakeVegetation(MeshData& mesh,
+                    const std::vector<bromesh::BranchSegment>& segs,
+                    const std::vector<SegmentSway>& sway,
+                    int sides) {
+    const size_t vc = mesh.vertexCount();
+    if (vc == 0 || segs.empty() || sway.size() != segs.size()) return;
+    mesh.vegetation.assign(vc * kVegetationFloats, 0.0f);
+    const Vec3 zero{0.0f, 0.0f, 0.0f};
+
+    std::vector<std::vector<int>> children(segs.size());
+    for (size_t i = 0; i < segs.size(); ++i) {
+        const int p = segs[i].parent;
+        if (p >= 0 && static_cast<size_t>(p) < segs.size()) children[p].push_back(static_cast<int>(i));
+    }
+    auto write = [&](size_t v, size_t seg, const Vec3& at, float w) {
+        if (v < vc) writeVegetation(&mesh.vegetation[v * kVegetationFloats], sway[seg], at, w, zero, false);
+    };
+
+    size_t off = 0;
+    for (size_t i = 0; i < segs.size(); ++i) {
+        const int p = segs[i].parent;
+        if (p >= 0 && children[p].size() == 1) continue;   // not a chain start
+        std::vector<int> chain;
+        int cur = static_cast<int>(i);
+        while (true) {
+            if (bromath::vdist2(segs[cur].from, segs[cur].to) > 1e-12f) chain.push_back(cur);
+            if (children[cur].size() != 1) break;
+            cur = children[cur][0];
+        }
+        if (chain.empty()) continue;
+        const bool capStart = p < 0;
+        const bool capEnd = children[cur].empty();
+
+        for (int k = 0; k < sides; ++k) write(off + k, chain[0], segs[chain[0]].from, sway[chain[0]].weightFrom);
+        for (size_t r = 0; r < chain.size(); ++r) {
+            const size_t ring = off + (r + 1) * static_cast<size_t>(sides);
+            for (int k = 0; k < sides; ++k) write(ring + k, chain[r], segs[chain[r]].to, sway[chain[r]].weightTo);
+        }
+        size_t next = off + (chain.size() + 1) * static_cast<size_t>(sides);
+        if (capStart) { write(next, chain[0], segs[chain[0]].from, sway[chain[0]].weightFrom); ++next; }
+        if (capEnd) { write(next, chain.back(), segs[chain.back()].to, sway[chain.back()].weightTo); ++next; }
+        off = next;
+    }
+    // Anything past the chains (none, for meshBranches output) stays rooted.
+    for (size_t v = off; v < vc; ++v) {
+        const Vec3 at{mesh.positions[v * 3], mesh.positions[v * 3 + 1], mesh.positions[v * 3 + 2]};
+        write(v, 0, at, 0.0f);
+    }
+}
+
+} // namespace
+
+void writeVegetation(float* o, const SegmentSway& s, const Vec3& anchor,
+                     float weight, const Vec3& axis, bool leaf) {
+    o[0] = s.root.x;   o[1] = s.root.y;   o[2] = s.root.z;   o[3] = s.height;
+    o[4] = s.crown.x;  o[5] = s.crown.y;  o[6] = s.crown.z;  o[7] = leaf ? s.crownRadius : 0.0f;
+    o[8] = anchor.x;   o[9] = anchor.y;   o[10] = anchor.z;  o[11] = std::clamp(weight, 0.0f, 1.0f);
+    o[12] = leaf ? axis.x : 0.0f;
+    o[13] = leaf ? axis.y : 0.0f;
+    o[14] = leaf ? axis.z : 0.0f;
+    o[15] = s.phase;
+}
+
+std::vector<SegmentSway> emitPlantSway(const Plant& plant) {
+    std::vector<SegmentSway> out;
+    computePlantSway(plant, emitPlantSegments(plant), emitPlantFoliage(plant), out);
+    return out;
+}
+
+std::vector<SegmentSway> emitWorldSway(const WorldState& world) {
+    std::vector<SegmentSway> out;
+    for (const auto& plant : world.plants) {
+        computePlantSway(plant, emitPlantSegments(plant), emitPlantFoliage(plant), out);
+    }
+    return out;
+}
+
+std::vector<float> leafVegetation(const bromesh::LeafPlacements& pl,
+                                  const std::vector<bromesh::BranchSegment>& segs,
+                                  const std::vector<SegmentSway>& sway) {
+    const size_t count = pl.count();
+    std::vector<float> out(count * kVegetationFloats, 0.0f);
+    if (pl.segment.size() != count) return out;
+    for (size_t i = 0; i < count; ++i) {
+        const float* M = &pl.transforms[i * 16];
+        const Vec3 P{M[3], M[7], M[11]};
+        Vec3 F{M[2], M[6], M[10]};
+        const float fl = bromath::vlen(F);
+        F = fl > 1e-8f ? F * (1.0f / fl) : Vec3{0.0f, 1.0f, 0.0f};
+        const int32_t si = pl.segment[i];
+        if (si < 0 || static_cast<size_t>(si) >= segs.size() || static_cast<size_t>(si) >= sway.size()) continue;
+        const auto& seg = segs[static_cast<size_t>(si)];
+        const SegmentSway& s = sway[static_cast<size_t>(si)];
+        const Vec3 d = seg.to - seg.from;
+        const float dd = bromath::vdot(d, d);
+        const float t = dd > 1e-12f ? std::clamp(bromath::vdot(P - seg.from, d) / dd, 0.0f, 1.0f) : 1.0f;
+        writeVegetation(&out[i * kVegetationFloats], s, P, s.weightFrom + (s.weightTo - s.weightFrom) * t, F, true);
+    }
+    return out;
+}
+
+std::vector<float> vegetationPerVertex(const std::vector<float>& perItem, size_t verts) {
+    const size_t items = perItem.size() / kVegetationFloats;
+    std::vector<float> out(items * verts * kVegetationFloats);
+    for (size_t i = 0; i < items; ++i) {
+        for (size_t v = 0; v < verts; ++v) {
+            std::copy_n(&perItem[i * kVegetationFloats], kVegetationFloats,
+                        &out[(i * verts + v) * kVegetationFloats]);
+        }
+    }
+    return out;
+}
+
+void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s) {
+    const float v[12] = {
+        s.root.x, s.root.y, s.root.z, s.height,
+        s.crown.x, s.crown.y, s.crown.z, s.crownRadius,
+        s.weightFrom, s.weightTo, s.phase, 0.0f,
+    };
+    out.insert(out.end(), v, v + 12);
 }
 
 } // namespace broflora

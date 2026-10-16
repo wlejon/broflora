@@ -375,79 +375,6 @@ void writeMatrix(std::vector<float>& out,
     out.push_back(1.0f);
 }
 
-MeshData stampMeshAtPlacements(const MeshData& srcMesh, const LeafPlacements& pl) {
-    if (srcMesh.empty()) return {};
-    const size_t count = pl.count();
-    if (count == 0) return {};
-
-    const size_t srcVCount = srcMesh.vertexCount();
-    const size_t srcICount = srcMesh.indices.size();
-    const bool hasNormals  = srcMesh.hasNormals();
-    const bool hasUVs      = srcMesh.hasUVs();
-    const bool hasColors   = srcMesh.hasColors();
-
-    MeshData out;
-    out.positions.resize(count * srcVCount * 3);
-    if (hasNormals) out.normals.resize(count * srcVCount * 3);
-    if (hasUVs)     out.uvs.resize(count * srcVCount * 2);
-    if (hasColors)  out.colors.resize(count * srcVCount * 4);
-    out.indices.resize(count * srcICount);
-
-    for (size_t i = 0; i < count; ++i) {
-        const float* M = &pl.transforms[i * 16];
-        size_t vBase = i * srcVCount;
-        uint32_t indexOffset = static_cast<uint32_t>(vBase);
-
-        for (size_t v = 0; v < srcVCount; ++v) {
-            size_t destPos = (vBase + v) * 3;
-            float x = srcMesh.positions[v * 3 + 0];
-            float y = srcMesh.positions[v * 3 + 1];
-            float z = srcMesh.positions[v * 3 + 2];
-            out.positions[destPos + 0] = M[0]*x + M[1]*y + M[2]*z  + M[3];
-            out.positions[destPos + 1] = M[4]*x + M[5]*y + M[6]*z  + M[7];
-            out.positions[destPos + 2] = M[8]*x + M[9]*y + M[10]*z + M[11];
-
-            if (hasNormals) {
-                float nx = srcMesh.normals[v * 3 + 0];
-                float ny = srcMesh.normals[v * 3 + 1];
-                float nz = srcMesh.normals[v * 3 + 2];
-                float tx = M[0]*nx + M[1]*ny + M[2]*nz;
-                float ty = M[4]*nx + M[5]*ny + M[6]*nz;
-                float tz = M[8]*nx + M[9]*ny + M[10]*nz;
-                float L = std::sqrt(tx*tx + ty*ty + tz*tz);
-                if (L > 1e-8f) {
-                    tx /= L; ty /= L; tz /= L;
-                } else {
-                    float nLen = std::sqrt(M[1]*M[1] + M[5]*M[5] + M[9]*M[9]);
-                    if (nLen > 1e-8f) { tx = M[1]/nLen; ty = M[5]/nLen; tz = M[9]/nLen; }
-                    else { tx = 0.0f; ty = 1.0f; tz = 0.0f; }
-                }
-                out.normals[destPos + 0] = tx;
-                out.normals[destPos + 1] = ty;
-                out.normals[destPos + 2] = tz;
-            }
-
-            if (hasUVs) {
-                out.uvs[(vBase + v) * 2 + 0] = srcMesh.uvs[v * 2 + 0];
-                out.uvs[(vBase + v) * 2 + 1] = srcMesh.uvs[v * 2 + 1];
-            }
-            if (hasColors) {
-                out.colors[(vBase + v) * 4 + 0] = srcMesh.colors[v * 4 + 0];
-                out.colors[(vBase + v) * 4 + 1] = srcMesh.colors[v * 4 + 1];
-                out.colors[(vBase + v) * 4 + 2] = srcMesh.colors[v * 4 + 2];
-                out.colors[(vBase + v) * 4 + 3] = srcMesh.colors[v * 4 + 3];
-            }
-        }
-
-        size_t iBase = i * srcICount;
-        for (size_t idx = 0; idx < srcICount; ++idx) {
-            out.indices[iBase + idx] = srcMesh.indices[idx] + indexOffset;
-        }
-    }
-
-    return out;
-}
-
 } // namespace
 
 MeshData leafCluster(Phyllotaxy phyllotaxy, const LeafClusterOptions& opts) {
@@ -804,7 +731,7 @@ MeshData scatterLeafClusters(
     MeshData cluster = leafCluster(phyllotaxy, clusterOpts);
     if (cluster.empty()) return {};
     LeafPlacements pl = placeLeafClustersOnBranches(segments, placementOpts);
-    return stampMeshAtPlacements(cluster, pl);
+    return bromesh::stampMeshAtPlacements(cluster, pl);
 }
 
 LeafPlacements placeLeafClustersOnPlant(
@@ -841,7 +768,7 @@ MeshData emitPlantLeafClusters(
     MeshData cluster = leafCluster(phyllotaxy, clusterOpts);
     if (cluster.empty()) return {};
     LeafPlacements pl = placeLeafClustersOnPlant(plant, placementOpts);
-    return stampMeshAtPlacements(cluster, pl);
+    return bromesh::stampMeshAtPlacements(cluster, pl);
 }
 
 MeshData emitWorldLeafClusters(
@@ -864,7 +791,7 @@ MeshData emitWorldLeafClusters(
     MeshData cluster = leafCluster(phyllotaxy, clusterOpts);
     if (cluster.empty()) return {};
     LeafPlacements pl = placeLeafClustersOnBranches(segs, resolvedOpts);
-    return stampMeshAtPlacements(cluster, pl);
+    return bromesh::stampMeshAtPlacements(cluster, pl);
 }
 
 } // namespace broflora

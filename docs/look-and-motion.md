@@ -38,6 +38,37 @@ weighted by vertex colour R, with no gusts and no hierarchy.
   oracle. A grove of grown trees and a meadow on uneven ground at golden hour,
   judged in motion against the reference galleries.
 
+## Step 1 as built: the vegetation records
+
+broflora computes one `SegmentSway` per segment (`emitPlantSway` /
+`emitWorldSway`, `include/broflora/mesh_emit.h` "Wind sway") and every
+geometry emitter turns it into **vegetation records**, the data bro.scene's
+vegetation shaders (`src/scene/vulkan/shaders/scene_vegetation.glsl`) sway in
+the scene's wind field. Per vertex (`MeshData::vegetation`, bromesh) or per
+instance a record is 16 floats in the emit's space:
+
+| Floats | Meaning |
+|---|---|
+| 0-3 | root.xyz, height: the plant's origin and height above it |
+| 4-7 | crown.xyz, crownRadius: the leaf-mass weighted crown centre and the farthest leafy segment end from it; radius 0 on wood (no bulk normal) |
+| 8-11 | anchor.xyz, branch weight: a leaf's or bloom's attachment point on its segment, or a bark vertex's skeleton point; the weight there |
+| 12-15 | axis.xyz, phase: a leaf's stem (tip) direction, zero on wood (no flutter); the limb's phase |
+
+Per segment (the GPU tube and scatter paths) it is 12 floats: root.xyz,
+height, crown.xyz, crownRadius, weightFrom, weightTo, phase, 0.
+
+| Emitter | Records |
+|---|---|
+| `emitPlantMesh` / `emitWorldMesh` (`bakeVegetation`) | per bark vertex, wood, the weight at its ring |
+| leaf meshes (JS `emitFoliageMesh`, `emitPlantFoliageMesh`; C++ `leafVegetation` over `LeafPlacements::segment`) | per leaf vertex: anchor = placement point, axis = leaf forward |
+| bloom meshes (`emitBloomMesh`) | per bloom vertex: anchor = the bloom, axis = its normal, from `BloomAnchor::segment` |
+| `emitBranchTubes`, `emitScatterSegments` | 12 per kept segment (`appendSegmentVegetation`) |
+| `emitFoliageVegetation`, `emitSegmentVegetation` | 16 per leaf / segment instance, in lockstep with the transforms |
+
+bro's side (the wind field, `setWind` / `windAt`, the shaders, the shadow
+pass) is documented in bro's `docs/scene-api.js` and `docs/scene-nodes-api.js`
+"Vegetation"; the JS surface in bro's `docs/flora-api.js` "Vegetation records".
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
