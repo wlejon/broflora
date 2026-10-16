@@ -124,6 +124,51 @@ The grove demo (broworkshop `demos/grove`) has these features:
 heightfield. Its colour patches are where grass density and hue should come
 from.
 
+## Step 3 as built: the grass
+
+- **`scene.createGrass(opts)`** (bro `scene/grass_node.h`,
+  `vulkan/shaders/scene_grass.glsl`, `scene_mesh_drawer_grass.cpp`; API in
+  bro `docs/scene-nodes-api.js`). Dense's meadow, ported: no per-blade data,
+  three rings of cells around the camera (6 cm, 20 cm, 55 cm cells out to
+  20 / 55 / 150 m at the default range), each one instanced draw over only
+  the cells of its visible sector. Each blade comes from its cell's hash, the
+  clump noise and the node's **field**: a grid of ground height, density,
+  dryness and a height multiplier that the JS side bakes once from the ground
+  (a mesh node's top surface, a terrain, a clipmap or a height function) and
+  from `density` / `dry` / `tall`, numbers or functions of (x, z, y).
+- **Wind** is the scene's field: the steady lean, a per-blade flutter and the
+  travelling gust bands, which lift the sheen of what they bend. A calm
+  (`speed 0, gust 0`) is still to the pixel.
+- **Light**: blades take most of their shading from the ground's normal
+  (bulk 0.72), dark at the root, translucent like leaves (the same mesh.frag
+  vegetation path, with the blade's ao and fade in `vegShade.w`), each blade
+  its own value and a little hue. Far off, a blade widens and loses its dark
+  root and its translucency and is lit as the ground, so a hillside reads as
+  turf rather than as a field of bright tips.
+- **Movers**: `grass.addMover(node, {radius, strength, trample})` and
+  `grass.push(x, z, ...)` stamp a time-stamped influence map (a 102 m window
+  of 20 cm cells that follows the camera; sub-rect uploads). The shader decays
+  it from the stamp time: blades spring back in about half a second, and
+  flattened grass lies the way it was pushed, leaning from the root, paler,
+  rising over about 20 s.
+- **bro.flora**: `world.groundCover({scale})` is the `density` function for
+  grass among grown plants: thin in the crowns' shade (the shadow grid's light
+  just above the ground), clear at each trunk.
+- **Grove**: the meadow and hills are grass, lush to sun-dried from the same
+  patches that colour the (now darker, turf-coloured) soil, thin under the
+  trees by `groundCover`. A ball rolls a loop through it as a mover. Shots
+  `meadow`, `ground` (in the grass), `parting` and `roller`; `capture.js perf`
+  measures the grass's GPU cost.
+- **Cost** (1280x720, RTX 4090, perf.gpuFrameMs over 60 frames): the grass is
+  1.6 to 2.2 ms of a 12.7 to 13 ms grove frame (10.7 to 11.4 ms without it),
+  about 210k / 110k / 100k instances in the three rings.
+
+Still short of dense: close up, the sward is less crowded and less
+contrasty than dense's (`r2_walker`, `r2_ground`), partly the golden-hour
+light; a flattened lane is visible but quieter than a walker's in dense; the
+far ring's sunlit hills still show individual blades rather than a texture;
+only the near ring casts shadows, and none by default.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
