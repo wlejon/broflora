@@ -173,6 +173,26 @@ static void test_api_option_readers() {
         const tubes = w.emitBranchTubes({ minRadius: 1e9 });
         if (tubes.segCount !== 0) fail("emitBranchTubes ignored minRadius");
 
+        // Leaves go in crown clumps by default; clumps: false sprays them
+        // along the twigs. Every clump-mode emitter places the same leaves.
+        const cl = w.emitClumps({ maxRadius: 10 });
+        if (!Array.isArray(cl) || cl.length === 0 || !(cl[0].radius > 0) || cl[0].center.length !== 3) fail("emitClumps shape");
+        const scc = w.emitScatterSegments({ maxRadius: 10, seed: 3 });
+        if (scc.clumps !== true || scc.segCount !== cl.length || scc.instSeg.length !== scc.instanceCount) {
+            fail("emitScatterSegments clumps: " + scc.segCount + " vs " + cl.length);
+        }
+        if (scc.vegetation.length !== scc.segCount * 12) fail("one vegetation record per clump");
+        const spray = w.emitScatterSegments({ clumps: false, perUnitLength: 40, maxRadius: 10 });
+        if (spray.clumps === true || spray.segCount === 0) fail("clumps: false sprays along the twigs");
+        const ct = w.emitFoliageTransforms({ maxRadius: 10, seed: 3 });
+        if (ct.length !== scc.instanceCount * 16) fail("clump transforms: " + ct.length / 16 + " vs " + scc.instanceCount);
+        const cv = w.emitFoliageVegetation({ maxRadius: 10, seed: 3 });
+        if (cv.length !== ct.length) fail("a vegetation record per clump leaf");
+        const tj = w.emitBranchTubes();
+        if (tj.tangents.length !== tj.segCount * 6) fail("tube tangents: two per segment");
+        const sv = w.emitSegmentVegetation();
+        if (!(sv[7] <= -1)) fail("segment records carry their tip: " + sv[7]);
+
         // leafCluster: options object with phyllotaxy + shape, and the
         // (phyllotaxy, opts) form.
         const lcA = F.leafCluster({ phyllotaxy: "opposite", count: 6, leafShape: "needle", includeTwigMesh: true });

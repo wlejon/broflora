@@ -15,5 +15,6 @@
 #include "broflora/senescence.h"
 #include "broflora/validate.h"
 #include "broflora/mesh_emit.h"
+#include "broflora/clumps.h"
 #include "broflora/leaf_cluster.h"
 #include "broflora/sdf_mesh.h"

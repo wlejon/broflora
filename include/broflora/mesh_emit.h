@@ -122,6 +122,12 @@ struct FoliageSample {
     float twigGrade01 = 0.0f;
 };
 
+// The leaf density the leaf emitters give a segment by default, in [0, 1]:
+// lit (raw exposure, so deep interior shade goes bare), mature, alive
+// twigs at leaf thickness, terminal ones far more than shoots that have
+// branched on.
+float foliageDensity(const FoliageSample& f);
+
 // Emit the plant's branch skeleton as a flat list of `bromesh::BranchSegment`
 // — the input shape expected by `bromesh::placeLeavesOnBranches` and
 // `bromesh::scatterLeaves`. One segment per prototype edge per module,
@@ -289,6 +295,16 @@ inline constexpr size_t kVegetationFloats = 16;
 // axis for wood.
 void writeVegetation(float* out, const SegmentSway& s, const bromath::Vec3& anchor,
                      float weight, const bromath::Vec3& axis, bool leaf);
+
+// Write a wood *segment* record, for geometry that spans a whole segment
+// under one record (an instanced cylinder per segment): wood takes no bulk
+// normal, so the crown floats carry the segment's tip instead,
+//   (root.xyz, height) (to.xyz, -(1 + weightTo)) (from.xyz, weightFrom) (0, 0, 0, phase)
+// and the renderer gives each vertex the weight at its own point along
+// from -> to (a negative crownRadius marks the form). The segment's tip
+// then bends exactly as its child's base does.
+void writeSegmentVegetation(float* out, const SegmentSway& s, const bromath::Vec3& from,
+                            const bromath::Vec3& to);
 
 // Vegetation records for leaves placed by `bromesh::placeLeavesOnBranches`
 // over `segs` (`sway` aligned with them): one per placement, the anchor at

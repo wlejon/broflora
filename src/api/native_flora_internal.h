@@ -389,16 +389,24 @@ inline void fillFoliageDensity(const std::vector<broflora::FoliageSample>& sampl
                                bromesh::LeafPlacementOptions& opts) {
     if (!opts.densityWeight.empty() || samples.size() != segCount) return;
     opts.densityWeight.resize(samples.size());
-    for (size_t i = 0; i < samples.size(); ++i) {
-        const auto& f = samples[i];
-        float exposure = 0.12f + 0.88f * f.lightExposure01;
-        float maturity = std::min(1.0f, f.age01);
-        float alive    = 1.0f - f.senescence01;
-        float stem     = f.twigGrade01 * f.twigGrade01;
-        if (!f.isTerminal) stem *= 0.10f;
-        opts.densityWeight[i] = exposure * maturity * alive * stem;
-    }
+    for (size_t i = 0; i < samples.size(); ++i) opts.densityWeight[i] = broflora::foliageDensity(samples[i]);
 }
+
+// ── Crown clumps (native_flora_clumps.cpp) ─────────────────────────────
+
+// Whether a leaf emitter places its leaves in crown clumps: true unless
+// opts.clumps is false (then they spray along the twigs).
+bool clumpModeOf(Value opts);
+// The clump options of a leaf emitter's opts; false once it has thrown.
+bool readClumpOptions(Value opts, broflora::ClumpOptions& c, bromesh::LeafClumpOptions& l);
+// The world's (plant null) or one plant's clumps, their leaves and, with
+// `veg`, each leaf's vegetation record. False once it has thrown.
+bool clumpLeaves(const broflora::WorldState& world, const broflora::Plant* plant, Value opts,
+                 std::vector<bromesh::LeafClump>& clumps, bromesh::LeafClumpOptions& leafOpts,
+                 bromesh::LeafPlacements& pl, std::vector<float>* veg);
+// The clump-mode emitScatterSegments object.
+Value scatterClumps(const broflora::WorldState& world, Value opts);
+Value jsEmitClumps(Value thisVal, std::span<const Value> args);
 
 // ── Leaf shape & phyllotaxy parsing ────────────────────────────────────
 
@@ -536,6 +544,7 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readFloatField(spec, "moduleMatureAge",             s.moduleMatureAge);
     readFloatField(spec, "pipeExp",                     s.pipeExp);
     readFloatField(spec, "leafDiameter",                s.leafDiameter);
+    readFloatField(spec, "kink",                        s.kink);
     readFloatField(spec, "terrainAnchorWeight",         s.terrainAnchorWeight);
     readFloatField(spec, "maxSeedingSlope",             s.maxSeedingSlope);
     readFloatField(spec, "distributionWeightCollisions",s.distributionWeightCollisions);

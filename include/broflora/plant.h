@@ -62,6 +62,13 @@ struct Species {
     // recursive d_b sum.
     float leafDiameter = 0.02f;
 
+    // Bark kinks (emit only; not in the paper, and the simulation never
+    // reads it): every prototype node off a module's root is nudged
+    // sideways by this fraction of its incoming edge's length, and the
+    // rest of the branch beyond it follows, so limbs bend at their nodes
+    // instead of running ruler-straight. 0 emits the grown skeleton exactly.
+    float kink = 0.2f;
+
     // Terrain anchoring (broflora extension, not in the paper).
     //
     // terrainAnchorWeight in [0,1] blends the root module's per-tick

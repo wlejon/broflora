@@ -24,6 +24,7 @@ add_library(broflora STATIC
     src/senescence.cpp
     src/validate.cpp
     src/mesh_emit.cpp
+    src/clumps.cpp
     src/prototypes.cpp
     src/leaf_cluster.cpp
     src/sdf_mesh.cpp

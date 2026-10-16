@@ -69,6 +69,61 @@ bro's side (the wind field, `setWind` / `windAt`, the shaders, the shadow
 pass) is documented in bro's `docs/scene-api.js` and `docs/scene-nodes-api.js`
 "Vegetation"; the JS surface in bro's `docs/flora-api.js` "Vegetation records".
 
+## Step 2 as built: the look
+
+What changed, and where:
+
+- **Crown clumps** (`include/broflora/clumps.h`, bromesh
+  `procedural/leaf_clumps.h`).
+  - A plant's leaf mass is a set of clumps picked greedily from its leafy
+    twig tips, outermost first, each kept only where it stands clear of the
+    others (`ClumpOptions::spacing`), so the silhouette fills first and sky
+    shows between clumps.
+  - A clump's radius follows its crown; its density follows its twig's
+    `foliageDensity` (the density policy now lives in the library, not the
+    API).
+  - bromesh `placeLeavesInClumps` fills three overlapping lobes per clump,
+    leaves in a shell under the lobe surface, facing outward.
+  - bro.scene's scatter node does the same on the GPU (`clumps: true`, the
+    same hash draws). A leaf's records are its twig tip's, so a clump rides
+    its twig.
+  - Clumps are the default of every foliage emit; `clumps: false` gives the
+    old per-twig spray.
+- **Kinked bark** (`Species::kink`, default 0.2). Each node of each module
+  steps sideways by a hashed fraction of its edge, accumulated down the
+  module tree, in `emitPlantSegments` (and so in every bark, bloom and leaf
+  emit).
+  - Joints stay closed.
+  - Emit only; the simulation never sees the kinks.
+- **Joined tubes.** `emitBranchTubes` writes `tangents`, the bisector at each
+  joint between a segment and the child that continues it, and the tube
+  node mitres its rings on it. A continuation starts at its parent's radius;
+  a side shoot starts with a small collar.
+- **The rigid-segment seam.** The `emitSegmentVegetation` records are now
+  the segment form (`writeSegmentVegetation`): crown floats = tip,
+  -(1 + weightTo). The shader interpolates the weight along each instanced
+  cylinder, so a segment's tip bends with its child's base.
+- **Colour from the records** (bro `vegetationTint`). Each plant leans warm
+  or cool, and each limb and leaf varies in value. Leaves deep in the crown
+  are darker and cooler, and the rim is lighter. Bark varies by plant. A
+  node's colour is the species mean, and the crowns come out varied around
+  it.
+- **Reach.** A limb's sway grows with plant height, because longer limbs
+  sweep further. This makes a 7 m tree's motion read at grove distance.
+
+The grove demo (broworkshop `demos/grove`) has these features:
+
+- uneven, colour-varied ground rising to hills;
+- plants standing on it;
+- thicker trunks (`pipeExp` 2.0, `leafDiameter` 0.028);
+- a darker leaf mean;
+- golden-hour haze pushed past the grove;
+- an under-the-crown close shot.
+
+**Left for step 3:** the grass node. The meadow is still a coloured
+heightfield. Its colour patches are where grass density and hue should come
+from.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in

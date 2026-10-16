@@ -391,6 +391,10 @@
         return _native ? _native.emitSegmentVegetation(this) : null;
     });
 
+    fn(FloraWorld.prototype, "emitClumps", function emitClumps(opts) {
+        return _native ? _native.emitClumps(this, opts) : null;
+    });
+
     fn(FloraWorld.prototype, "emitScatterSegments", function emitScatterSegments(opts) {
         return _native ? _native.emitScatterSegments(this, opts) : null;
     });

@@ -31,6 +31,77 @@ Vec3 worldNodePos(const Species& sp, const BranchModuleInstance& m, uint32_t nod
     return m.worldPos + nodeOffsetFromRoot(sp, m, nodeIdx);
 }
 
+// A well-mixed hash of an integer into [0, 1).
+float hash01(uint64_t x) {
+    x ^= x >> 33; x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33; x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
+    return static_cast<float>((x >> 40) * (1.0 / 16777216.0));
+}
+
+// A plant's seed for the emit's own randomness: its origin, which is fixed
+// for its life.
+uint64_t plantEmitSeed(const Plant& plant) {
+    return static_cast<uint64_t>(std::llround(plant.origin.x * 1013.0f)) * 0x9E3779B97F4A7C15ULL
+         ^ static_cast<uint64_t>(std::llround(plant.origin.z * 7919.0f));
+}
+
+// The parent-prototype node a child module hangs from: its attach
+// terminal as a node index when that node ends an edge, else as an index
+// into the terminal list (the two conventions emitPlantSegmentsInto
+// accepts). UINT32_MAX when neither resolves.
+uint32_t attachNodeOf(const BranchModulePrototype& pp, uint32_t attach) {
+    if (attach < pp.nodes.size()) {
+        for (const auto& e : pp.edges) if (e.b == attach) return attach;
+    }
+    if (attach < pp.terminalNodes.size()) return pp.terminalNodes[attach];
+    return UINT32_MAX;
+}
+
+// The kinks (Species::kink): per module, per prototype node, how far the
+// emitted node sits from the grown one. Each node off a module's root
+// steps sideways from its predecessor by `kink` times the edge between
+// them, in a direction hashed from the plant, module and node; everything
+// beyond it (the rest of the module, and every module hanging from it)
+// carries the step, so the branch bends there and keeps its joints.
+std::vector<std::vector<Vec3>> kinkOffsets(const Plant& plant) {
+    const size_t nm = plant.modules.size();
+    std::vector<std::vector<Vec3>> off(nm);
+    const float k = plant.species.kink;
+    const uint64_t seed = plantEmitSeed(plant) ^ 0x6b696e6bULL;
+    for (size_t mi = 0; mi < nm; ++mi) {
+        const auto& m = plant.modules[mi];
+        if (!m.prototype) continue;
+        const auto& proto = *m.prototype;
+        const size_t n = proto.nodes.size();
+        Vec3 base{0.0f, 0.0f, 0.0f};
+        if (m.parent != UINT32_MAX && m.parent < mi && plant.modules[m.parent].prototype) {
+            const uint32_t a = attachNodeOf(*plant.modules[m.parent].prototype, m.parentAttachTerminal);
+            if (a < off[m.parent].size()) base = off[m.parent][a];
+        }
+        auto& o = off[mi];
+        o.assign(n, base);
+        if (!(k > 0.0f)) continue;
+        for (const auto& e : proto.edges) {
+            if (e.a >= n || e.b >= n) continue;
+            const Vec3 d = worldNodePos(plant.species, m, e.b) - worldNodePos(plant.species, m, e.a);
+            const float len = bromath::vlen(d);
+            o[e.b] = o[e.a];
+            if (len < 1e-6f) continue;
+            const Vec3 t = d * (1.0f / len);
+            Vec3 e1 = bromath::vcross(t, Vec3{0.0f, 1.0f, 0.0f});
+            if (bromath::vdot(e1, e1) < 1e-8f) e1 = bromath::vcross(t, Vec3{1.0f, 0.0f, 0.0f});
+            e1 = bromath::vnorm(e1);
+            const Vec3 e2 = bromath::vcross(t, e1);
+            const uint64_t h = seed + (static_cast<uint64_t>(mi) << 20) * 0x2545F4914F6CDD1DULL + e.b * 0x9E3779B97F4A7C15ULL;
+            const float ang = hash01(h) * 6.2831853f;
+            const float mag = k * len * (0.4f + 0.6f * hash01(h ^ 0x5bd1e995ULL));
+            o[e.b] = o[e.a] + (e1 * std::cos(ang) + e2 * std::sin(ang)) * mag;
+        }
+    }
+    return off;
+}
+
 // Depth of every prototype node from `rootNode`, measured in edge hops.
 // UINT32_MAX for disconnected nodes (they fall back to the static layout
 // in the rest of the pipeline; here we just give them root depth so a
@@ -420,6 +491,7 @@ size_t emitPlantSegmentsInto(const Plant& plant,
     const float pe = plant.species.pipeExp > 0.0f ? plant.species.pipeExp : 2.5f;
     const float invPe = 1.0f / pe;
     const float leafR = 0.5f * (plant.species.leafDiameter > 0.0f ? plant.species.leafDiameter : 0.02f);
+    const auto kinks = kinkOffsets(plant);
 
     // Map each (parent_module_idx, attach_terminal_node) to the list of child module indices.
     std::vector<std::vector<std::vector<uint32_t>>> attachedChildren(numModules);
@@ -608,8 +680,8 @@ size_t emitPlantSegmentsInto(const Plant& plant,
 
         for (const auto& e : proto.edges) {
             bromesh::BranchSegment seg;
-            seg.from   = worldNodePos(plant.species, m, e.a);
-            seg.to     = worldNodePos(plant.species, m, e.b);
+            seg.from   = worldNodePos(plant.species, m, e.a) + (e.a < kinks[mi].size() ? kinks[mi][e.a] : Vec3{});
+            seg.to     = worldNodePos(plant.species, m, e.b) + (e.b < kinks[mi].size() ? kinks[mi][e.b] : Vec3{});
             seg.radius = (e.b < nodeRadius.size()) ? nodeRadius[e.b] : leafR;
 
             // Parent: prefer an earlier segment within this module that
@@ -746,6 +818,15 @@ size_t emitPlantFoliageInto(const Plant& plant,
 
 } // namespace
 
+float foliageDensity(const FoliageSample& f) {
+    const float exposure = 0.12f + 0.88f * f.lightExposure01;
+    const float maturity = std::min(1.0f, f.age01);
+    const float alive    = 1.0f - f.senescence01;
+    float stem           = f.twigGrade01 * f.twigGrade01;
+    if (!f.isTerminal) stem *= 0.10f;
+    return exposure * maturity * alive * stem;
+}
+
 std::vector<FoliageSample> emitPlantFoliage(const Plant& plant) {
     std::vector<FoliageSample> out;
     emitPlantFoliageInto(plant, out);
@@ -782,6 +863,11 @@ size_t emitPlantBloomAnchorsInto(const Plant& plant,
 
     const auto childCounts = moduleChildCounts(plant);
     const float senescence = senescenceRamp(plant);
+    const auto kinks = kinkOffsets(plant);
+    auto nodePos = [&](size_t mi, uint32_t node) {
+        const auto& km = kinks[mi];
+        return worldNodePos(plant.species, plant.modules[mi], node) + (node < km.size() ? km[node] : Vec3{});
+    };
 
     // emitPlantSegmentsInto emits every edge of every module that has a
     // prototype, module by module: module mi's edge e is segment
@@ -810,7 +896,7 @@ size_t emitPlantBloomAnchorsInto(const Plant& plant,
             if (terminalNode >= m.prototype->nodes.size()) continue;
 
             BloomAnchor a;
-            a.position        = worldNodePos(plant.species, m, terminalNode);
+            a.position        = nodePos(mi, terminalNode);
             a.age01           = age01;
             a.vigor01         = vigor01;
             a.senescence01    = senescence;
@@ -820,7 +906,7 @@ size_t emitPlantBloomAnchorsInto(const Plant& plant,
             if (edgeIdx != SIZE_MAX) {
                 a.segment = static_cast<int32_t>(thisBase + edgeIdx);
                 const auto& e = m.prototype->edges[edgeIdx];
-                const bromath::Vec3 fromPos = worldNodePos(plant.species, m, e.a);
+                const bromath::Vec3 fromPos = nodePos(mi, e.a);
                 const bromath::Vec3 dir = a.position - fromPos;
                 const float len = bromath::vlen(dir);
                 if (len > 1e-6f) {
@@ -868,14 +954,6 @@ std::vector<BloomAnchor> emitWorldBloomAnchors(const WorldState& world) {
 // ---- Wind sway ---------------------------------------------------------------
 
 namespace {
-
-// A well-mixed hash of an integer into [0, 1).
-float hash01(uint64_t x) {
-    x ^= x >> 33; x *= 0xff51afd7ed558ccdULL;
-    x ^= x >> 33; x *= 0xc4ceb9fe1a85ec53ULL;
-    x ^= x >> 33;
-    return static_cast<float>((x >> 40) * (1.0 / 16777216.0));
-}
 
 // The sway of one plant's segments (`segs`, `fol` aligned, parent indices
 // local to `segs`), appended to `out`.
@@ -1051,6 +1129,12 @@ void writeVegetation(float* o, const SegmentSway& s, const Vec3& anchor,
     o[13] = leaf ? axis.y : 0.0f;
     o[14] = leaf ? axis.z : 0.0f;
     o[15] = s.phase;
+}
+
+void writeSegmentVegetation(float* o, const SegmentSway& s, const Vec3& from, const Vec3& to) {
+    writeVegetation(o, s, from, s.weightFrom, Vec3{0.0f, 0.0f, 0.0f}, false);
+    o[4] = to.x; o[5] = to.y; o[6] = to.z;
+    o[7] = -(1.0f + std::clamp(s.weightTo, 0.0f, 1.0f));
 }
 
 std::vector<SegmentSway> emitPlantSway(const Plant& plant) {

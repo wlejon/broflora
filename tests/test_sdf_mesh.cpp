@@ -41,6 +41,9 @@ static Plant createGrownPlant(bromath::Vec3 origin = {0.0f, 0.0f, 0.0f}) {
     plant.species = {};
     plant.species.shadeTolerance = 1.0f;
     plant.species.leafDiameter = 0.05f;
+    // The hand-built Y exactly as written: the mesher's checks below are
+    // pinned to this skeleton, whose node positions a kink would move.
+    plant.species.kink = 0.0f;
     plant.effectiveRootVigorMax = plant.species.rootVigorMax;
     plant.origin = origin;
 

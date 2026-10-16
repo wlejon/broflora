@@ -381,6 +381,7 @@ Value jsPlantInfo(Value /*thisVal*/, std::span<const Value> args) {
     sp.set(ev::setProperty(sp.get(), "moduleMatureAge", ev::fromDouble(s.moduleMatureAge)));
     sp.set(ev::setProperty(sp.get(), "pipeExp", ev::fromDouble(s.pipeExp)));
     sp.set(ev::setProperty(sp.get(), "leafDiameter", ev::fromDouble(s.leafDiameter)));
+    sp.set(ev::setProperty(sp.get(), "kink", ev::fromDouble(s.kink)));
     sp.set(ev::setProperty(sp.get(), "terrainAnchorWeight", ev::fromDouble(s.terrainAnchorWeight)));
     sp.set(ev::setProperty(sp.get(), "maxSeedingSlope", ev::fromDouble(s.maxSeedingSlope)));
     sp.set(ev::setProperty(sp.get(), "distributionWeightCollisions", ev::fromDouble(s.distributionWeightCollisions)));
@@ -650,6 +651,7 @@ void registerFloraNativeHelpers() {
     REG_FN(emitBranchTubes, 2, jsEmitBranchTubes);
     REG_FN(emitFoliageVegetation, 2, jsEmitFoliageVegetation);
     REG_FN(emitSegmentVegetation, 1, jsEmitSegmentVegetation);
+    REG_FN(emitClumps, 2, jsEmitClumps);
     REG_FN(emitFoliageMesh, 3, jsEmitFoliageMesh);
     REG_FN(emitBloomMesh, 4, jsEmitBloomMesh);
     REG_FN(emitPlantFoliageMesh, 4, jsEmitPlantFoliageMesh);
