@@ -573,6 +573,9 @@ GPU ms a frame over the flight's 1021 frames, two runs:
 
 ## Step 7a as built: far trees as impostors
 
+**Removed** in the next section ("Step 7a, mid range"); kept here as the
+record of what was tried and why it went.
+
 The tree half of step 7 (the ground and the bark are 7b). The clumps and
 crowns are replaced as the far tier by an impostor per tree: a card showing
 its specimen's own leaves, so the far forest is the leaves tier seen
@@ -718,6 +721,137 @@ In broworkshop `demos/forest/captures/`:
 - **The compare image has a black band.** `capture.js compare` leaves a
   28 px band at the top: the headless frame is taller than innerHeight.
 
+## Step 7a, mid range
+
+The impostors made the mid range (about 15 to 100 m) worse than the step 6
+clumps: chunky, posterized flat cutouts, and big flakes where the near
+leaves thin. They also cannot work in an infinite procedural world, where
+there is no canopy to take a picture of before the tree streams in. So they
+are **removed** (not just off by default): the bake cost 1.6 s and about
+200 MB of atlases, and nothing may be baked per tree. Every tier past the
+near leaves is now drawn at run time from the tree's own records (clumps,
+leaf counts, leaf size and placement), cheap per tree on stream-in, so every
+tree may be unique.
+
+### Design
+
+Three tiers again, leaves / clumps / crowns (`kTiers` 3), each drawing
+leaves rather than a picture of them:
+
+- **Clusters** (the thinned leaves past `cardWidening`, `lod.clusters`,
+  default 1). A kept leaf widened k times stands for the k^2 leaves round
+  it. Its card is a hexagon in the leaf's plane spanning the widened outline
+  and half a leaf more, and the fragment shader places true-size leaves in
+  it on a jittered cell walk (2x2 cells), each turned and toned its own way,
+  growing in over the outer part of the outline. So a thinned crown shows
+  leaves of the right size, not flakes. Clusters have their own pipeline
+  (mesh.frag built with `SCENE_FOREST_CLUSTER`). Shadows still cast
+  the widened cards.
+- **Clumps and crowns** (`scene_forest_mass.glsl`): a camera-facing card a
+  lobe (three a clump) or a crown, whose pixels place the leaves of the
+  sphere's shell, one per jittered cell, each a prefiltered ellipse
+  (`forestLeafCover`), with its own normal, turn and tone. The far half of
+  the shell is seen through the near half's gaps. Coverage goes to the MSAA
+  sample mask and depth is written through conservative `depth_less`, so
+  the depth buffer, fog and shadows see leaves, not a card.
+  - **Mean once a pixel holds several leaves.** From fp/cell 0.7 to 1.4 the
+    exact layer blends to its analytic mean; the far half is always the
+    mean. The mean carries a GRAIN: the wander a pixel's few leaves have
+    from the mean (count, facing, how many lie toward the light), about one
+    over the root of their count, on the cells' own grid at the two octaves
+    either side of the pixel, so it holds still as the crown moves and never
+    gets finer than a pixel.
+  - **Lit as the leaves are:** the leaf tint, the crown's depth tint and AO
+    (`forestCrownTerms`), translucency, the normal blended 0.4 toward the
+    bulk normal at 0.6, and the gust sheen.
+  - **Self-shadow is analytic.** A sprite's leaves are shadowed by their own
+    sphere as `exp(-sigma d)`, d the path out of the sphere toward the light
+    and sigma from the leaf count and size (`forestMassDepth`). The leaf
+    seen lies about a free path in, which adds `cos(view, light)` of that to
+    the light's path: the mean factor is `1 / (1 + c)`, so a crown seen from
+    above at noon is not lit as if it were its own surface. Everything else
+    comes from one shadow-map tap at the exit point.
+  - **Sprite casters** are discs as dense as their leaves:
+    `1 - exp(-tau sqrt(1 - r^2))`, dithered on a 9x9 grid a radius. The disc
+    stands half a radius past the centre away from the light, so it shades
+    the sphere's far side and what lies beyond, not its own lit side (this
+    removed most of the glade's mid-range darkness).
+  - Thinned leaf casters stand back from the light by 0.35 of the length
+    they grew, so a widened caster does not shade leaves above it.
+- **Budget.** The view's budget is back to 14 M (it went to 18 only on the
+  impostors' savings). Clusters and sprites cost fragments, not vertices.
+
+### Numbers
+
+`capture.js metrics`, Leaves against By size per band of distance to the
+crowns. Y is mean luminance, drgb the distance between mean colours, flat
+the share of flat patches, hard the hard-edge density. Leaves' own value
+first, then cfb4ca44 (impostors), then this step:
+
+| View, band | Y: Leaves / 7a / now | drgb: 7a / now | other |
+|---|---|---|---|
+| canopy noon 20-40 | 142 / 157 / 150 | 28.1 / 16.1 | |
+| canopy noon 40-80 | 143 / 160 / 150 | 30.8 / 13.5 | |
+| canopy noon 80-160 | 159 / 158 / 152 | 3.5 / 12.4 | hard 10.4 / 10.7 / 4.7 |
+| skim noon 20-40 | 156 / 161 / 157 | 9.3 / 2.2 | flat 24.9 / 30.8 / 27.7 |
+| glade noon 20-40 | 121 / 122 / 118 | 1.8 / 5.9 | |
+| glade golden 10-20 | 142 / 155 / 145 | 22.4 / 5.3 | |
+| trunks noon 20-40 | 123 / 133 / 123 | 14.1 / 8.6 | flat 5.2 / 17.8 / 5.2, d1 16.5 / 10.2 / 16.5 |
+| trunks golden 20-40 | 135 / 137 / 137 | 11.6 / 10.4 | flat 4.4 / 17.7 / 4.3 |
+| trunks golden 40-80 | 109 / 114 / 118 | 11.3 / 15.1 | |
+| skim noon 80-160 | 178 / 172 / 167 | 8.6 / 17.7 | |
+
+The flat cutouts are gone: flat and block now match the Leaves mode in
+every band, where 7a had three times the flat patches among the trunks. The
+mid bands are within about 7 of Leaves' luminance (7a: up to 17 brighter).
+Fine contrast (d1, hard) in the mid bands is a little under Leaves'.
+
+Trace (`capture.js trace`, 1280x720, 4x MSAA, RTX 4090, breeze, 1021
+frames), GPU ms:
+
+| Run | Max | p95 | Median |
+|---|---|---|---|
+| cfb4ca44, impostors, budget 18 | 6.04 to 6.07 | 5.10 | 4.42 |
+| first clusters + sprites, budget 18 | 18.79 | 10.83 | 6.93 |
+| now, budget 14, three runs | 7.65 to 10.67 | 5.25 to 5.78 | 4.08 to 4.09 |
+
+The max and the spread of p95 come from one- to two-second bursts of 6 to
+10 ms that land at different times in different runs (7 to 8 s, 18 s, 23 to
+24 s), the transient documented at step 6; the run with one burst had p95
+5.25. Outside them the worst second is the dive into the canopy (11 to
+12 s), about 5.6 ms mean and 5.9 max. The grain costs about 0.15 ms.
+
+The flight video shows no popping: its frame-to-frame change has no spikes
+beyond the encoder's every-tenth-frame ones and the frames where the eye
+passes through a crown.
+
+### Captures
+
+In broworkshop `demos/forest/captures/`:
+
+- `mid7a_metrics.json`, `mid7a_trace.json`: the numbers above;
+  `base7a_metrics.json` is cfb4ca44.
+- `mid7a_<shot>_<sky>_compare.png` for canopy / skim / glade / trunks at
+  noon and golden; `mid7a_canopy_zoom_canopy_noon_compare.png` is the
+  canopy's near crowns blown up twice.
+- `mid7a_handover_{cards,clumps,crowns}_strip.png`: dolly strips.
+- `m18.webm`: the flight (the same shaders).
+
+### Still open
+
+- **Far crowns are too smooth.** Past about 80 m the sprites' grain gives
+  back only part of the leaves' pixel texture (canopy noon hard 4.7 against
+  10.4; the impostors had it, being pictures of leaves). The far skim is 10
+  darker than the leaves.
+- **Near clumps from above** (canopy, 20 to 40 m) read a little minty and
+  too bright (+8) beside the leaves, and their leaves look coarser.
+- **Backlit mid trees among the trunks** at golden hour are still about 9
+  too bright (40 to 80 m), and a crown card hides the trunks behind it more
+  than the leaves do.
+- **Crown-tier gaps.** A crown is one sphere of leaves; it has no holes or
+  clump structure of its own.
+- p95 is 5.25 ms against a 5.1 target.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
@@ -732,8 +866,9 @@ In broworkshop `demos/forest/captures/`:
    chosen by size on screen under a vertex budget, one pose for every tier,
    grass skipped under closed canopy and scaled to the eye's height.
 7. Refinement. 7a, the trees: far trees as octahedral impostors of their own
-   specimens, lit as the leaves, handed over by sharpness. 7b: the ground
-   and the bark.
+   specimens (removed: nothing may be baked per tree), then the mid range
+   as leaves placed at run time in clusters, lobes and crowns. 7b: the
+   ground and the bark.
 
 Each step is judged by motion strips and short videos next to the reference
 galleries, not by stills.
