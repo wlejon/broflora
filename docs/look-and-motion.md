@@ -545,6 +545,153 @@ GPU ms a frame over the flight's 1021 frames, two runs:
 - Backlit near leaves read pale grey-white.
 - The leaves' pose is still computed per vertex.
 
+## Step 7a as built: far trees as impostors
+
+The tree half of step 7 (the ground and the bark are 7b). The clumps and
+crowns are replaced as the far tier by an impostor per tree: a card showing
+its specimen's own leaves, so the far forest is the leaves tier seen
+smaller, not a different drawing of it. Clumps and crowns remain behind
+`lod.impostors: 0` and the demo's Clumps / Crowns buttons.
+
+### The bake
+
+`bro/src/scene/forest_impostor.cpp`, on the CPU, on the forest's first
+frame (about 1.6 s for 24 specimens):
+
+- Each specimen is drawn from 8 x 8 directions over the upper hemisphere
+  (hemi-octahedral), 128 texels a side each (`impostorViews`,
+  `impostorTexels`). Both atlases are 5120 x 5120 RGBA8, mipmapped.
+  - The colour atlas holds sRGB albedo and coverage.
+  - The data atlas holds the normal's xy, the depth toward the view and
+    leafiness (leaf or bark).
+- The leaves and bark are the very records the leaves tier draws, rested.
+  Each leaf's albedo is its tint without the per-tree part. The per-tree
+  tint (`vegTreeTone` in scene_vegetation.glsl) is applied at run time, so
+  impostors of one specimen differ as its leaves would.
+- **Crown shade is baked:** a leaf is darkened by how far it lies behind the
+  crown's front near it, `0.55 + 0.45 exp(-behind / (0.08 half))`. The front
+  is a separable max over about two leaf lengths, so depth and interior
+  darkness come from the crown's real shape. They do not come from a sphere.
+- Each specimen also records an upright cylinder (radius across, half
+  height) that bounds its leaves. Cards are sized by it.
+
+### The card
+
+One camera-facing card a tree (6 vertices), posed by the same vegPose terms
+as every other tier:
+
+- the trunk's bend at each height;
+- the crown's limb bend from 0.25 to 0.6 of the height up.
+
+Details:
+
+- **Size and place.** The card is the smaller of the bounding sphere's cone
+  and the cylinder seen from the eye. It stands at the sphere's front, so
+  it overdraws little.
+- **The trace.** Each pixel traces its ray into the three views round its
+  direction, at the depth each texel carries. It writes that depth through
+  `depth_less` (reversed-Z), so the depth buffer, shadows and fog see the
+  leaves' surface and not the card.
+- **Light.** The light stays put as the picture sways, so a crown's light
+  and shade hold in a gust.
+- **Lit as the leaves are:**
+  - the leaves' tint, translucency, crown AO and shadows;
+  - a 0.6 blend toward the bulk normal;
+  - leaf-sized cells of the picture (in specimen space, so they ride with
+    the tree), each turned its own way at full strength and toned ±22%,
+    fading out as a cell drops under about 2 px;
+  - flutter on the cell's phase.
+- **Coverage** is sharpened to the pixel (`(c - 0.5) / fwidth(c)`), so an
+  edge is a leaf's edge and not a blur.
+
+### The handover
+
+- **Leaves to impostor.** This runs over the same widening as leaves to
+  clumps (`clumpFrom`..`clumpTo`).
+  - It is held back while the picture would be magnified: the tree's
+    pixels against its baked texels, from 1.2 to 1.8 times. So a near tree
+    never shows a soft picture; at 1920 wide, from 150 m, the few trees
+    under the eye keep their leaves.
+  - The bark goes with the leaves, since the picture holds it.
+- **The dither.** A white-noise integer hash replaced the gradient noise,
+  which hatched diagonally. Under 4x MSAA each sample takes its own share
+  of the split (`forestSampleMask`), so a handover blends in quarters
+  rather than stippling.
+- **Sort.** Impostor entries are sorted nearest-first, both to the eye and,
+  per shadow tile, to the light, so early-Z rejects what is behind.
+
+### Shadows
+
+- **What casts.** An impostor casts the picture seen from the light: one
+  view, the nearest to the light. Everything constant over the card is set
+  up per vertex; a fragment does one ray-plane hit and two reads a mip
+  coarser. It writes the leaves' depth plus 0.08 of the radius, through
+  `depth_greater`.
+- **Gaps.** A gap writes the far plane rather than discarding: a discard
+  turned early-Z off for overlapping casters and cost about 2.5 ms.
+- **Sparse crowns.** Coverage is compared with a per-texel hashed threshold
+  (0.15 to 0.95), so a sparse crown casts a half shade, as its leaves would.
+- **Budget.** Impostors cost a card, so they sit outside both vertex
+  budgets. The view's budget went from 14 to 18 M with what they saved.
+
+### Cost
+
+From `capture.js trace`, 1280x720, 4x MSAA, RTX 4090, gusty wind. GPU ms a
+frame over the flight's 1021 frames:
+
+| Run | Max | p95 | Median |
+|---|---|---|---|
+| step 6 sprites (budget 14, same harness) | 7.75 | 5.28 | 4.50 |
+| impostors, budget 14 | 6.06 | 4.50 | 3.95 |
+| impostors, budget 18 (default), run 1 | 6.77 | 6.40 | 4.46 |
+| impostors, budget 18 (default), runs 2 and 3 | 6.04 to 6.07 | 5.10 | 4.42 |
+
+Run 1 shared the machine with other GPU work; runs 2 and 3 agree to 0.03 ms.
+
+- **No plateau.** The impostor runs show none of step 6's transient
+  plateau of about 8 ms. Their worst second is in among the trunks at
+  ground level, where the budget is spent on leaves.
+- **Far trees are almost free.** 150 m up is 7.8k impostors and 47 k
+  vertices at 3.35 ms. Skimming the crowns is about 290 leaf trees and 4.8k
+  impostors.
+- **Shadows.** Impostor shadows went from about 5 ms (wide cards, three
+  views, discard) to about 1.6 ms as built.
+- **The grove is unchanged:** 4.69 / 6.19 / 6.08 ms for the ground / grove
+  / meadow shots, against 4.66 / 6.14 / 6.06 at step 6.
+
+### Captures
+
+In broworkshop `demos/forest/captures/`:
+
+- `step7a_<shot>_<sky>_compare.png`: Leaves beside By size, for shot
+  above / canopy / skim / glade / trunks and sky noon / golden.
+- `step7a_handover_leaves_strip.png` and
+  `step7a_handover_impostors_strip.png`: dolly strips through each
+  handover.
+- `step7a.webm`: the flight.
+- `b18_trace.json`: the trace.
+
+**Still open:**
+
+- **Backlit impostors are too bright.** Mid-distance impostors backlit at
+  golden hour (the trunks view) read as bright, flat cutouts beside the
+  leaves tier. Their trunks are gone, because the bark leaves with the
+  leaves while the picture's own bark is mostly hidden by its crown.
+- **Golden hour runs dark.** Impostors are about 5% darker than the leaves
+  at golden hour (luminance 131 vs 138), with less blue. Noon matches.
+  Large-scale contrast runs a little high (sd 35 vs 28), fine detail a
+  little low.
+- **Thinning shows as flakes.** Under the budget, the leaves tier thins to
+  large widened leaves (`handover leaves` strip, 13 to 16 m).
+- **Backlit near leaves are still pale grey-white.** This is the leaves
+  tier, not the impostors.
+- **Specimens still repeat.** 24 specimens still repeat from above. An
+  impostor varies only by its tree's tint, turn and scale.
+- **Shade stops at the shadow range.** Canopy shade still ends past the
+  shadow range.
+- **The compare image has a black band.** `capture.js compare` leaves a
+  28 px band at the top: the headless frame is taller than innerHeight.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
@@ -558,6 +705,9 @@ GPU ms a frame over the flight's 1021 frames, two runs:
 6. Forest scale: specimens planted many times over, leaves / clumps / crowns
    chosen by size on screen under a vertex budget, one pose for every tier,
    grass skipped under closed canopy and scaled to the eye's height.
+7. Refinement. 7a, the trees: far trees as octahedral impostors of their own
+   specimens, lit as the leaves, handed over by sharpness. 7b: the ground
+   and the bark.
 
 Each step is judged by motion strips and short videos next to the reference
 galleries, not by stills.
