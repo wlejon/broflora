@@ -6,7 +6,7 @@
 // under habit groups of their own, so conifers, shrubs and broadleaf trees
 // grow side by side in one world, each from its own modules:
 //
-//   broadleaf  oak (spreading), elm (vase), beech (tall): a clear trunk
+//   broadleaf  oak (spreading), elm (vase), beech (tall), birch (slender, white bark): a clear trunk
 //              topped by scaffold limbs, then monopodial modules
 //   conifer    pine, spruce, fir, cedar, redwood (needles), cypress,
 //              juniper (scale leaves): a monopodial leader that tops each

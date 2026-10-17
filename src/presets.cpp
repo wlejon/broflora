@@ -156,7 +156,7 @@ void bark(Species& s, float furrow, float scale, float moss, float flare) {
 std::optional<PresetDef> presetDef(std::string_view name) {
     PresetDef d;
     // --- broadleaf --------------------------------------------------------
-    if (name == "oak" || name == "elm" || name == "beech") {
+    if (name == "oak" || name == "elm" || name == "beech" || name == "birch") {
         d.habit = "broadleaf";
         d.species = broadleafBase();
         d.root = trunkModule(2.0f, 3);
@@ -166,10 +166,18 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.growthScale = 2.5f; s.orthotropy = 0.55f; s.tropismG2 = 0.05f;
         } else if (name == "elm") {    // vase
             s.growthScale = 2.0f; s.orthotropy = 0.7f; s.tropismG2 = 0.03f;
-        } else {                       // tall, narrower
+        } else if (name == "beech") {  // tall, narrower
             s.growthScale = 2.2f; s.orthotropy = 0.8f; s.tropismG2 = 0.02f; s.apicalControl = 0.5f;
             bark(s, 0.12f, 1.0f, 0.45f, 0.5f);   // smooth grey beech bark
             s.barkColor = rgb(0.30f, 0.29f, 0.26f);
+        } else {
+            // Silver birch: slender and narrow, a light open crown of small
+            // bright leaves on twigs that hang; white bark.
+            s.growthScale = 2.0f; s.orthotropy = 0.85f; s.tropismG2 = 0.09f; s.apicalControl = 0.55f;
+            s.leafSize = 0.6f; s.pipeExp = 2.4f;   // a slender stem
+            s.leafColor = rgb(0.13f, 0.25f, 0.07f);
+            bark(s, 0.15f, 0.7f, 0.1f, 0.3f);
+            s.barkColor = rgb(0.72f, 0.70f, 0.65f);
         }
         return d;
     }
@@ -372,7 +380,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
 
 const std::vector<std::string>& speciesPresetNames() {
     static const std::vector<std::string> names = {
-        "oak", "elm", "beech",
+        "oak", "elm", "beech", "birch",
         "pine", "spruce", "fir", "cedar", "redwood", "cypress", "juniper",
         "boxwood", "holly", "hydrangea", "hibiscus", "lavender",
     };
