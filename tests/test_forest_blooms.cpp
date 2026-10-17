@@ -67,12 +67,14 @@ TEST(forest_blooms_a_flowering_hydrangea_bears_a_fir_none) {
             sized = sized && b[3] > 0.0f && b[3] <= sp.bloomSize + 1e-6f;
             unit = unit && std::fabs(std::sqrt(b[4] * b[4] + b[5] * b[5] + b[6] * b[6]) - 1.0f) < 1e-3f;
             // Its segment is the specimen's own, its tip where the bloom is
-            // (positions relative to the specimen, as the segments').
+            // (positions relative to the specimen, as the segments'); a head
+            // stands proud of it, by under half its size along its facing.
             const uint32_t g = static_cast<uint32_t>(b[7]);
             if (g >= sp.segCount) { onTwig = false; continue; }
             const float* s = &f.segments[(sp.segStart + g) * 8];
             const float dx = s[4] - b[0], dy = s[5] - b[1], dz = s[6] - b[2];
-            onTwig = onTwig && dx * dx + dy * dy + dz * dz < 1e-6f;
+            const float reach = 0.45f * b[3] + 1e-3f;
+            onTwig = onTwig && dx * dx + dy * dy + dz * dz < reach * reach;
             for (uint32_t j = sp.bloomStart; j < i; ++j) {
                 const float* c = &f.blooms[j * 8];
                 const float ex = c[0] - b[0], ey = c[1] - b[1], ez = c[2] - b[2];

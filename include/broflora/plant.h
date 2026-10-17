@@ -220,6 +220,30 @@ struct Species {
     //   bloomColor  its blooms' albedo (linear)
     //   bloomSize   a bloom's size (m): a flower's or a head's across, a
     //               spike's length
+    // A broad leaf's own look (leafForm Broad; the renderer cuts the
+    // outline per pixel, so none of it costs geometry):
+    //   leafWidth   its width over its length (0: the renderer's, ~0.5): a
+    //               boxwood's near-round leaf 0.6, a willow's 0.15
+    //   leafTip     0 drawn to a point (acuminate: hydrangea), 1 blunt and
+    //               rounded (obtuse: boxwood)
+    //   leafTeeth   teeth along each side of the margin (0: entire)
+    //   leafToothDepth  how deep each cuts in, of the half-width: a fine
+    //               serration ~0.05, a holly's spines ~0.3 (each spine then
+    //               a sharp point, not a rounded tooth)
+    //   leafGloss   0 a matte leaf (the renderer's roughness), 1 a waxy,
+    //               glossy one (holly): a tighter, brighter sun highlight
+    float leafWidth          = 0.0f;
+    float leafTip            = 0.0f;
+    float leafTeeth          = 0.0f;
+    float leafToothDepth     = 0.0f;
+    float leafGloss          = 0.0f;
+    // A needle or scale-leaf spray's set in its clump (leafForm Needle or
+    // Scale):
+    //   sprayBrush  0: the sprays lie round the clump, facing out (a fir's,
+    //               a cypress's smooth mass); 1: they radiate from the
+    //               shoot's end and sweep up, a brush of needles (a pine's
+    //               tufts)
+    float sprayBrush         = 0.0f;
     uint32_t leafForm        = 0;
     bromath::Vec3 leafColor  = {0.0f, 0.0f, 0.0f};
     bromath::Vec3 barkColor  = {0.0f, 0.0f, 0.0f};

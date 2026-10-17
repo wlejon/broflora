@@ -608,6 +608,12 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readFloatField(spec, "clumpFill",                   s.clumpFill);
     readFloatField(spec, "clumpInner",                  s.clumpInner);
     readFloatField(spec, "clumpGap",                    s.clumpGap);
+    readFloatField(spec, "leafWidth",                   s.leafWidth);
+    readFloatField(spec, "leafTip",                     s.leafTip);
+    readFloatField(spec, "leafTeeth",                   s.leafTeeth);
+    readFloatField(spec, "leafToothDepth",              s.leafToothDepth);
+    readFloatField(spec, "leafGloss",                   s.leafGloss);
+    readFloatField(spec, "sprayBrush",                  s.sprayBrush);
     {
         // "none" / "flower" / "head" / "spike" or its number.
         Value bf = ev::getProperty(spec, "bloomForm");
@@ -692,6 +698,12 @@ inline Value speciesObject(const broflora::Species& s) {
     num("clumpFill", s.clumpFill);
     num("clumpInner", s.clumpInner);
     num("clumpGap", s.clumpGap);
+    num("leafWidth", s.leafWidth);
+    num("leafTip", s.leafTip);
+    num("leafTeeth", s.leafTeeth);
+    num("leafToothDepth", s.leafToothDepth);
+    num("leafGloss", s.leafGloss);
+    num("sprayBrush", s.sprayBrush);
     {
         static const char* const kBlooms[] = {"none", "flower", "head", "spike"};
         Value str = ev::fromUtf8(s.bloomForm < broflora::kBloomFormCount ? kBlooms[s.bloomForm] : "none");

@@ -176,6 +176,8 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.growthScale = 2.0f; s.orthotropy = 0.85f; s.tropismG2 = 0.09f; s.apicalControl = 0.55f;
             s.leafSize = 0.6f; s.pipeExp = 2.4f;   // a slender stem
             s.leafColor = rgb(0.08f, 0.155f, 0.04f);
+            // Triangular-ovate leaves, double toothed.
+            s.leafWidth = 0.65f; s.leafTeeth = 9.0f; s.leafToothDepth = 0.07f; s.leafGloss = 0.2f;
             bark(s, 0.15f, 0.7f, 0.1f, 0.3f);
             s.barkColor = rgb(0.72f, 0.70f, 0.65f);
         }
@@ -207,12 +209,16 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.kink = 0.1f; s.individualVariation = 0.35f;
             s.pipeExp = 1.55f;
             s.tropismG2 = 0.04f;
-            bark(s, 0.8f, 1.8f, 0.2f, 0.5f);
-            s.barkColor = rgb(0.44f, 0.21f, 0.10f);
+            // Red-orange plates parted by narrower furrows than the
+            // spruce's or the fir's (the upper stem's bark is thin).
+            bark(s, 0.6f, 1.8f, 0.2f, 0.5f);
+            s.barkColor = rgb(0.50f, 0.21f, 0.085f);
             s.leafColor = rgb(0.05f, 0.085f, 0.055f);
             // Tufts at the boughs' ends with sky between them, no spire:
             // only the outermost shoots carry needles (clumpFill 0), so the
-            // limbs inside the crown are bare.
+            // limbs inside the crown are bare. Each tuft a brush of needles
+            // radiating from its shoot's end, swept up.
+            s.sprayBrush = 1.0f;
             s.clumpFlat = 0.4f; s.clumpReach = 0.0f; s.clumpScale = 0.6f;
             s.clumpFill = 0.0f; s.clumpGap = 1.3f;
         } else if (name == "spruce") {
@@ -333,6 +339,9 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.leafColor = rgb(0.035f, 0.08f, 0.025f);
             s.clumpScale = 0.85f;
             s.leafSize = 0.3f;
+            // Small oval leaves, blunt and round-tipped, entire, with a
+            // soft sheen.
+            s.leafWidth = 0.6f; s.leafTip = 1.0f; s.leafGloss = 0.35f;
         } else if (name == "holly") {
             // Upright and dense, glossy dark green.
             d.root = basalStemsModule(4, 0.3f, 0.45f, 1.0f, "holly:root");
@@ -340,6 +349,9 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.orthotropy = 0.62f;
             s.leafColor = rgb(0.02f, 0.05f, 0.022f);
             s.leafSize = 0.55f;
+            // Stiff, waxy leaves edged with a few sharp spines.
+            s.leafWidth = 0.55f; s.leafTip = 0.2f; s.leafTeeth = 3.0f; s.leafToothDepth = 0.32f;
+            s.leafGloss = 0.9f;
         } else if (name == "hydrangea") {
             // A broad rounded mound of arching stems, big pale leaves.
             d.root = basalStemsModule(8, 0.7f, 0.3f, 1.0f, "hydrangea:root");
@@ -348,6 +360,9 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.tropismG2 = 0.1f;
             s.leafColor = rgb(0.065f, 0.13f, 0.04f);
             s.leafSize = 1.1f;
+            // Broad, ovate leaves drawn to a point, finely toothed, matte.
+            s.leafWidth = 0.62f; s.leafTip = 0.0f; s.leafTeeth = 12.0f; s.leafToothDepth = 0.06f;
+            s.leafGloss = 0.1f;
             // Mophead blooms: big round heads of pale blue florets.
             s.bloomForm = static_cast<uint32_t>(BloomForm::Head);
             s.bloomColor = rgb(0.42f, 0.5f, 0.85f);
@@ -359,6 +374,9 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.orthotropy = 0.65f;
             s.leafColor = rgb(0.06f, 0.125f, 0.035f);
             s.leafSize = 0.8f;
+            // Glossy ovate leaves, coarsely toothed.
+            s.leafWidth = 0.6f; s.leafTip = 0.1f; s.leafTeeth = 7.0f; s.leafToothDepth = 0.08f;
+            s.leafGloss = 0.6f;
             // Large open red flowers.
             s.bloomForm = static_cast<uint32_t>(BloomForm::Flower);
             s.bloomColor = rgb(0.8f, 0.06f, 0.08f);

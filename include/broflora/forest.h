@@ -78,6 +78,10 @@ struct ForestSpecimen {
     bromath::Vec3 barkColor{};
     float leafSize = 1.0f;         // Species::leafSize
     float clumpFlat = 1.0f;        // Species::clumpFlat: its clumps' height over their width
+    // Its broad leaf's look: Species::leafWidth, leafTip, leafTeeth,
+    // leafToothDepth, leafGloss.
+    float leafWidth = 0.0f, leafTip = 0.0f, leafTeeth = 0.0f, leafToothDepth = 0.0f, leafGloss = 0.0f;
+    float sprayBrush = 0.0f;       // Species::sprayBrush
     // Its blooms (ForestEmit::blooms), and what they are: Species::bloomForm,
     // bloomColor and bloomSize (count 0 for a plant not flowering, or one
     // whose species bears none).
