@@ -1,5 +1,8 @@
 #include "native_flora_internal.h"
 
+#include <chrono>
+#include <cmath>
+#include <cstdio>
 #include <mutex>
 #include <unordered_set>
 
@@ -245,8 +248,7 @@ Value jsAddPrototype(Value /*thisVal*/, std::span<const Value> args) {
     if (!w || !w->world) return ev::fromDouble(-1.0);
 
     broflora::BranchModulePrototype proto;
-    std::string nameStorage;
-    switch (buildPrototype(args[1], proto, nameStorage)) {
+    switch (buildPrototype(args[1], proto)) {
         case BuildResult::Ok: break;
         case BuildResult::NotAPrototype: return ev::fromDouble(-1.0);
         case BuildResult::Threw: return ev::undefined();
@@ -333,6 +335,99 @@ Value jsStep(Value /*thisVal*/, std::span<const Value> args) {
         return ev::throwRangeError("step: dt must be a finite number >= 0");
     broflora::step(*w->world, static_cast<float>(dt));
     return args[0];
+}
+
+// ── ForestCover handles ───────────────────────────────────────────────
+// Branded like the worlds: a payload is read as a ForestCover only while
+// its handle lives.
+std::mutex& coverBrandMutex() {
+    static std::mutex m;
+    return m;
+}
+std::unordered_set<const void*>& coverBrands() {
+    static auto* s = new std::unordered_set<const void*>();
+    return *s;
+}
+void destroyForestCover(void* p) {
+    {
+        std::lock_guard<std::mutex> lk(coverBrandMutex());
+        coverBrands().erase(p);
+    }
+    delete static_cast<broflora::ForestCover*>(p);
+}
+const broflora::ForestCover* getCover(Value v) {
+    void* data = ev::handleData(v);
+    if (!data) return nullptr;
+    std::lock_guard<std::mutex> lk(coverBrandMutex());
+    return coverBrands().count(data) ? static_cast<const broflora::ForestCover*>(data) : nullptr;
+}
+
+// forestCover(trees Float64Array of [x, z, crownX, crownZ, crownRadius]...,
+// floor, closed, trunkClear) -> handle
+Value jsForestCover(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.size() < 4) return ev::undefined();
+    const auto info = ev::typedArrayInfo(args[0]);
+    if (!info || info.elementKind != ev::elements::Float64)
+        return ev::throwTypeError("forestCover: trees must be a Float64Array");
+    std::vector<broflora::ForestCoverTree> trees(info.elementCount / 5);
+    const auto* d = reinterpret_cast<const double*>(info.data);
+    for (size_t k = 0; k < trees.size(); ++k)
+        trees[k] = {d[k * 5], d[k * 5 + 1], d[k * 5 + 2], d[k * 5 + 3], d[k * 5 + 4]};
+    broflora::ForestCoverOptions o;
+    o.floor = ev::toDouble(args[1]);
+    o.closed = ev::toDouble(args[2]);
+    o.trunkClear = ev::toDouble(args[3]);
+    auto* cover = new broflora::ForestCover(trees, o);
+    {
+        std::lock_guard<std::mutex> lk(coverBrandMutex());
+        coverBrands().insert(cover);
+    }
+    return ev::makeHandle(cover, &destroyForestCover, ev::Finalize::InSweep);
+}
+
+// forestCoverAt(handle, x, z) -> 0..1
+Value jsForestCoverAt(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.size() < 3) return ev::fromDouble(0.0);
+    const auto* cover = getCover(args[0]);
+    if (!cover) return ev::throwTypeError("forestCoverAt: not a forest cover");
+    return ev::fromDouble(cover->at(ev::toDouble(args[1]), ev::toDouble(args[2])));
+}
+
+// grow(world, ticks, dt, cacheDir) -> { cached, key, ms, error? }
+Value jsGrow(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.empty()) return ev::undefined();
+    auto* w = getWrapper(args[0]);
+    if (!w || !w->world) return ev::undefined();
+    if (args.size() < 3 || !ev::isNumber(args[1]) || !ev::isNumber(args[2]))
+        return ev::throwTypeError("grow: ticks and dt must be numbers");
+    const double ticks = ev::toDouble(args[1]);
+    const double dt = ev::toDouble(args[2]);
+    if (!(ticks >= 0.0 && ticks <= 4294967295.0) || ticks != std::floor(ticks))
+        return ev::throwRangeError("grow: ticks must be an integer >= 0");
+    if (!(dt >= 0.0 && dt <= 3.4e38))
+        return ev::throwRangeError("grow: dt must be a finite number >= 0");
+    std::string dir;
+    if (args.size() > 3 && ev::isString(args[3])) dir = ev::toUtf8(args[3]);
+
+    const auto t0 = std::chrono::steady_clock::now();
+    const broflora::GrowResult r =
+        broflora::growCached(*w->world, static_cast<uint32_t>(ticks), static_cast<float>(dt), dir);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+
+    char key[17];
+    std::snprintf(key, sizeof(key), "%016llx", static_cast<unsigned long long>(r.key));
+    ev::Persistent o(ev::createObject());
+    o.set(ev::setProperty(o.get(), "cached", ev::fromBool(r.cached)));
+    o.set(ev::setProperty(o.get(), "ms", ev::fromDouble(ms)));
+    if (!dir.empty()) {
+        Value k = ev::fromUtf8(key);
+        o.set(ev::setProperty(o.get(), "key", k));
+    }
+    if (!r.error.empty()) {
+        Value e = ev::fromUtf8(r.error);
+        o.set(ev::setProperty(o.get(), "error", e));
+    }
+    return o.get();
 }
 
 Value jsPlantInfo(Value /*thisVal*/, std::span<const Value> args) {
@@ -620,6 +715,9 @@ void registerFloraNativeHelpers() {
     REG_FN(addPlant, 2, jsAddPlant);
     REG_FN(removePlant, 2, jsRemovePlant);
     REG_FN(step, 2, jsStep);
+    REG_FN(grow, 4, jsGrow);
+    REG_FN(forestCover, 4, jsForestCover);
+    REG_FN(forestCoverAt, 3, jsForestCoverAt);
     REG_FN(plantInfo, 2, jsPlantInfo);
     REG_FN(setClimate, 2, jsSetClimate);
     REG_FN(sampleShadow, 2, jsSampleShadow);

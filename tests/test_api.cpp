@@ -157,6 +157,21 @@ static void test_api_option_readers() {
         if (info0.species.tropismDir[2] !== 0.5) fail("species.tropismDir not read: " + info0.species.tropismDir);
         if (info0.species.maxAge !== 90) fail("species.maxAge not read");
         if (Math.abs(info0.rootVigor - 3) > 1e-6) fail("initialVigor not read: " + info0.rootVigor);
+        // grow(ticks, dt) is that many steps: a twin grown in one call
+        // emits the same segments.
+        const twin = F.createWorld({ rngSeed: 7, shadow: { origin: [-4, 0, -4], cellSize: 0.5, width: 16, height: 16, depth: 16 } });
+        const solo = F.createWorld({ rngSeed: 7, shadow: { origin: [-4, 0, -4], cellSize: 0.5, width: 16, height: 16, depth: 16 } });
+        for (const v of [twin, solo]) {
+            v.addPrototype(F.prototypes.straight());
+            v.addVoronoiSite(0, 0.5, 0.5);
+            v.addPlant({ origin: [0, 0, 0], prototypeIndex: 0, initialVigor: 3 });
+        }
+        for (let i = 0; i < 30; i++) solo.step(0.25);
+        const g = twin.grow(30, 0.25);
+        if (!g || g.cached !== false || !(g.ms >= 0)) fail("grow result shape: " + JSON.stringify(g));
+        const sa = JSON.stringify(solo.emitSegments()), sb = JSON.stringify(twin.emitSegments());
+        if (sa.length < 100 || sa !== sb) fail("grow(30, 0.25) differs from 30 steps");
+
         for (let i = 0; i < 40; i++) w.step(0.25);
         if (w.validate() !== null) fail("validate: " + w.validate());
 

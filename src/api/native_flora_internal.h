@@ -563,18 +563,15 @@ enum class BuildResult { Ok, NotAPrototype, Threw };
 // references -- rootNode, both ends of every edge, every terminal -- must be
 // integers naming a node, or it throws a RangeError: the simulation indexes
 // `nodes` with them unchecked.
-inline BuildResult buildPrototype(Value in,
-                                  broflora::BranchModulePrototype& out,
-                                  std::string& nameStorage) {
+inline BuildResult buildPrototype(Value in, broflora::BranchModulePrototype& out) {
     if (!ev::isObject(in)) return BuildResult::NotAPrototype;
     Rooted spec(in);
     constexpr std::string_view kWhat = "bro.flora.FloraWorld.addPrototype: ";
 
+    // The world keeps the name as a `const char*` it does not own: interned,
+    // it lives as long as the process.
     Value nameV = ev::getProperty(spec, "name");
-    if (ev::isString(nameV)) {
-        nameStorage = ev::toUtf8(nameV);
-        out.name = nameStorage.c_str();
-    }
+    if (ev::isString(nameV)) out.name = broflora::internName(ev::toUtf8(nameV));
 
     Rooted nodesV(ev::getProperty(spec, "nodes"));
     if (ev::isObject(nodesV)) {

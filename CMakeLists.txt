@@ -30,6 +30,8 @@ add_library(broflora STATIC
     src/prototypes.cpp
     src/leaf_cluster.cpp
     src/sdf_mesh.cpp
+    src/world_io.cpp
+    src/forest_cover.cpp
 )
 add_library(broflora::broflora ALIAS broflora)
 
@@ -67,6 +69,43 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bro_deps.cmake)
 
 bro_dependency(bromath GITHUB wlejon/bromath TARGET bromath::bromath)
 target_link_libraries(broflora PUBLIC bromath::bromath)
+
+# BROFLORA_SIM_HASH: the hash of the step's source (its translation units,
+# the headers they read, bromath's headers, and the serializer), which keys
+# growCached's cache of grown worlds. Only what a step computes with is in
+# it, so an edit to emit or clumps keeps the cache warm.
+get_target_property(_bromath_inc bromath::bromath INTERFACE_INCLUDE_DIRECTORIES)
+set(_bromath_headers "")
+foreach(_d IN LISTS _bromath_inc)
+    string(REGEX REPLACE "^\\$<BUILD_INTERFACE:(.*)>$" "\\1" _d "${_d}")
+    if(_d MATCHES "^\\$<" OR NOT IS_DIRECTORY "${_d}")
+        continue()
+    endif()
+    file(GLOB_RECURSE _h CONFIGURE_DEPENDS "${_d}/bromath/*.h")
+    list(APPEND _bromath_headers ${_h})
+endforeach()
+list(SORT _bromath_headers)
+set(_sim_sources)
+foreach(_f world light vigor development spawning senescence world_io)
+    list(APPEND _sim_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/${_f}.cpp")
+endforeach()
+foreach(_f world module environment plant orientation light vigor development spawning senescence world_io)
+    list(APPEND _sim_sources "${CMAKE_CURRENT_SOURCE_DIR}/include/broflora/${_f}.h")
+endforeach()
+file(GLOB _sim_internal CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/internal_*.h")
+list(SORT _sim_internal)
+list(APPEND _sim_sources ${_sim_internal} ${_bromath_headers})
+set(_sim_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
+add_custom_command(
+    OUTPUT "${_sim_dir}/sim_hash.stamp"
+    BYPRODUCTS "${_sim_dir}/broflora/sim_hash.h"
+    COMMAND ${CMAKE_COMMAND} "-DOUT=${_sim_dir}/broflora/sim_hash.h" "-DSTAMP=${_sim_dir}/sim_hash.stamp"
+            "-DFILES=${_sim_sources}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sim_hash.cmake"
+    DEPENDS ${_sim_sources} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sim_hash.cmake"
+    COMMENT "broflora: hashing the step's source"
+    VERBATIM)
+target_sources(broflora PRIVATE "${_sim_dir}/sim_hash.stamp")
+target_include_directories(broflora PRIVATE "${_sim_dir}")
 
 # broflora emits geometry as bromesh::MeshData and is meaningless without
 # bromesh in the picture.

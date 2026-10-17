@@ -17,6 +17,8 @@ add_executable(broflora_test
     test_terrain.cpp
     test_remove_plant.cpp
     test_leaf_cluster.cpp
+    test_world_io.cpp
+    test_forest_cover.cpp
 )
 
 target_link_libraries(broflora_test PRIVATE broflora)
