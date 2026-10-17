@@ -1970,6 +1970,126 @@ In `demos/forest/captures/`:
   re-encode limit, as the grove's were. They could go to JPEG as the
   grove's have.
 
+## Step 8b: herbs, the low plants
+
+Ferns, wildflowers and forbs from 1 m to the horizon, in place of the
+forest's floor sprouts. Commits: broflora `4e39972`, bro `9ccf0f5c`,
+broworkshop `2470bb1`.
+
+### What changed
+
+- **Species, nothing grown** (`herbs.h`). Eleven presets:
+  - ferns: bracken, lady fern;
+  - wildflowers: daisy, poppy, foxglove, bluebell;
+  - forbs and ground cover: yarrow, nettle, plantain, clover, wood sorrel.
+
+  Each preset has a habit (rosette, leafy stems or carpet), a leaf form, a
+  bloom (ray, cup, head, spike, umbel or bell) and where it grows (shade
+  preference, colony period and cover, abundance). Its stem and leaf
+  cantilevers are worked out from its build (`herbSway`).
+  `herbRecords` packs up to 12 species into the 48-float table the grass
+  node reads.
+- **Built where they stand** (bro: `scene_herb_mix.glsl`, `scene_herb.glsl`,
+  `scene_herb_surface.glsl`, `mesh_herb.vert`).
+  - The grass node has a grid of 0.35 m cells, each holding at most one
+    plant. The plant is picked from each species' abundance, the light the
+    floor's canopy leaves it and its colonies (noise of its own period),
+    times the floor's herb density (a second floor channel).
+  - Two rings reach to `range`:
+    - near: 14 cards of 5 segments;
+    - far: 7 cards of 2 segments. A flowering plant there keeps three
+      leaves, dropping stems for them. Widening is capped at 1.6.
+  - The cards are cut per pixel: fronds with lobed pinnae, toothed and
+    lobed leaves, trifoliates, rays, cups, heads, spikes, umbels and bells.
+  - They sway by the trees' rule (`vegLevel` cantilevers) with a
+    saturation so a tall stem never hooks over. Shelter is 1 − 0.8 ×
+    canopy. Leaves flutter only in wind.
+  - Herbs cast no shadows.
+- **The hand-over**, through the last quarter of `range`:
+  - Blades stand in, as many as the herbs cover × 0.6:
+    - a leaf blade stands at its species' leaf top (a rosette's lies low,
+      under its flowers), blunt and as broad as 0.8 × its height, so a
+      stand of bracken is a mass rather than spikes;
+    - a bloom is a short dab held at the flowers' height.
+  - The turf takes the herbs' mean colour. It comes from a per-node table
+    by canopy, averaged over every combination of the species' colonies
+    (`GrassNode::herbMean`). Weighing every species per pixel cost the turf
+    pass 0.1 to 0.15 ms even where no herbs grow, before any branch was
+    taken.
+  - The blades' herb mix now runs after their off-screen cull, not before.
+- **Forest:** all eleven presets, each finding its own light. The plants
+  reach 24 m: 30 m cost about 0.05 ms more at the trace's low views.
+  **Grove:** the meadow's six wildflowers.
+
+### Numbers
+
+**Trace.** 1280x720, 4x MSAA. This session the machine ran noisier than in
+round 4: the same build varies by about 0.1 ms on p95 between runs, and
+herbs-off runs reached 5.25.
+
+| | Round 4 | Herbs off (`h8off`) | Herbs (`h8t2`, `h8t3`, `h8t5`) | Target |
+|---|---|---|---|---|
+| max | 5.36 | 5.63 | 5.95 / 6.28 / 6.25 | 6.0 |
+| p95 | 4.98 | 4.98 | 5.12 / 5.10 / 5.08 | 5.1 |
+| median | 4.15 | 4.20 | 4.31 / 4.29 / 4.29 | 4.4 |
+
+- **Max.** The max sits on plateaus of 6 to 8 consecutive frames at about
+  6.2 ms (frames 950 to 960, 758 to 763). These plateaus appear in
+  herbs-off runs too.
+- **Herbs' cost.** Measured frame by frame against herbs-off runs, with the
+  runs interleaved: herbs cost 0.05 to 0.13 ms over the low part of the
+  flight (frames 600 to 1021) and nothing above the canopy.
+
+**Hand-over** (`forest herbs`, `h8_herbmetrics.json`). The plants drawn to
+200 m against handed over at 24 m, per band of ground distance:
+
+| Shot, sky | 2-12 | 12-24 | 24-40 | 40-80 |
+|---|---|---|---|---|
+| glade noon, dY / drgb | -0.1 / 0.5 | -0.5 / 1.0 | +2.4 / 5.8 | +10.2 / 15.6 |
+| glade golden, dY / drgb | +0.3 / 0.5 | +0.1 / 0.4 | -0.4 / 1.6 | +2.9 / 6.5 |
+| trunks noon, dY / drgb | -0.1 / 0.1 | +0.1 / 0.3 | | |
+| trunks golden, dY / drgb | +0.3 / 0.4 | +0.9 / 1.3 | | |
+
+The noon glade's 40-80 m band is only 1232 px, the glade's far edge.
+Darkening the turf's and the blades' herb tint moved it by under 2.
+
+**Tests:**
+
+- bro: scene 79/79 (`test_grass_floor_turf` now tests herbs, not the floor
+  sprouts) and flora 7/7;
+- broflora ctest 4/4;
+- broworkshop `validate.sh demos/forest demos/grove`: 4/4.
+
+### Captures
+
+In broworkshop `demos/grove/captures/`:
+
+- `h8_<preset>_{noon,golden}.jpg`: each preset alone at 1, 3, 10 and 30 m;
+- `h8_<preset>_sil.jpg`: their silhouettes;
+- `h8_meadow_{noon,golden}.jpg`: the meadow's mix at 0.5, 3, 10 and 60 m.
+  The grove's ground ends before 150 m.
+
+In `demos/forest/captures/`:
+
+- `forest_glade.png`, `forest_trunks.png`, `forest_skim.png`;
+- `h8_herbmetrics.json`;
+- `h8t1`..`h8t5_trace.json`, `h8off_trace.json`.
+
+### Still open
+
+- **The budget.** p95 is at the 5.1 limit, not under it, and max is over
+  6.0 on the plateaus.
+- **Far fern stands.** From 30 to 100 m the stand-in blades read as
+  separate pale plates rather than a continuous mass, and they are paler
+  than the plants they replace. The glade's 40-80 m band is +10 at noon.
+- **Bluebell's bells** read as a comb of trapezoids at 1 m.
+- **The meadow at 150 m** needs the forest's glade. The grove's ground ends
+  before then.
+- **Carried over from round 4:**
+  - the far canopy's sun-height gap: noon 80-160 m at +3.6 (target 3),
+    golden at -7.9 (target -6.3). Not worked on in this step;
+  - the forest compare captures are now JPEG.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
