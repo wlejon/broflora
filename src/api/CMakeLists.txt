@@ -42,6 +42,7 @@ set(BROFLORA_API_SOURCES
     native_flora.cpp
     native_flora_emit.cpp
     native_flora_clumps.cpp
+    native_flora_herbs.cpp
 )
 
 add_library(broflora_api STATIC

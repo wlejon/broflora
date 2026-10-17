@@ -750,6 +750,9 @@ void registerFloraNativeHelpers() {
     REG_FN(speciesPresets, 0, jsSpeciesPresets);
     REG_FN(addSpecies, 2, jsAddSpecies);
     REG_FN(plantSpecies, 3, jsPlantSpecies);
+    REG_FN(herbPresets, 0, jsHerbPresets);
+    REG_FN(herbPreset, 1, jsHerbPreset);
+    REG_FN(herbRecords, 1, jsHerbRecords);
     REG_FN(removePlant, 2, jsRemovePlant);
     REG_FN(step, 2, jsStep);
     REG_FN(grow, 4, jsGrow);

@@ -21,6 +21,7 @@ add_executable(broflora_test
     test_world_io.cpp
     test_forest_cover.cpp
     test_presets.cpp
+    test_herbs.cpp
 )
 
 target_link_libraries(broflora_test PRIVATE broflora)

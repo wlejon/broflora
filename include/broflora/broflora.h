@@ -20,5 +20,6 @@
 #include "broflora/clumps.h"
 #include "broflora/forest.h"
 #include "broflora/forest_cover.h"
+#include "broflora/herbs.h"
 #include "broflora/leaf_cluster.h"
 #include "broflora/sdf_mesh.h"

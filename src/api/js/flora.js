@@ -473,6 +473,22 @@
         return _native && _native.speciesPresets ? _native.speciesPresets() : [];
     });
 
+    // Herbs (broflora/herbs.h): ferns, wildflowers, forbs and ground cover,
+    // drawn by bro.scene's grass node (createGrass({herbs})) from a species
+    // table, nothing grown. herbPreset(name | {preset, ...fields}) is the
+    // species as an object (its sway and its mean colour from above worked
+    // out); herbRecords([names or specs]) the table the grass node reads.
+    fn(ns_flora, "herbPresets", function herbPresets() {
+        return _native && _native.herbPresets ? _native.herbPresets() : [];
+    });
+    fn(ns_flora, "herbPreset", function herbPreset(spec) {
+        return _native && _native.herbPreset ? _native.herbPreset(spec) : null;
+    });
+    fn(ns_flora, "herbRecords", function herbRecords(list) {
+        if (!Array.isArray(list)) list = [list];
+        return _native && _native.herbRecords ? _native.herbRecords(list) : new Float32Array(0);
+    });
+
     fn(FloraWorld.prototype, "addSpecies", function addSpecies(name) {
         return _native && _native.addSpecies ? _native.addSpecies(this, '' + name) : null;
     });
