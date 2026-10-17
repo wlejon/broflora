@@ -30,7 +30,8 @@
 //          reference wind kSwayReferenceWind: the drag on the leaves it
 //          carries (0.5 rho Cd A U^2, A the leaf face: the crown's disc
 //          times kSwayCrownFill, shared among segments by their foliage),
-//          each piece weighted by phi(s), over k. At one length and load a
+//          each piece weighted by phi(s) and by the shelter of the crown
+//          above it (kSwayCrownShelter), over k. At one length and load a
 //          twice thicker branch deflects 16x less; a twice longer one 4x
 //          more.
 //
@@ -73,6 +74,19 @@ inline constexpr float kSwayWoodDensity = 800.0f;   // kg/m^3: green hardwood
 inline constexpr float kSwayTrunkGain = 10.0f;
 inline constexpr float kSwayLimbGain = 4.0f;
 inline constexpr float kSwayTwigGain = 1.0f;
+// The wind inside and under a crown: it falls off down through the leaves
+// the crown holds above, u(z) = u_top exp(-a (1 - z / H)) (Cionco's canopy
+// profile; a from about 1 in a sparse crown to 4 in a dense one), so the
+// drag on a piece at height z is exp(-2 a (1 - z / H)) of the drag at the
+// top. A tree's lowest boughs, long and heavy but in the still air under
+// the crown, hardly move; the upper crown and the leader carry the motion.
+inline constexpr float kSwayCrownShelter = 2.5f;
+// Where in the plant kSwayReferenceWind blows: at this share of its height
+// (a broadleaf crown's middle), stronger above, weaker below.
+inline constexpr float kSwayReferenceHeight = 0.75f;
+// The drag on a piece at height `z` above the plant's base of height `h`,
+// against the drag at its top.
+float swayShelter(float z, float h);
 
 // One level as a cantilever. `length` in the plant's units (metres).
 struct Cantilever {
@@ -87,7 +101,23 @@ struct Cantilever {
 struct CantileverLoad {
     float mass = 0.0f;   // kg (the beam's own wood included)
     float area = 0.0f;   // m^2 of leaf face
+    // kg: every piece's mass times phi(s), what gravity bends a level that
+    // leaves its parent sideways by (a limb, a twig; 0 for an upright trunk).
+    float weight = 0.0f;
 };
+
+// A limb holds its own weight: whatever the beam of its base diameter gives,
+// it is at least stiff enough that its weight bends its tip no more than
+// this share of its length (wood grows to its load: thigmomorphogenesis and
+// reaction wood; a beam of the simulation's pipe-model diameter alone would
+// let a long, leafy low bough sag metres). So a long heavy bough, which
+// must be stiff to stand out at all, deflects little in the wind, and a
+// light shoot high in the crown, with little weight to bear, moves most.
+inline constexpr float kSwaySagLimit = 0.08f;
+// The bending strain at a level's base the reference wind takes it to at
+// most (green wood breaks near 0.7%; its leaves streamline and spill the
+// wind long before), so a slender, top-heavy stem leans, not whips.
+inline constexpr float kSwayWorkingStrain = 0.002f;
 
 // The mode's shape at s in [0, 1] along a cantilever: s^2 (3 - s) / 2.
 float swayModeShape(float s);
@@ -124,7 +154,9 @@ Cantilever swayCantilever(float d, float L, const CantileverLoad& load, float ga
 //
 // The trunk is the leader chain from the thickest root segment: the
 // thickest child at each fork while it keeps at least 80% of its parent's
-// radius and 35% of the base radius.
+// radius and 10% of the base radius: a conifer's leader runs on to its top,
+// so its upper boughs are light limbs of their own rather than one heavy
+// limb the whole upper crown hangs from.
 struct SegmentSway {
     bromath::Vec3 root{};
     float height = 1.0f;

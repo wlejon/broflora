@@ -116,6 +116,40 @@ int main(int argc, char** argv) {
         std::printf("           spread by band (low to high):");
         for (float s : spread) std::printf(" %5.2f", s);
         std::printf("\n");
+        if (std::getenv("REPORT_SWAY")) {
+            // The wind's static bend at kSwayReferenceWind by height band:
+            // the trunk's at the band, and the largest limb (+ twig) tip
+            // deflection of the limbs leaving the trunk in it (metres), with
+            // that limb's base diameter, length and frequency.
+            const auto sw = emitPlantSway(p);
+            auto bend = [](float s) { return s <= 1.0f ? s * s * (3.0f - s) * 0.5f : 1.0f + 1.5f * (s - 1.0f); };
+            float trunkTip[kBands] = {}, limbTip[kBands] = {}, twigTip[kBands] = {}, limbD[kBands] = {},
+                  limbL[kBands] = {}, limbF[kBands] = {};
+            for (size_t i = 0; i < segs.size() && i < sw.size(); ++i) {
+                const auto& s = sw[i];
+                const float y = segs[i].to.y - p.origin.y;
+                const int b = std::clamp(static_cast<int>(y / std::max(top, 1e-3f) * kBands), 0, kBands - 1);
+                trunkTip[b] = std::max(trunkTip[b], s.trunk.sway * s.trunk.length * bend(std::clamp(y / s.height, 0.0f, 1.3f)));
+                const bool limbStart = s.limb.sway > 0.0f && s.weightFrom == 0.0f;
+                if (!limbStart) continue;
+                const float yb = segs[i].from.y - p.origin.y;
+                const int bb = std::clamp(static_cast<int>(yb / std::max(top, 1e-3f) * kBands), 0, kBands - 1);
+                const float tip = s.limb.sway * s.limb.length;
+                if (tip > limbTip[bb]) {
+                    limbTip[bb] = tip;
+                    twigTip[bb] = s.twig.sway * s.twig.length;
+                    limbD[bb] = 2.0f * segs[i].radius;
+                    limbL[bb] = s.limb.length;
+                    limbF[bb] = s.limb.freq;
+                }
+            }
+            std::printf("           trunk %.2f Hz sway %.4f\n", sw.empty() ? 0.0f : sw[0].trunk.freq,
+                        sw.empty() ? 0.0f : sw[0].trunk.sway);
+            for (int b = 0; b < kBands; ++b) {
+                std::printf("           band %d: trunk %.3f m  limb tip %.3f m (d %.3f L %.2f f %.2f Hz)  twig %.3f m\n", b,
+                            trunkTip[b], limbTip[b], limbD[b], limbL[b], limbF[b], twigTip[b]);
+            }
+        }
         if (std::getenv("REPORT_LEADER")) {
             // The leader chain from the root: each module's state and its
             // children's vigor.

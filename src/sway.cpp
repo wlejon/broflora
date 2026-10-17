@@ -61,7 +61,7 @@ void computePlantSway(const Plant& plant,
 
     // The trunk: the leader chain from the thickest root segment, taking the
     // thickest child at each fork while it stays dominant (>= 80% of its
-    // parent; a fork into equal limbs ends the trunk) and >= 35% of the base.
+    // parent; a fork into equal limbs ends the trunk) and >= 10% of the base.
     std::vector<char> trunk(n, 0);
     int cur = -1;
     for (size_t i = 0; i < n; ++i) {
@@ -77,7 +77,7 @@ void computePlantSway(const Plant& plant,
         }
         if (next < 0) break;
         const float r = segs[next].radius;
-        if (r < 0.35f * baseR || r < 0.8f * segs[cur].radius) break;
+        if (r < 0.1f * baseR || r < 0.8f * segs[cur].radius) break;
         cur = next;
     }
 
@@ -125,6 +125,13 @@ void computePlantSway(const Plant& plant,
     for (size_t i = 0; i < n; ++i) foliage += mass(i) * len[i];
     const float faceArea = kSwayCrownFill * 3.14159265f * crownR * crownR;
     auto area = [&](size_t i) { return foliage > 0.0f ? faceArea * mass(i) * len[i] / foliage : 0.0f; };
+    // The face the wind meets at the piece, in the shelter of the crown
+    // above, kSwayReferenceWind blowing at kSwayReferenceHeight of the plant.
+    const float refShelter = swayShelter(kSwayReferenceHeight * common.height, common.height);
+    auto drag = [&](size_t i) {
+        return area(i) * swayShelter(0.5f * (segs[i].from.y + segs[i].to.y) - plant.origin.y, common.height) /
+               refShelter;
+    };
     auto pieceMass = [&](size_t i) {
         const float r = std::max(segs[i].radius, 0.0f);
         return kSwayWoodDensity * 3.14159265f * r * r * len[i] + kSwayLeafMass * area(i);
@@ -137,7 +144,7 @@ void computePlantSway(const Plant& plant,
         const float y = 0.5f * (segs[i].from.y + segs[i].to.y) - plant.origin.y;
         const float phi = swayModeShape(y / common.height);
         trunkLoad.mass += pieceMass(i) * phi * phi;
-        trunkLoad.area += area(i) * phi;
+        trunkLoad.area += drag(i) * phi;
     }
     const float trunkD = 2.0f * (trunkBase >= 0 ? segs[trunkBase].radius : 0.0f);
     common.trunk = swayCantilever(trunkD, common.height, trunkLoad, kSwayTrunkGain);
@@ -148,6 +155,7 @@ void computePlantSway(const Plant& plant,
     std::vector<int> limbOf(n, -1);
     std::vector<float> along(n, 0.0f);
     std::vector<CantileverLoad> limbLoad(n);
+    std::vector<float> limbOpen(n, 0.0f);   // its leaf face out of the crown's shelter
     for (size_t i = 0; i < n; ++i) {
         if (trunk[i]) continue;
         const int p = parentOf(i);
@@ -161,7 +169,9 @@ void computePlantSway(const Plant& plant,
         const float span = std::max(len[l] + rest[l], 1e-6f);
         const float phi = swayModeShape((along[i] + 0.5f * len[i]) / span);
         limbLoad[l].mass += pieceMass(i) * phi * phi;
-        limbLoad[l].area += area(i) * phi;
+        limbLoad[l].weight += pieceMass(i) * phi;
+        limbLoad[l].area += drag(i) * phi;
+        limbOpen[l] += area(i) * phi;
     }
 
     // Branch weight, continuous along every path: 0 on the trunk and where a
@@ -226,7 +236,11 @@ void computePlantSway(const Plant& plant,
             const float face = limbLoad[i].area > 0.0f ? kSwayLeafBreadth * twigLen : 0.0f;
             CantileverLoad tl;
             tl.mass = swayBeamMass(d, twigLen) + (33.0f / 140.0f) * kSwayLeafMass * face;
-            tl.area = 0.375f * face;
+            tl.weight = 0.375f * (kSwayWoodDensity * 0.785398f * d * d * twigLen + kSwayLeafMass * face);
+            // Its sprays stand in the limb's shelter (the share of its face's
+            // drag the crown above leaves it).
+            const float shelter = limbOpen[i] > 0.0f ? limbLoad[i].area / limbOpen[i] : 1.0f;
+            tl.area = 0.375f * face * shelter;
             s.twig = swayCantilever(d, twigLen, tl, kSwayTwigGain);
         }
     }
@@ -257,6 +271,11 @@ float swayModeShape(float s) {
     return s * s * (3.0f - s) * 0.5f;
 }
 
+float swayShelter(float z, float h) {
+    const float depth = std::clamp(1.0f - z / std::max(h, 1e-3f), 0.0f, 1.0f);
+    return std::exp(-2.0f * kSwayCrownShelter * depth);
+}
+
 float swayBeamMass(float d, float L) {
     return (33.0f / 140.0f) * kSwayWoodDensity * 3.14159265f * 0.25f * d * d * std::max(L, 0.0f);
 }
@@ -269,13 +288,18 @@ Cantilever swayCantilever(float d, float L, const CantileverLoad& load, float ga
     const float d2 = d * d;
     // The beam's tip stiffness, softened by the gain (what a uniform beam
     // on a rigid footing leaves out).
-    const float k = 3.0f * kSwayWoodModulus * (pi * d2 * d2 / 64.0f) / (c.length * c.length * c.length) /
-                    std::max(gain, 1e-3f);
+    // At least as stiff as holding its own weight takes (kSwaySagLimit).
+    const float k = std::max(3.0f * kSwayWoodModulus * (pi * d2 * d2 / 64.0f) / (c.length * c.length * c.length) /
+                                 std::max(gain, 1e-3f),
+                             9.81f * std::max(load.weight, 0.0f) / (kSwaySagLimit * c.length));
     const float m = std::max(load.mass, swayBeamMass(d, c.length));
     c.freq = std::clamp(std::sqrt(k / m) / (2.0f * pi), 0.08f, 12.0f);
     const float U = kSwayReferenceWind;
     const float F = 0.5f * kSwayAirDensity * kSwayDrag * std::max(load.area, 0.0f) * U * U;
-    c.sway = std::clamp(F / (k * c.length), 0.0f, 0.5f);
+    // No further than its wood's working strain lets it bend: a tip
+    // deflection d bends the base of a cantilever to the strain 3 D d / (2 L^2).
+    const float strainCap = 2.0f * kSwayWorkingStrain * c.length / (3.0f * d);
+    c.sway = std::clamp(F / (k * c.length), 0.0f, std::min(0.5f, strainCap));
     return c;
 }
 
