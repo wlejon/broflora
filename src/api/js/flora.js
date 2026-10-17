@@ -620,9 +620,10 @@
     // A conifer's leaf is a whole spray (bro.scene draws a needle or scale
     // form's leaves as spray cards): fewer of them, lying flatter. These fill
     // in what an emit filtered to that form does not say.
-    // A conifer's clumps overlap (clumpSpacing 0.8: dense, dark crowns);
-    // scale leaves pack closer still.
-    const _NEEDLE_EMIT = { perArea: 80, upBias: 0.65, tiltJitter: 0.3, clumpSpacing: 0.8 };
+    // A conifer's clumps are small and touch (clumpSpacing 1: dense, dark
+    // crowns of many tufts); each spray card covers what several broad
+    // leaves would. Scale leaves pack closer still.
+    const _NEEDLE_EMIT = { perArea: 50, upBias: 0.65, tiltJitter: 0.3, clumpSpacing: 1.0 };
     const _SCALE_EMIT = { perArea: 140, upBias: 0.6, tiltJitter: 0.3, clumpSpacing: 0.8 };
     const _FORM_EMIT = { needle: _NEEDLE_EMIT, scale: _SCALE_EMIT, 1: _NEEDLE_EMIT, 2: _SCALE_EMIT };
     fn(FloraWorld.prototype, "emitForest", function emitForest(opts) {
