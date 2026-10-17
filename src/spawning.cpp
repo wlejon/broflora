@@ -32,12 +32,16 @@ using internal::nodeOffsetFromRoot;
 
 // Defined in this TU; declared in internal_select.h so senescence.cpp
 // (and any future caller) can share the same juvenile (D, λ) lookup.
-const BranchModulePrototype* internal::pickPrototype(const WorldState& world,
+const BranchModulePrototype* internal::pickPrototype(const WorldState& world, uint32_t group,
                                                     float dPrime, float lambda) {
+    bool any = false;
+    for (const auto& site : world.voronoi)
+        if (site.group == group && site.prototypeIndex < world.prototypes.size()) { any = true; break; }
     uint32_t bestIdx = UINT32_MAX;
     float bestD2 = std::numeric_limits<float>::infinity();
     for (const auto& site : world.voronoi) {
         if (site.prototypeIndex >= world.prototypes.size()) continue;
+        if (any && site.group != group) continue;
         float dd = site.determinacy - dPrime;
         float dl = site.apicalControl - lambda;
         float d2 = dd * dd + dl * dl;
@@ -227,8 +231,42 @@ void spawnModules(Plant& plant,
     const float w1        = sp.distributionWeightCollisions;
     const float w2        = sp.distributionWeightTropism;
 
+    // The habit: the leader (the root and its main children down) grows from
+    // `prototypeGroup` with `orthotropy`, never aiming below the horizon;
+    // every other axis from `lateralGroup` with `lateralOrthotropy`, as low
+    // as `lateralElevation` allows.
+    const uint32_t leaderGroup = sp.prototypeGroup;
+    const uint32_t lateralGroup = sp.lateralGroup == Species::kSameGroup ? leaderGroup : sp.lateralGroup;
+    // Laterals with a set-point angle (lateralOrthotropy given) aim at it.
+    const bool lateralSetPoint = !std::isnan(sp.lateralOrthotropy);
+    const float lateralReturn = lateralSetPoint ? std::max(0.0f, std::min(1.0f, sp.lateralOrthotropy)) : 0.0f;
+    const float lateralGsa = std::max(-1.5f, std::min(1.5f, sp.lateralElevation));
+
     std::vector<BranchModuleInstance> spawns;
     const uint32_t modCount = static_cast<uint32_t>(mods.size());
+
+    // Each module's axis order: 0 on the leader, a lateral one more than the
+    // axis it leaves (parents precede children).
+    std::vector<uint16_t> order(modCount, 0);
+    for (uint32_t i = 0; i < modCount; ++i) {
+        const uint32_t p = mods[i].parent;
+        if (p != UINT32_MAX && p < i)
+            order[i] = static_cast<uint16_t>(std::min<uint32_t>(order[p] + (mods[i].isMainChild ? 0u : 1u), 0xffffu));
+    }
+    // Axes of the deepest order a species branches to only lengthen.
+    const uint32_t maxOrder = sp.maxBranchOrder > 0.0f ? static_cast<uint32_t>(sp.maxBranchOrder + 0.5f) : 0xffffu;
+    // The crown envelope (Species::crownSlope): how far out a lateral may
+    // grow at a height, from the plant's top down.
+    const bool envelope = sp.crownSlope > 0.0f || sp.crownRadiusMax > 0.0f;
+    float plantTop = plant.origin.y;
+    if (envelope)
+        for (const auto& m : mods) plantTop = std::max(plantTop, std::max(m.worldPos.y, m.axisTip.y));
+    const auto envelopeAt = [&](float y) {
+        float r = sp.crownSlope > 0.0f ? sp.crownBase + sp.crownSlope * std::max(0.0f, plantTop - y)
+                                       : std::numeric_limits<float>::infinity();
+        if (sp.crownRadiusMax > 0.0f) r = std::min(r, sp.crownRadiusMax);
+        return r;
+    };
 
     // Scratch buffer reused by every radiusQuery in settleOrientation.
     std::vector<int32_t> queryScratch;
@@ -253,7 +291,12 @@ void spawnModules(Plant& plant,
             uint32_t termNode = terms[k];
             if (occupied.count(key(i, termNode))) continue;
 
-            const BranchModulePrototype* proto = internal::pickPrototype(world, dPrime, lambda);
+            // The child continues the leader only from the leader's own
+            // terminal 0; anything else starts or continues a lateral.
+            const bool childLateral = order[i] > 0 || termNode != terms.front();
+            if (termNode != terms.front() && order[i] >= maxOrder) continue;
+            const BranchModulePrototype* proto =
+                internal::pickPrototype(world, childLateral ? lateralGroup : leaderGroup, dPrime, lambda);
             if (!proto) continue;
 
             // Where this child will attach in world space — parent's
@@ -262,6 +305,9 @@ void spawnModules(Plant& plant,
             // and the per-node tropism so the descent reasons about
             // where the terminal actually sits, not its rigid pose.
             Vec3 attachWorld = u.worldPos + nodeOffsetFromRoot(sp, u, termNode);
+            if (envelope && childLateral &&
+                std::hypot(attachWorld.x - plant.origin.x, attachWorld.z - plant.origin.z) > envelopeAt(attachWorld.y))
+                continue;
 
             // Growth target: continue the direction of the *twig* this
             // child sprouts from — the parent terminal's own incoming edge
@@ -285,20 +331,42 @@ void spawnModules(Plant& plant,
                        - nodeOffsetFromRoot(sp, u, u.prototype->rootNode);
             }
             Vec3 armDir = (vlen2(armOff) > 1e-8f) ? vnorm(armOff) : up;
-            Vec3 growthTarget = vnorm(armDir + (up - armDir) * orthotropy);
+            Vec3 growthTarget;
+            if (childLateral && lateralSetPoint) {
+                // A lateral with a gravitropic set point: keep the arm's
+                // heading, turn its elevation `lateralReturn` of the way to
+                // the set-point angle. Boughs stay in their tier rather than
+                // creeping upward module by module into rival leaders.
+                const float e = vdot(armDir, up);
+                Vec3 flat = armDir - up * e;
+                if (vlen2(flat) < 1e-6f) {
+                    // Straight up or down: head out the way the parent's
+                    // module leaves its own root.
+                    flat = u.axisTip - u.worldPos;
+                    flat = flat - up * vdot(flat, up);
+                    if (vlen2(flat) < 1e-8f) flat = Vec3{1.0f, 0.0f, 0.0f} - up * up.x;
+                }
+                flat = vnorm(flat);
+                const float armElev = std::asin(std::max(-1.0f, std::min(1.0f, e)));
+                const float elev = armElev + (lateralGsa - armElev) * lateralReturn;
+                growthTarget = flat * std::cos(elev) + up * std::sin(elev);
+            } else {
+                growthTarget = armDir + (up - armDir) * orthotropy;
+                growthTarget = vlen2(growthTarget) > 1e-8f ? vnorm(growthTarget) : up;
 
-            // Shoots are negatively gravitropic: they never *aim* below the
-            // horizon. An outward arm on a steeply-tilted module can point
-            // downward, and continuing it would drive the branch into the
-            // ground. Clamp the target into the upper hemisphere (relative
-            // to the species' up axis); the per-node gravitropic bend still
-            // lets mature branches droop slightly, but new growth always
-            // heads up-and-out. Falls back to straight up if the arm was
-            // pointing straight down.
-            const float upDot = vdot(growthTarget, up);
-            if (upDot < 0.0f) {
-                growthTarget = growthTarget - up * upDot;   // project onto horizon
-                growthTarget = (vlen2(growthTarget) > 1e-6f) ? vnorm(growthTarget) : up;
+                // Shoots are negatively gravitropic: they never *aim* below
+                // the horizon. An outward arm on a steeply-tilted module can
+                // point downward, and continuing it would drive the branch
+                // into the ground. Clamp the target into the upper hemisphere
+                // (relative to the species' up axis); the per-node
+                // gravitropic bend still lets mature branches droop slightly,
+                // but new growth always heads up-and-out. Falls back to
+                // straight up if the arm was pointing straight down.
+                const float upDot = vdot(growthTarget, up);
+                if (upDot < 0.0f) {
+                    growthTarget = growthTarget - up * upDot;   // project onto horizon
+                    growthTarget = (vlen2(growthTarget) > 1e-6f) ? vnorm(growthTarget) : up;
+                }
             }
 
             // Seed (θ, ψ) directly from the target direction so the descent

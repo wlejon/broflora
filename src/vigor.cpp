@@ -1,6 +1,8 @@
 #include "broflora/vigor.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <vector>
 
 namespace broflora {
 
@@ -33,24 +35,61 @@ void runVigorPasses(Plant& plant) {
     const float lambda = plant.flowering
         ? plant.species.apicalControlMature
         : plant.species.apicalControl;
+    // Apical dominance (Species::apicalDominance): how much of the main
+    // child's share is λ outright rather than λ against its laterals'
+    // summed light. At 0 (the paper) a whorl's boughs, their light summed,
+    // overtake the leader once they are big; at 1 the leader keeps λ of the
+    // vigor however big its boughs grow, as a conifer's does.
+    const float dom = std::clamp(plant.species.apicalDominance, 0.0f, 1.0f);
 
-    for (size_t i = 0; i < mods.size(); ++i) {
+    // Each module's children, in index order (a counting sort by parent), so
+    // a split walks its own children rather than every later module; the
+    // sums run in the same order, so the result is the same to the bit.
+    const size_t n = mods.size();
+    thread_local std::vector<uint32_t> first, kids;
+    first.assign(n + 1, 0);
+    for (size_t j = 1; j < n; ++j)
+        if (mods[j].parent < j) ++first[mods[j].parent + 1];
+    for (size_t i = 0; i < n; ++i) first[i + 1] += first[i];
+    kids.resize(first[n]);
+    {
+        thread_local std::vector<uint32_t> at;
+        at.assign(first.begin(), first.end() - 1);
+        for (size_t j = 1; j < n; ++j)
+            if (mods[j].parent < j) kids[at[mods[j].parent]++] = static_cast<uint32_t>(j);
+    }
+
+    for (size_t i = 0; i < n; ++i) {
         auto& u = mods[i];
+        const uint32_t* k0 = kids.data() + first[i];
+        const uint32_t* k1 = kids.data() + first[i + 1];
 
         // Two passes over children: first total the denominator (sum of
         // weighted subtree lights), then assign each child's share.
-        float denom = 0.0f;
-        for (size_t j = i + 1; j < mods.size(); ++j) {
-            if (mods[j].parent != static_cast<uint32_t>(i)) continue;
+        float denom = 0.0f, lateralLight = 0.0f;
+        bool hasMain = false, hasLateral = false;
+        for (const uint32_t* k = k0; k != k1; ++k) {
+            const size_t j = *k;
             float w = mods[j].isMainChild ? lambda : (1.0f - lambda);
             denom += w * mods[j].subtreeLight;
+            if (mods[j].isMainChild) hasMain = true;
+            else { hasLateral = true; lateralLight += mods[j].subtreeLight; }
         }
         if (denom <= 0.0f) continue;
+        // The fixed split applies where both a main child and laterals are
+        // there to split between.
+        const float d = hasMain && hasLateral && lateralLight > 0.0f ? dom : 0.0f;
 
-        for (size_t j = i + 1; j < mods.size(); ++j) {
-            if (mods[j].parent != static_cast<uint32_t>(i)) continue;
+        for (const uint32_t* k = k0; k != k1; ++k) {
+            const size_t j = *k;
             float w = mods[j].isMainChild ? lambda : (1.0f - lambda);
-            mods[j].vigor = u.vigor * (w * mods[j].subtreeLight) / denom;
+            if (d <= 0.0f) {
+                mods[j].vigor = u.vigor * (w * mods[j].subtreeLight) / denom;
+                continue;
+            }
+            const float share = (w * mods[j].subtreeLight) / denom;
+            const float fixed = mods[j].isMainChild ? lambda : (1.0f - lambda) * mods[j].subtreeLight / lateralLight;
+            mods[j].vigor = u.vigor * (share + (fixed - share) * d);
         }
     }
 }

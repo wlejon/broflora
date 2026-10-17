@@ -34,7 +34,10 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
 
     const Vec3 crown = sway[0].crown;
     const float crownR = sway[0].crownRadius > 0.0f ? sway[0].crownRadius : 0.4f * sway[0].height;
-    const float R0 = opts.radius > 0.0f ? opts.radius : opts.radiusOfCrown * crownR;
+    // The species scales its clumps (a conifer's sprays are a fraction of a
+    // broadleaf's lobes for the same crown).
+    const float scale = plant.species.clumpScale > 0.0f ? plant.species.clumpScale : 1.0f;
+    const float R0 = scale * (opts.radius > 0.0f ? opts.radius : opts.radiusOfCrown * crownR);
     if (!(R0 > 0.0f)) return;
 
     std::vector<int> kids(segs.size(), 0);

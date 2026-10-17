@@ -52,16 +52,16 @@ static_assert(sizeof(SoilMap) == sizeof(MirrorSoil), "world_io: SoilMap changed"
 
 // Written whole: all 4-byte fields, so no padding reaches the bytes (and
 // the cache key built from them).
-static_assert(sizeof(Species) == 36 * 4, "world_io: Species changed");
+static_assert(sizeof(Species) == 53 * 4, "world_io: Species changed");
 static_assert(sizeof(ModuleNode) == 6 * 4, "world_io: ModuleNode changed");
 static_assert(sizeof(ModuleEdge) == 2 * 4, "world_io: ModuleEdge changed");
-static_assert(sizeof(PrototypeVoronoiSite) == 3 * 4, "world_io: PrototypeVoronoiSite changed");
+static_assert(sizeof(PrototypeVoronoiSite) == 4 * 4, "world_io: PrototypeVoronoiSite changed");
 static_assert(sizeof(GlobalClimate) == 3 * 4, "world_io: GlobalClimate changed");
 static_assert(sizeof(GridFootprint2D) == 5 * 4, "world_io: GridFootprint2D changed");
 static_assert(sizeof(bromath::Vec3) == 12 && sizeof(Euler3) == 12, "world_io: Vec3/Euler3 changed");
 
 constexpr uint32_t kMagic = 0x574c4642;  // "BFLW"
-constexpr uint32_t kFormat = 2;   // 2: Species gained the bark fields
+constexpr uint32_t kFormat = 3;   // 2: Species gained the bark fields; 3: the habit, foliage and colour fields, site groups
 
 struct Writer {
     std::vector<uint8_t> b;

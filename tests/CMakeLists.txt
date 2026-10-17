@@ -19,6 +19,7 @@ add_executable(broflora_test
     test_leaf_cluster.cpp
     test_world_io.cpp
     test_forest_cover.cpp
+    test_presets.cpp
 )
 
 target_link_libraries(broflora_test PRIVATE broflora)
@@ -36,6 +37,11 @@ add_test(NAME broflora_test COMMAND broflora_test)
 add_executable(broflora_bench_nursery bench_nursery.cpp)
 target_link_libraries(broflora_bench_nursery PRIVATE broflora)
 target_compile_features(broflora_bench_nursery PRIVATE cxx_std_20)
+
+# Each species preset grown on its own, its shape printed (not a test).
+add_executable(broflora_preset_report preset_report.cpp)
+target_link_libraries(broflora_preset_report PRIVATE broflora)
+target_compile_features(broflora_preset_report PRIVATE cxx_std_20)
 
 add_executable(test_sdf_mesh test_sdf_mesh.cpp)
 target_link_libraries(test_sdf_mesh PRIVATE broflora bromesh)

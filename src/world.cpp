@@ -20,19 +20,38 @@
 namespace broflora {
 
 uint32_t addPrototype(WorldState& world, BranchModulePrototype proto) {
+    // Modules point into the list: if it moves, point them at the new copy
+    // (a species added after plants are growing registers its own modules).
+    const BranchModulePrototype* oldBase = world.prototypes.data();
+    const size_t oldSize = world.prototypes.size();
     world.prototypes.push_back(std::move(proto));
+    const BranchModulePrototype* newBase = world.prototypes.data();
+    if (oldBase && newBase != oldBase) {
+        for (auto& plant : world.plants)
+            for (auto& m : plant.modules)
+                if (m.prototype >= oldBase && m.prototype < oldBase + oldSize)
+                    m.prototype = newBase + (m.prototype - oldBase);
+    }
     return static_cast<uint32_t>(world.prototypes.size() - 1);
 }
 
 void addVoronoiSite(WorldState& world,
                     uint32_t prototypeIndex,
                     float determinacy,
-                    float apicalControl) {
+                    float apicalControl,
+                    uint32_t group) {
     PrototypeVoronoiSite site;
     site.determinacy    = determinacy;
     site.apicalControl  = apicalControl;
     site.prototypeIndex = prototypeIndex;
+    site.group          = group;
     world.voronoi.push_back(site);
+}
+
+uint32_t nextPrototypeGroup(const WorldState& world) {
+    uint32_t g = 0;
+    for (const auto& s : world.voronoi) g = std::max(g, s.group + 1);
+    return g;
 }
 
 Plant& addPlant(WorldState& world, Plant plant) {

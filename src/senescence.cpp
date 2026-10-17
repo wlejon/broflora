@@ -42,7 +42,7 @@ bool makeSeedling(const WorldState& world, const Species& species, Vec3 origin,
     const float vmax = species.maxVigor > 0.0f ? species.maxVigor : 1.0f;
     const float dPrime = species.rootVigorMax * species.determinacy / vmax;
     const BranchModulePrototype* proto =
-        internal::pickPrototype(world, dPrime, species.apicalControl);
+        internal::pickPrototype(world, species.prototypeGroup, dPrime, species.apicalControl);
     if (!proto) return false;
 
     out.species = species;

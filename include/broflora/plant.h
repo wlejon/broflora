@@ -12,6 +12,7 @@
 #include "bromath/vec.h"
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace broflora {
@@ -125,7 +126,76 @@ struct Species {
     // random azimuth and (b) offsets growthScale / moduleMatureAge /
     // orthotropy by up to this fraction. Typical: 0.1–0.2.
     float individualVariation          = 0.0f;
+
+    // Habit (broflora extension, not in the paper): which modules a plant
+    // grows, and how its laterals carry themselves.
+    //
+    // A plant's axes are its LEADER (the root module and every main child
+    // down from it: terminal 0 of each module continues it) and its
+    // LATERALS (every other module, and everything grown from one). The
+    // leader picks its modules from the Voronoi sites of `prototypeGroup`,
+    // a lateral from those of `lateralGroup` (kSameGroup: the leader's). So
+    // a conifer's leader can grow a whorl of boughs each tier while each
+    // bough grows flat, two-ranked sprays, and a shrub's stems can rise from
+    // a basal clump. Sites of a group no site carries fall back to every
+    // site, so worlds with one group behave as before.
+    //   lateralElevation   a lateral's gravitropic set-point angle: the
+    //                      elevation (radians from the horizon) its new
+    //                      growth returns to; 0 level boughs (fir), negative
+    //                      drooping (spruce, weeping crowns), positive rising
+    //                      (pine), near pi/2 turned up (a columnar cypress)
+    //   lateralOrthotropy  how strongly a lateral's new growth returns to
+    //                      that angle from the way its arm points: 0 goes on
+    //                      along the arm, 1 aims at the set point. NaN (the
+    //                      default): laterals grow as the leader does, lifted
+    //                      by `orthotropy` and never aimed below the horizon
+    //   apicalDominance    0 (the paper): a main child's vigor is λ against
+    //                      its siblings' summed light, so a whorl of big
+    //                      boughs overtakes its leader; 1: the main child
+    //                      keeps λ of its parent's vigor outright (the
+    //                      laterals share the rest by light), the excurrent
+    //                      leader of a conifer
+    //   maxBranchOrder     the deepest axis order that still branches (the
+    //                      leader is order 0, its boughs 1, their side
+    //                      shoots 2, ...); an axis of that order only
+    //                      lengthens. 0: no limit
+    //   crownSlope         the crown envelope: a lateral grows no further out
+    //                      from the plant's axis than this times its depth
+    //                      below the plant's top (0.35: a fir's cone; 0: no
+    //                      envelope), plus `crownBase` ...
+    //   crownBase          ... at the top (a blunt spire or a rounded top)
+    //   crownRadiusMax     ... and never past this (a column, a flat-topped
+    //                      pine; 0: no cap)
+    static constexpr uint32_t kSameGroup = 0xffffffffu;
+    float apicalDominance    = 0.0f;
+    float maxBranchOrder     = 0.0f;
+    float crownSlope         = 0.0f;
+    float crownBase          = 0.0f;
+    float crownRadiusMax     = 0.0f;
+    uint32_t prototypeGroup  = 0;
+    uint32_t lateralGroup    = kSameGroup;
+    float lateralOrthotropy  = std::numeric_limits<float>::quiet_NaN();
+    float lateralElevation   = 0.0f;
+
+    // Foliage and colour (emit only, like the bark fields: the simulation
+    // never reads them). What a renderer draws the plant's leaves as and in:
+    //   leafForm    LeafForm: broad leaves, needles, or scale-leaf sprays
+    //   leafColor   the leaves' mean albedo (linear; 0,0,0: the renderer's own)
+    //   barkColor   the bark's (0,0,0: the renderer's own)
+    //   clumpScale  the crown clumps' size, x what the emit's options give
+    uint32_t leafForm        = 0;
+    bromath::Vec3 leafColor  = {0.0f, 0.0f, 0.0f};
+    bromath::Vec3 barkColor  = {0.0f, 0.0f, 0.0f};
+    float clumpScale         = 1.0f;
 };
+
+// What a plant's leaves are drawn as (Species::leafForm).
+enum class LeafForm : uint32_t {
+    Broad  = 0,   // broad leaves: oak, maple, boxwood
+    Needle = 1,   // needle sprays: pine, spruce, fir, redwood
+    Scale  = 2,   // scale-leaf sprays: cypress, juniper, thuja
+};
+inline constexpr uint32_t kLeafFormCount = 3;
 
 // One plant instance.
 //

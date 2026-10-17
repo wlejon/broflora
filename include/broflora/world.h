@@ -25,6 +25,11 @@ struct PrototypeVoronoiSite {
     float    determinacy    = 0.5f;        // D coordinate of this site
     float    apicalControl  = 0.5f;        // λ coordinate of this site
     uint32_t prototypeIndex = UINT32_MAX;  // index into WorldState::prototypes
+    // The habit group it serves (Species::prototypeGroup / lateralGroup):
+    // an axis picks only among its group's sites (all sites when its group
+    // has none), so one world can grow conifers, shrubs and broadleaves,
+    // each from its own modules.
+    uint32_t group          = 0;
 };
 
 // Invariants (enforced by `validate(const WorldState&)`):
@@ -72,7 +77,11 @@ uint32_t addPrototype(WorldState& world, BranchModulePrototype proto);
 void addVoronoiSite(WorldState& world,
                     uint32_t prototypeIndex,
                     float determinacy,
-                    float apicalControl);
+                    float apicalControl,
+                    uint32_t group = 0);
+
+// A habit group no site of the world uses yet (one past the largest).
+uint32_t nextPrototypeGroup(const WorldState& world);
 
 // Append a plant to the world. Returns a reference to the stored plant.
 // All module instances in `plant` must reference prototypes owned by

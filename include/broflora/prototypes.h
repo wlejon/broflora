@@ -66,5 +66,42 @@ BranchModulePrototype weepingModule(float spread = 0.6f,
                                     float droop = 0.4f,
                                     const char* name = "weeping");
 
+// --- Habits (presets.h builds species from these) ---------------------------
+//
+// Each takes a `scale` on its whole layout (and on its growth rates, so a
+// module takes as long to grow whatever its size): a shrub's modules are a
+// third of a tree's.
+
+// A conifer's leader: one internode `internode` long (terminal 0, the next
+// leader attaches there) topped by a whorl of `arms` (2..8) short bough
+// stubs, pitched `armPitch` radians above the horizontal and `armLength`
+// long, each the start of a bough (its child grows from the lateral group).
+// The leader extends before the whorl buds, so the whorls stack up the stem
+// as tiers. Arm azimuths are staggered a little, never a perfect star.
+BranchModulePrototype leaderWhorlModule(uint32_t arms = 5, float armPitch = 0.1f,
+                                        float internode = 0.8f, float armLength = 0.3f,
+                                        float scale = 1.0f, const char* name = "leaderWhorl");
+
+// A plagiotropic (flat, two-ranked) shoot: an axis along +Y `length` long
+// (terminal 0 continues it) with `pairs` (1..4) pairs of side shoots in its
+// own XY plane, alternating left and right, `angle` radians off the axis and
+// `sideLength` long. The spawner never rolls a module, so the plane stays
+// level about the axis: a conifer bough branches into a flat spray, a
+// dogwood shelf into a flat tier.
+BranchModulePrototype plagiotropicModule(uint32_t pairs = 2, float angle = 0.75f,
+                                         float length = 0.6f, float sideLength = 0.4f,
+                                         float scale = 1.0f, const char* name = "plagiotropic");
+
+// A shrub's crown from the ground: `stems` (2..8) stems from the root, one
+// up the middle (terminal 0) and the rest fanned `spread` (0..1) out from
+// vertical, `height` tall: a multi-stemmed clump rather than a trunk.
+BranchModulePrototype basalStemsModule(uint32_t stems = 5, float spread = 0.5f,
+                                       float height = 0.5f, float scale = 1.0f,
+                                       const char* name = "basalStems");
+
+// `proto` with its layout scaled by `scale` (positions, lengths and growth
+// rates), so it grows to `scale` times the size in the same time.
+BranchModulePrototype scaledModule(BranchModulePrototype proto, float scale);
+
 } // namespace broflora
 

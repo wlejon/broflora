@@ -28,6 +28,7 @@ add_library(broflora STATIC
     src/clumps.cpp
     src/forest.cpp
     src/prototypes.cpp
+    src/presets.cpp
     src/leaf_cluster.cpp
     src/sdf_mesh.cpp
     src/world_io.cpp

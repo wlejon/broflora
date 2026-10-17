@@ -371,5 +371,105 @@ BranchModulePrototype weepingModule(float spread,
     return curveModule(p, 4, 0.15f);
 }
 
+BranchModulePrototype scaledModule(BranchModulePrototype proto, float scale) {
+    if (!(scale > 0.0f) || scale == 1.0f) return proto;
+    for (auto& n : proto.nodes) {
+        n.position = n.position * scale;
+        n.lengthMax *= scale;
+        n.thickening *= scale;
+    }
+    return proto;
+}
+
+BranchModulePrototype leaderWhorlModule(uint32_t arms, float armPitch, float internode,
+                                        float armLength, float scale, const char* name) {
+    arms = std::clamp(arms, 2u, 8u);
+    internode = std::max(internode, 0.05f);
+    armLength = std::max(armLength, 0.02f);
+    BranchModulePrototype p;
+    p.name = name;
+    // {position, ageAtBirth, lengthMax, thickening}
+    p.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});          // 0 root
+    p.nodes.push_back({{0.0f, internode, 0.0f}, 0.05f, 1.0f, 1.0f});    // 1 leader tip
+    p.edges.push_back({0, 1});
+    p.rootNode = 0;
+    p.terminalNodes.push_back(1);
+    const float c = std::cos(armPitch), s = std::sin(armPitch);
+    for (uint32_t i = 0; i < arms; ++i) {
+        // Staggered: a whorl's buds are never evenly spaced.
+        const float a = bromath::TWO_PI * (static_cast<float>(i) + 0.35f * (hash01(i * 2654435761u + 17u) - 0.5f)) /
+                        static_cast<float>(arms);
+        const uint32_t tip = static_cast<uint32_t>(p.nodes.size());
+        // The whorl buds once the leader has grown: later than the leader.
+        p.nodes.push_back({{std::cos(a) * c * armLength, internode + s * armLength, std::sin(a) * c * armLength},
+                           0.3f, 1.0f, 1.0f});
+        p.edges.push_back({1, tip});
+        p.terminalNodes.push_back(tip);
+    }
+    // The leader wanders a little; the stubs stay short and straight.
+    return scaledModule(curveModule(p, 3, 0.05f), scale);
+}
+
+BranchModulePrototype plagiotropicModule(uint32_t pairs, float angle, float length,
+                                         float sideLength, float scale, const char* name) {
+    pairs = std::clamp(pairs, 1u, 4u);
+    length = std::max(length, 0.05f);
+    sideLength = std::max(sideLength, 0.02f);
+    BranchModulePrototype p;
+    p.name = name;
+    // The axis, in pairs + 1 internodes, then the side shoots off its
+    // nodes: every edge's parent node is listed before its child.
+    const uint32_t steps = 2 * pairs;
+    p.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    for (uint32_t k = 1; k <= steps + 1; ++k) {
+        const float t = static_cast<float>(k) / static_cast<float>(steps + 1);
+        p.nodes.push_back({{0.0f, length * t, 0.0f}, 0.04f * static_cast<float>(k), 1.0f, 1.0f});
+        p.edges.push_back({k - 1, k});
+    }
+    p.rootNode = 0;
+    p.terminalNodes.push_back(steps + 1);   // terminal 0: the axis goes on
+    const float c = std::cos(angle), s = std::sin(angle);
+    for (uint32_t k = 1; k <= steps; ++k) {
+        const float side = (k & 1u) ? 1.0f : -1.0f;
+        // Side shoots near the tip are shorter (the spray tapers).
+        const float len = sideLength * (1.0f - 0.35f * static_cast<float>(k - 1) / static_cast<float>(steps));
+        const Vec3 at = p.nodes[k].position;
+        const uint32_t tip = static_cast<uint32_t>(p.nodes.size());
+        p.nodes.push_back({{at.x + side * s * len, at.y + c * len, 0.0f}, 0.12f + 0.04f * static_cast<float>(k),
+                           1.0f, 1.0f});
+        p.edges.push_back({k, tip});
+        p.terminalNodes.push_back(tip);
+    }
+    return scaledModule(curveModule(p, 2, 0.08f), scale);
+}
+
+BranchModulePrototype basalStemsModule(uint32_t stems, float spread, float height, float scale,
+                                       const char* name) {
+    stems = std::clamp(stems, 2u, 8u);
+    spread = std::clamp(spread, 0.0f, 1.0f);
+    height = std::max(height, 0.05f);
+    BranchModulePrototype p;
+    p.name = name;
+    p.nodes.push_back({{0.0f, 0.0f, 0.0f}, 0.0f, 1.0f, 1.0f});
+    p.rootNode = 0;
+    // Terminal 0 up the middle, the rest round it leaning out, each its own
+    // height and lean.
+    p.nodes.push_back({{0.0f, height, 0.0f}, 0.05f, 1.0f, 1.0f});
+    p.edges.push_back({0, 1});
+    p.terminalNodes.push_back(1);
+    for (uint32_t i = 1; i < stems; ++i) {
+        const float a = bromath::TWO_PI * (static_cast<float>(i) + 0.4f * (hash01(i * 40503u + 3u) - 0.5f)) /
+                        static_cast<float>(stems - 1);
+        const float lean = spread * (0.75f + 0.5f * hash01(i * 2654435761u + 91u)) * 0.9f;
+        const float h = height * (0.75f + 0.3f * hash01(i * 97u + 5u));
+        const uint32_t tip = static_cast<uint32_t>(p.nodes.size());
+        p.nodes.push_back({{std::cos(a) * std::sin(lean) * h, std::cos(lean) * h, std::sin(a) * std::sin(lean) * h},
+                           0.05f + 0.08f * hash01(i * 13u + 1u), 1.0f, 1.0f});
+        p.edges.push_back({0, tip});
+        p.terminalNodes.push_back(tip);
+    }
+    return scaledModule(curveModule(p, 4, 0.12f), scale);
+}
+
 } // namespace broflora
 
