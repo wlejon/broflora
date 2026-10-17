@@ -54,7 +54,9 @@ TEST(herb_record_layout) {
     ASSERT(r[0] == static_cast<float>(HerbHabit::Rosette) && r[1] == h.height, "habit and height lead");
     ASSERT(r[24] == static_cast<float>(HerbBloom::Bell) && r[26] == static_cast<float>(h.bloomCount),
            "the bloom's form and count");
-    ASSERT(r[44] == h.stemSway.freq && r[47] == h.leafSway.sway, "the sway closes the record");
+    ASSERT(r[44] == h.stemSway.freq && r[47] == h.leafSway.sway, "the sway after the colonies");
+    ASSERT(r[48] > 0.0f && r[49] > 0.0f && r[50] > 0.0f && r[50] < 1.0f && r[51] == herbLeafTop(h),
+           "the spacing, the side silhouette, its blooms' share and the leaf top close the record");
     const auto all = herbRecords({h, *herbPreset("bracken")});
     ASSERT(all.size() == 2 * kHerbRecordFloats && all[kHerbRecordFloats + 5] == static_cast<float>(HerbLeaf::Frond),
            "records end to end");

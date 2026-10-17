@@ -2090,6 +2090,168 @@ In `demos/forest/captures/`:
     golden at -7.9 (target -6.3). Not worked on in this step;
   - the forest compare captures are now JPEG.
 
+## Step 8b, round 2: far stands, near forms, the meadow
+
+Everything below is still worked out per plant at run time from its
+species record and its cell's hash. Nothing is stored per plant or place.
+
+### What changed
+
+**Far stands.** The blade stand-ins are gone: their pale triangular plates
+were the "Christmas trees".
+
+- **The far ring.** Past `range` the same plants go on to `far` (default
+  3 x range) as a third herb ring. Each plant has three cards of one quad.
+  The far ring keeps fewer plants with distance (keep = range / d) and
+  widens the ones it keeps to hold their cover: leaves get wider more than
+  longer, blooms get bigger. A fern stand at 30 to 70 m is the fronds
+  themselves.
+- **Seen from above.** Once the eye's lift is over a third of the distance
+  across the ground, the far ring is left to the turf (`herbFarSteep`). The
+  CPU skips the ring entirely once the lift is past half of `far`.
+- **The turf past them.** The turf now covers by viewing angle:
+  cover = P·(1 − e^(−density·(top + side/tanθ))). The top and side cover and
+  the blooms' share of the side come from each species' build: broflora
+  `herbSideCover`, record slots 49 and 50. Seen across, a meadow therefore
+  reads as its flowers and leaves; seen from above, it shows the ground
+  they leave bare.
+- **Stand self-shading.** Each herb vertex carries its stand's leaf area
+  index and the share of the stand's leaves above it (`HerbVertex.stand`,
+  leaf top in slot 51). The sun is attenuated along its slant path through
+  the stand, and ambient light by exp(−0.35·L). A bracken stand is darker
+  within and lit at its top.
+- **Grass gives the herbs room.** Where the floor's herb density is h, the
+  grass is baked into the field at (1 − 0.5h) density and (1 − 0.45h)
+  height (`GrassNode::uploadField`). This first ran per blade vertex; the
+  extra texture read cost about 0.05 ms.
+- **`spacing`.** A new HerbSpecies field: how far apart a species' plants
+  stand inside a colony (0 means 1.6 x spread). Bracken uses 0.45 m and is
+  now 1.2 m tall with 1.5 m fronds, so a colony is a continuous stand above
+  the grass.
+
+**Near forms** (`scene_herb_surface.glsl`, `scene_herb.glsl`):
+
+- **Cups (poppy).** The card faces the eye with the cup's axis up it. The
+  fragment draws the rim's ellipse at the angle it is seen and the bowl
+  below it. Looking in, you see the petals' inner faces round the black eye
+  and its blotches. From the side, you see the round outside with petal
+  seams, greener at the base.
+- **Racemes.**
+  - Bluebell: narrow bells with curled-back lobes hang nearly straight down
+    off the arched tip, all on one side.
+  - Foxglove: fat tubes droop out and down on one side, rounded where they
+    are held, with a pale, spotted throat. The top bells are buds.
+  - The card stands to the bells' side, so they are no longer clipped.
+  - Higher bells overlap the lower ones.
+- **Spikes (plantain).** The core is a slim cylinder (about 7 mm) with a
+  band in flower: filaments tipped by pale anthers, fading to a haze under
+  a pixel.
+- **Daisy and yarrow heads.** These turn out from the plant as well as up:
+  a daisy by up to about 1 rad, a yarrow umbel only a little.
+- **Presets.**
+  - Daisy has 5 stems.
+  - Plantain's leaves lift off the ground (rise 0.85, arch 0.45).
+  - Foxglove has 17 bells over 0.5 m.
+  - Poppy's stems nod more (0.25).
+  - The meadow colonies are larger: daisy patchCover 0.55, poppy 0.45 and
+    abundance 0.85, yarrow 0.45 and abundance 0.8.
+
+**Near ground.** Between the blades near the eye there is now thatch (pale
+straws lying every way, at two scales), crumbs of soil and the green of the
+bases. All of it fades by pixel footprint.
+
+**Budget.**
+
+- **Draw order.** A forest's clumps and crowns draw after the rest of the
+  opaque scene, so early-Z rejects them behind near trees and ground
+  (`MeshDraw::order`). This applies only while the eye is under the canopy
+  top within 40 m. From over the canopy the crowns are what hides the
+  floor, and drawing them last cost about 0.3 ms at the descent (t = 13 s).
+- **Timer marks.** The scene GPU timer now has 190 marks, up from 62. A
+  forest's grass draws had used up the marks, so the far tiers were landing
+  in "rest".
+- **Tried and dropped.** A single shadow tap for leaves in the last cascade
+  made the trace slower (p95 5.27 to 5.32). The likely cause is register
+  pressure from a dynamic `spread`.
+
+**API.**
+
+- `setHerbs({far})`.
+- `grass.herbPlants(x, z, radius)` returns the plants nearest a point,
+  computed on the CPU as the shaders pick them.
+- `grassStats().herbInstances` has three rings.
+- HerbSpecies has `spacing`.
+- The herb record is 52 floats.
+- The grove capture frames the nearest plant (the nearest flowering one for
+  the meadow) in its 1 m pane, and the red-and-white roller is hidden in
+  herb captures.
+
+### Numbers
+
+**Flight** (`forest trace`, 1280x720, 4x MSAA). The desktop GPU was in use
+during these runs, which added run-to-run noise.
+
+| | 8b | Draw order alone (`r9ord`) | Herbs off (`r9q`) | Final (`r9t1`..`r9t4`) | Limit |
+|---|---|---|---|---|---|
+| max | 5.62 | 5.65 | 5.42 / 5.32 | 6.11 / 5.70 / 5.48 / 5.38 | 6.0 |
+| p95 | 5.14 | 5.03 | 4.85 / 4.99 | 5.05 / 4.96 / 5.11 / 5.11 | 5.1 |
+| median | 4.30 | 4.22 | 4.10 / 4.11 | 4.23 / 4.22 / 4.21 / 4.20 | 4.4 |
+
+- **Herbs' cost.** Herbs cost about 0.1 ms median. Before the steep-view
+  skip, the far ring cost about 0.2 ms from 36 m up.
+- **The max.** In one run of four, the max sits on a plateau at t = 13 s
+  (eye 36 m), whose time moves from run to run.
+
+**Herb cost in the grove** (`herbs <name> perf`, range 30): 0.07 to 0.38 ms
+per view.
+
+**Hand-over** (`forest herbs`, `r9_herbmetrics.json`): drgb against plants
+drawn to 200 m, per band.
+
+| Shot, sky | 2-12 | 12-24 | 24-40 | 40-80 |
+|---|---|---|---|---|
+| glade noon | 0.4 | 0.9 | 2.4 (8b: 5.8) | 5.5 (8b: 15.6) |
+| glade golden | 0.3 | 0.5 | 2.4 (8b: 1.6) | 3.3 (8b: 6.5) |
+| trunks noon | 0.2 | 0.2 | | |
+| trunks golden | 0.4 | 1.4 | | |
+
+**Tests.**
+
+- bro: scene 79/79, flora 7/7, grass 2/2.
+- broflora ctest: 4/4.
+- broworkshop `validate.sh demos/forest demos/grove`: 4/4.
+
+### Captures
+
+In broworkshop `demos/grove/captures/`:
+
+- `r9_<name>_{noon,golden}.jpg`: bracken, daisy, poppy, yarrow, plantain,
+  foxglove, bluebell and the meadow at 1, 3, 10 and 30 m. The 1 m pane
+  frames a plant.
+- `r9far_meadow_{noon,golden}.jpg`: the meadow at 0.5, 3, 30 and 60 m.
+
+In `demos/forest/captures/`:
+
+- `r9_herbmetrics.json`;
+- `r9t1`..`r9t4_trace.json`.
+
+### Still open
+
+- **The budget has no clear headroom.** p95 is 4.96 to 5.11 against 5.1,
+  and max goes over 6.0 in one run of four. The clump and crown sprites
+  (about 1.8 ms) and the leaves (about 2.0 ms) are most of the heaviest
+  frames. A real saving has to come from there.
+- **The meadow at 150 m.** From the grove, the hills' haze hides it. Making
+  the ground 200 m and the eye higher did not help. It needs a large open
+  scene, for example the forest's glade made bigger.
+- **Near forms that still read wrong.**
+  - The foxglove's bells at 1 m still stack into a rope.
+  - The poppy's stems are thin and hidden in the grass, and not hairy.
+  - The yarrow's umbels are flat white discs, with no florets above a pixel.
+  - The plantain's leaves are plain.
+- **The golden glade's 24-40 m band** is 2.4, up from 1.6.
+- **Carried over:** the far canopy's sun-height gap (noon +3.6, golden −7.9).
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in

@@ -104,11 +104,12 @@ std::vector<HerbSpecies> makePresets() {
         HerbSpecies h;
         h.name = "bracken";
         h.habit = HerbHabit::Rosette;
-        h.height = 0.9f;
+        h.height = 1.2f;
         h.spread = 0.5f;
+        h.spacing = 0.45f;   // the rhizome sends up a frond every half metre
         h.leaves = 2;
         h.leafShape = HerbLeaf::Frond;
-        h.leafLength = 1.25f;
+        h.leafLength = 1.5f;
         h.leafWidth = 0.62f;
         h.leafTip = 1.0f;
         h.pinnae = 11;
@@ -164,7 +165,7 @@ std::vector<HerbSpecies> makePresets() {
         h.height = 0.5f;
         h.spread = 0.12f;
         h.leaves = 7;
-        h.stems = 3;
+        h.stems = 5;
         h.leafShape = HerbLeaf::Simple;
         h.leafLength = 0.11f;
         h.leafWidth = 0.32f;
@@ -187,7 +188,7 @@ std::vector<HerbSpecies> makePresets() {
         h.shadeRange = 0.25f;
         h.abundance = 1.0f;
         h.patch = 6.0f;
-        h.patchCover = 0.45f;
+        h.patchCover = 0.55f;
         add(h);
     }
     {   // Field poppy: grey-green, deeply lobed leaves; hairy stems with four
@@ -215,12 +216,12 @@ std::vector<HerbSpecies> makePresets() {
         h.petals = 4;
         h.bloomColor = rgb(0.72f, 0.035f, 0.015f);
         h.centreColor = rgb(0.015f, 0.012f, 0.012f);
-        h.nod = 0.15f;
+        h.nod = 0.25f;
         h.shade = 0.0f;
         h.shadeRange = 0.2f;
-        h.abundance = 0.7f;
+        h.abundance = 0.85f;
         h.patch = 5.0f;
-        h.patchCover = 0.3f;
+        h.patchCover = 0.45f;
         add(h);
     }
     {   // Foxglove: a rosette of big, soft, veined leaves and one tall spike
@@ -245,8 +246,8 @@ std::vector<HerbSpecies> makePresets() {
         h.stemColor = rgb(0.07f, 0.1f, 0.04f);
         h.stemDiameter = 0.011f;   // a stout stem at its base
         h.bloomForm = HerbBloom::Bell;
-        h.bloomSize = 0.45f;
-        h.bloomCount = 22;
+        h.bloomSize = 0.5f;
+        h.bloomCount = 17;
         h.bloomColor = rgb(0.46f, 0.11f, 0.33f);
         h.centreColor = rgb(0.75f, 0.68f, 0.7f);
         h.nod = 0.0f;
@@ -316,9 +317,9 @@ std::vector<HerbSpecies> makePresets() {
         h.centreColor = rgb(0.6f, 0.55f, 0.4f);
         h.shade = 0.05f;
         h.shadeRange = 0.25f;
-        h.abundance = 0.7f;
+        h.abundance = 0.8f;
         h.patch = 5.0f;
-        h.patchCover = 0.35f;
+        h.patchCover = 0.45f;
         add(h);
     }
 
@@ -366,8 +367,8 @@ std::vector<HerbSpecies> makePresets() {
         h.leafWidth = 0.55f;
         h.leafTip = 0.6f;
         h.stalk = 0.3f;
-        h.rise = 1.3f;
-        h.arch = 0.25f;
+        h.rise = 0.85f;   // the leaves lift off the ground, their tips curving down
+        h.arch = 0.45f;
         h.leafColor = rgb(0.05f, 0.095f, 0.03f);
         h.stemColor = rgb(0.07f, 0.09f, 0.04f);
         h.stemDiameter = 0.0025f;
@@ -506,9 +507,42 @@ Vec3 herbMeanColor(const HerbSpecies& h, float* bloomShare, float* cover) {
     return h.leafColor * (1.0f - bs) + h.bloomColor * bs;
 }
 
+float herbLeafTop(const HerbSpecies& h) {
+    if (h.habit == HerbHabit::Leafy) return 0.7f * h.height;
+    return std::min(h.height, h.leafLength * std::cos(std::min(h.rise, 1.5f)));
+}
+
+float herbSideCover(const HerbSpecies& h, float* bloomShare) {
+    // Seen from the side, averaged round the plant (2 / pi of a face turned
+    // at random about the vertical): a leaf shows its face as far as it
+    // stands up from flat, a stem its length times its width, a raceme or a
+    // spike its whole face, a flower's disc as far as it tilts from facing
+    // the sky (about half a radian, more as it nods) and a head all of it.
+    const float foot = kPi * std::max(h.spread, 0.03f) * std::max(h.spread, 0.03f);
+    const float perCard = h.habit == HerbHabit::Carpet ? static_cast<float>(kHerbCarpetCluster) : 1.0f;
+    const float tilt = std::clamp(h.rise + 0.5f * h.arch, 0.0f, 1.5708f);
+    const float stand = h.habit == HerbHabit::Carpet ? 0.15f : std::max(std::cos(tilt), 0.2f);
+    const float leaf = static_cast<float>(h.leaves) * perCard * leafFace(h) * 0.64f * stand;
+    const float stems = static_cast<float>(h.stems) * h.height * h.stemDiameter;
+    float bloomSide = 0.0f;
+    switch (h.bloomForm) {
+    case HerbBloom::None: break;
+    case HerbBloom::Head:
+    case HerbBloom::Spike:
+    case HerbBloom::Bell: bloomSide = bloomFace(h); break;
+    default: bloomSide = bloomFace(h) * 0.64f * std::sin(std::clamp(0.5f + 1.2f * h.nod, 0.0f, 1.5708f)); break;
+    }
+    const float bloom = static_cast<float>(h.stems) * bloomSide;
+    const float all = leaf + stems + bloom;
+    if (bloomShare) *bloomShare = all > 0.0f ? bloom / all : 0.0f;
+    return all / foot;
+}
+
 void herbRecord(const HerbSpecies& h, float* o) {
-    float bs = 0.0f, cover = 0.0f;
+    float bs = 0.0f, cover = 0.0f, sideBloom = 0.0f;
     herbMeanColor(h, &bs, &cover);
+    const float side = herbSideCover(h, &sideBloom);
+    const float spacing = h.spacing > 0.0f ? h.spacing : 1.6f * std::max(h.spread, 0.02f);
     const float v[kHerbRecordFloats] = {
         static_cast<float>(h.habit), h.height, h.spread, static_cast<float>(h.leaves),
         static_cast<float>(h.stems), static_cast<float>(h.leafShape), h.leafLength, h.leafWidth,
@@ -522,6 +556,7 @@ void herbRecord(const HerbSpecies& h, float* o) {
         h.shade, h.shadeRange, h.abundance, h.patch,
         h.patchCover, bs, cover, 0.0f,
         h.stemSway.freq, h.stemSway.sway, h.leafSway.freq, h.leafSway.sway,
+        spacing, side, sideBloom, herbLeafTop(h),
     };
     std::copy(std::begin(v), std::end(v), o);
 }

@@ -49,6 +49,7 @@ const FloatField kFloats[] = {
     {"nod", &broflora::HerbSpecies::nod},             {"shade", &broflora::HerbSpecies::shade},
     {"shadeRange", &broflora::HerbSpecies::shadeRange}, {"abundance", &broflora::HerbSpecies::abundance},
     {"patch", &broflora::HerbSpecies::patch},         {"patchCover", &broflora::HerbSpecies::patchCover},
+    {"spacing", &broflora::HerbSpecies::spacing},
 };
 const CountField kCounts[] = {
     {"leaves", &broflora::HerbSpecies::leaves},   {"stems", &broflora::HerbSpecies::stems},

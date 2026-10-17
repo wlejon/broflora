@@ -103,12 +103,16 @@ struct HerbSpecies {
     // Where it grows. The renderer weighs each species at a point by its
     // abundance, how well the light there suits it (the canopy overhead, 0
     // open .. 1 closed, against `shade` +- `shadeRange`) and its colonies
-    // (noise of period `patch` m, `patchCover` of the ground in them).
+    // (noise of period `patch` m, `patchCover` of the ground in them), and
+    // stands its plants about `spacing` m apart in them (0: 1.6 x spread; a
+    // bracken's fronds rise a third of a metre apart from one rhizome, far
+    // closer than they reach).
     float shade = 0.0f;
     float shadeRange = 0.3f;
     float abundance = 1.0f;
     float patch = 5.0f;
     float patchCover = 0.4f;
+    float spacing = 0.0f;
     // Its sway (herbSway fills these; a preset comes with them set).
     Cantilever stemSway;   // a stem (or scape) from the root to its bloom
     Cantilever leafSway;   // a leaf or frond from its base to its tip
@@ -129,9 +133,18 @@ void herbSway(HerbSpecies& h);
 
 /// The albedo a herb shows from above, over the ground it stands on: its
 /// leaves', with its blooms' share of that face (`bloomShare`), and how much
-/// of its patch its leaves cover (`cover`): what a far blade or the turf
-/// stands in with.
+/// of its patch its leaves cover (`cover`): what the turf stands in with.
 bromath::Vec3 herbMeanColor(const HerbSpecies& h, float* bloomShare = nullptr, float* cover = nullptr);
+
+/// What a herb shows from the side, as herbMeanColor does from above: its
+/// silhouette's area (leaves, stems and blooms, averaged round it) over its
+/// patch's (a grazing view sees this much more of it for each unit of the
+/// inverse tangent of its elevation), and its blooms' share of it.
+float herbSideCover(const HerbSpecies& h, float* bloomShare = nullptr);
+
+/// How high its leaves stand (m): a rosette's or a carpet's no higher than a
+/// leaf reaches at its rise, a leafy stem's most of the way up.
+float herbLeafTop(const HerbSpecies& h);
 
 /// One species as bro.scene's grass node reads it (scene_herb.glsl's
 /// HerbSpecies), kHerbRecordFloats floats:
@@ -147,7 +160,8 @@ bromath::Vec3 herbMeanColor(const HerbSpecies& h, float* bloomShare = nullptr, f
 ///   36 shade, shadeRange, abundance, patch
 ///   40 patchCover, bloomShare, cover, 0
 ///   44 stem freq, stem sway, leaf freq, leaf sway
-inline constexpr size_t kHerbRecordFloats = 48;
+///   48 spacing (worked out when 0), side cover, its blooms' share, leaf top
+inline constexpr size_t kHerbRecordFloats = 52;
 void herbRecord(const HerbSpecies& h, float* out);
 /// The records of several, end to end.
 std::vector<float> herbRecords(const std::vector<HerbSpecies>& hs);
