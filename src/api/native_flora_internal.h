@@ -581,6 +581,8 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readFloatField(spec, "crownSlope",                  s.crownSlope);
     readFloatField(spec, "crownBase",                   s.crownBase);
     readFloatField(spec, "crownRadiusMax",              s.crownRadiusMax);
+    readFloatField(spec, "crownLift",                   s.crownLift);
+    readFloatField(spec, "heightMax",                   s.heightMax);
     readFloatField(spec, "lateralOrthotropy",           s.lateralOrthotropy);
     readFloatField(spec, "lateralElevation",            s.lateralElevation);
     {
@@ -603,6 +605,22 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readFloatField(spec, "leafSize",                    s.leafSize);
     readFloatField(spec, "clumpFlat",                   s.clumpFlat);
     readFloatField(spec, "clumpReach",                  s.clumpReach);
+    readFloatField(spec, "clumpFill",                   s.clumpFill);
+    {
+        // "none" / "flower" / "head" / "spike" or its number.
+        Value bf = ev::getProperty(spec, "bloomForm");
+        static const char* const kBlooms[] = {"none", "flower", "head", "spike"};
+        if (ev::isNumber(bf)) {
+            const double d = ev::toDouble(bf);
+            if (d >= 0.0 && d < broflora::kBloomFormCount && d == std::floor(d)) s.bloomForm = static_cast<uint32_t>(d);
+        } else if (ev::isString(bf)) {
+            const std::string name = ev::toUtf8(bf);
+            for (uint32_t i = 0; i < broflora::kBloomFormCount; ++i)
+                if (name == kBlooms[i]) s.bloomForm = i;
+        }
+    }
+    readVec3Prop  (spec, "bloomColor",                  s.bloomColor);
+    readFloatField(spec, "bloomSize",                   s.bloomSize);
 }
 
 // A Species as a plain object, every field applySpeciesPartial reads.
@@ -652,6 +670,8 @@ inline Value speciesObject(const broflora::Species& s) {
     num("crownSlope", s.crownSlope);
     num("crownBase", s.crownBase);
     num("crownRadiusMax", s.crownRadiusMax);
+    num("crownLift", s.crownLift);
+    num("heightMax", s.heightMax);
     num("lateralOrthotropy", s.lateralOrthotropy);   // NaN: the paper's lateral lift
     num("lateralElevation", s.lateralElevation);
     num("prototypeGroup", s.prototypeGroup);
@@ -667,6 +687,14 @@ inline Value speciesObject(const broflora::Species& s) {
     num("leafSize", s.leafSize);
     num("clumpFlat", s.clumpFlat);
     num("clumpReach", s.clumpReach);
+    num("clumpFill", s.clumpFill);
+    {
+        static const char* const kBlooms[] = {"none", "flower", "head", "spike"};
+        Value str = ev::fromUtf8(s.bloomForm < broflora::kBloomFormCount ? kBlooms[s.bloomForm] : "none");
+        sp.set(ev::setProperty(sp.get(), "bloomForm", str));
+    }
+    vec("bloomColor", s.bloomColor);
+    num("bloomSize", s.bloomSize);
     return sp.get();
 }
 

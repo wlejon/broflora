@@ -166,12 +166,21 @@ struct Species {
     //   crownBase          ... at the top (a blunt spire or a rounded top)
     //   crownRadiusMax     ... and never past this (a column, a flat-topped
     //                      pine; 0: no cap)
+    //   crownLift          self-pruning: a bough leaving the leader below
+    //                      this fraction of the plant's height is shed
+    //                      (0.5: a pine's crown on the top half of a bare
+    //                      trunk; 0: boughs to the ground)
+    //   heightMax          no shoot buds above this height (m): the leader
+    //                      stops and the upper boughs fill in under it, a
+    //                      mature pine's flat top (0: no limit)
     static constexpr uint32_t kSameGroup = 0xffffffffu;
     float apicalDominance    = 0.0f;
     float maxBranchOrder     = 0.0f;
     float crownSlope         = 0.0f;
     float crownBase          = 0.0f;
     float crownRadiusMax     = 0.0f;
+    float crownLift          = 0.0f;
+    float heightMax          = 0.0f;
     uint32_t prototypeGroup  = 0;
     uint32_t lateralGroup    = kSameGroup;
     float lateralOrthotropy  = std::numeric_limits<float>::quiet_NaN();
@@ -193,6 +202,16 @@ struct Species {
     //               distance from the plant's axis, plus a quarter of its
     //               size (0: no limit): a conifer's short top boughs carry
     //               small clumps, so its crown narrows to a spire
+    //   clumpFill   0 (a broadleaf tree's): foliage on the crown's outermost
+    //               shoots, its interior shoots thinly leaved; 1: every shoot
+    //               tip carries foliage however its module has branched on,
+    //               new shoots leaved as they grow (a conifer's clothed
+    //               boughs and leader, a shrub's dense mound)
+    //   bloomForm   BloomForm: what it flowers as once flowering (none, an
+    //               open flower, a round head of florets, an upright spike)
+    //   bloomColor  its blooms' albedo (linear)
+    //   bloomSize   a bloom's size (m): a flower's or a head's across, a
+    //               spike's length
     uint32_t leafForm        = 0;
     bromath::Vec3 leafColor  = {0.0f, 0.0f, 0.0f};
     bromath::Vec3 barkColor  = {0.0f, 0.0f, 0.0f};
@@ -200,7 +219,20 @@ struct Species {
     float leafSize           = 1.0f;
     float clumpFlat          = 1.0f;
     float clumpReach         = 0.0f;
+    float clumpFill          = 0.0f;
+    uint32_t bloomForm       = 0;
+    bromath::Vec3 bloomColor = {0.0f, 0.0f, 0.0f};
+    float bloomSize          = 0.0f;
 };
+
+// What a plant flowers as (Species::bloomForm).
+enum class BloomForm : uint32_t {
+    None = 0,
+    Flower = 1,   // one open flower at a shoot's tip (a hibiscus)
+    Head = 2,     // a round head of many small florets (a hydrangea)
+    Spike = 3,    // florets up a bare upright stalk (lavender)
+};
+inline constexpr uint32_t kBloomFormCount = 4;
 
 // What a plant's leaves are drawn as (Species::leafForm).
 enum class LeafForm : uint32_t {

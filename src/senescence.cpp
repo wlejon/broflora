@@ -97,9 +97,29 @@ void ecosystemTick(WorldState& world, float dt, uint64_t& rng) {
         const float vmin = sp.minVigor;
         auto& mods = plant.modules;
         std::vector<uint8_t> shed(mods.size(), 0);
+        // Self-pruning (Species::crownLift): a bough leaving the leader
+        // below that fraction of the plant's height goes, so the crown sits
+        // on a bare trunk. `onLeader` marks the leader's own modules
+        // (parents precede children).
+        float liftY = -std::numeric_limits<float>::infinity();
+        std::vector<uint8_t> onLeader;
+        if (sp.crownLift > 0.0f && !mods.empty()) {
+            float top = plant.origin.y;
+            for (const auto& m : mods) top = std::max(top, std::max(m.worldPos.y, m.axisTip.y));
+            liftY = plant.origin.y + std::min(sp.crownLift, 0.9f) * (top - plant.origin.y);
+            onLeader.assign(mods.size(), 0);
+            onLeader[0] = 1;
+            for (size_t i = 1; i < mods.size(); ++i) {
+                const uint32_t p = mods[i].parent;
+                onLeader[i] = p != UINT32_MAX && p < i && onLeader[p] && mods[i].isMainChild;
+            }
+        }
         for (size_t i = 0; i < mods.size(); ++i) {
             const auto& m = mods[i];
             bool selfShed = (m.vigor < vmin && m.age > 0.0f);
+            if (!onLeader.empty() && !onLeader[i] && m.parent != UINT32_MAX && onLeader[m.parent] &&
+                m.worldPos.y < liftY)
+                selfShed = true;
             bool parentShed = (m.parent != UINT32_MAX) && shed[m.parent];
             if (selfShed || parentShed) shed[i] = 1;
         }

@@ -109,6 +109,8 @@ Species coniferBase() {
     // small clumps on the short top boughs so the crown ends in a spire.
     s.clumpFlat = 0.42f;
     s.clumpReach = 0.6f;
+    // Evergreen: every shoot clothed, the leader to its tip.
+    s.clumpFill = 1.0f;
     return s;
 }
 
@@ -136,6 +138,8 @@ Species shrubBase() {
     s.barkScale = 0.6f;
     s.barkMoss = 0.2f;
     s.barkColor = rgb(0.19f, 0.16f, 0.12f);
+    // A dense mound: every shoot leaved, inside as well as out.
+    s.clumpFill = 1.0f;
     return s;
 }
 
@@ -173,19 +177,26 @@ std::optional<PresetDef> presetDef(std::string_view name) {
         d.species = coniferBase();
         Species& s = d.species;
         if (name == "pine") {
-            // Scots pine: rising boughs in open whorls, the crown thinning
-            // and rounding with age; long needles in tufts; red-brown plated
-            // bark.
+            // Scots pine: rising boughs in open whorls, the lower ones shed
+            // (crownLift) so the crown sits on the top half of a bare trunk,
+            // flattening once the leader stops (heightMax) and the upper
+            // boughs fill in under it; long needles in tufts; red-brown
+            // plated bark.
             d.root = leaderWhorlModule(4, 0.25f, 1.5f, 0.3f, 1.0f, "pine:root");
             d.leader = leaderWhorlModule(4, 0.3f, 0.8f, 0.3f, 1.0f, "pine:leader");
             d.lateral = plagiotropicModule(2, 0.7f, 0.7f, 0.35f, 1.0f, "pine:bough");
             s.apicalDominance = 0.35f;
-            s.lateralElevation = 0.3f; s.lateralOrthotropy = 0.5f;
-            s.crownSlope = 0.3f; s.crownRadiusMax = 3.5f;
+            s.lateralElevation = 0.5f; s.lateralOrthotropy = 0.5f;
+            s.crownSlope = 0.3f; s.crownBase = 2.5f; s.crownRadiusMax = 5.0f;
+            s.crownLift = 0.45f; s.heightMax = 20.0f;
+            s.kink = 0.22f; s.individualVariation = 0.35f;
             s.tropismG2 = 0.04f;
             bark(s, 0.8f, 1.8f, 0.2f, 0.5f);
             s.barkColor = rgb(0.32f, 0.17f, 0.10f);
-            s.leafColor = rgb(0.075f, 0.12f, 0.05f);
+            s.leafColor = rgb(0.05f, 0.085f, 0.055f);
+            // Rounded tufts at the boughs' ends with sky between them, no
+            // spire.
+            s.clumpFlat = 0.7f; s.clumpReach = 0.0f; s.clumpScale = 0.4f;
         } else if (name == "spruce") {
             // Norway spruce: a narrow spire, boughs level then drooping, the
             // sprays hanging from them; dark; fine grey-brown scaly bark.
@@ -215,9 +226,14 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             d.leader = leaderWhorlModule(4, 0.05f, 0.9f, 0.4f, 1.0f, "cedar:leader");
             d.lateral = plagiotropicModule(3, 0.95f, 0.8f, 0.5f, 1.0f, "cedar:bough");
             s.apicalDominance = 0.25f;
-            s.lateralElevation = 0.05f; s.lateralOrthotropy = 0.8f;
-            s.crownSlope = 0.6f; s.crownBase = 1.5f; s.crownRadiusMax = 7.0f;
+            s.lateralElevation = 0.15f; s.lateralOrthotropy = 0.8f;
+            s.crownSlope = 0.8f; s.crownBase = 4.0f; s.crownRadiusMax = 7.0f;
+            // The leader gives out early and the shelves spread under it:
+            // broader than tall, a flat top.
+            s.heightMax = 15.0f;
             s.tropismG2 = 0.03f;
+            // Thin, wide plates on each bough, open sky between the shelves.
+            s.clumpFlat = 0.3f; s.clumpScale = 0.45f;
             bark(s, 0.6f, 0.8f, 0.3f, 0.6f);
             s.barkColor = rgb(0.24f, 0.20f, 0.17f);
             s.leafColor = rgb(0.055f, 0.1f, 0.085f);
@@ -230,7 +246,11 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             d.lateral = plagiotropicModule(2, 0.7f, 0.5f, 0.3f, 1.0f, "redwood:bough");
             s.apicalDominance = 0.65f;
             s.lateralElevation = -0.2f; s.lateralOrthotropy = 0.6f;
-            s.crownSlope = 0.15f; s.crownBase = 0.6f; s.crownRadiusMax = 2.8f;
+            s.crownSlope = 0.15f; s.crownBase = 0.6f; s.crownRadiusMax = 2.2f;
+            s.crownLift = 0.3f;
+            // A massive trunk for its boughs (a low pipe exponent): the
+            // column stands on a pillar.
+            s.pipeExp = 1.4f;
             s.growthScale = 3.0f;
             s.tropismG2 = 0.08f;
             bark(s, 1.0f, 0.55f, 0.15f, 1.3f);
@@ -249,7 +269,11 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             bark(s, 0.5f, 0.5f, 0.2f, 0.5f);
             s.barkColor = rgb(0.24f, 0.18f, 0.13f);
             s.leafColor = rgb(0.035f, 0.075f, 0.035f);
-            s.clumpScale = 0.3f;
+            s.clumpScale = 0.2f;
+            // Upright sprays packed round the leader to its tip: round
+            // clumps, full size however close to the axis (a flame, not a
+            // spire).
+            s.clumpFlat = 1.0f; s.clumpReach = 0.0f;
         } else {
             // Juniper: a small tree of several stems, irregular, blue-grey
             // scale-leaf sprays; shreddy bark.
@@ -266,6 +290,8 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             bark(s, 0.75f, 0.35f, 0.25f, 0.4f);
             s.barkColor = rgb(0.30f, 0.21f, 0.16f);
             s.leafColor = rgb(0.06f, 0.09f, 0.07f);
+            // Bushy: rounded tufts, no spire.
+            s.clumpFlat = 0.8f; s.clumpReach = 0.0f;
         }
         return d;
     }
@@ -297,6 +323,10 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.tropismG2 = 0.1f;
             s.leafColor = rgb(0.13f, 0.27f, 0.09f);
             s.leafSize = 1.1f;
+            // Mophead blooms: big round heads of pale blue florets.
+            s.bloomForm = static_cast<uint32_t>(BloomForm::Head);
+            s.bloomColor = rgb(0.42f, 0.5f, 0.85f);
+            s.bloomSize = 0.2f;
         } else if (name == "hibiscus") {
             // Upright, open; mid-green.
             d.root = basalStemsModule(4, 0.35f, 0.5f, 1.0f, "hibiscus:root");
@@ -304,6 +334,10 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.orthotropy = 0.65f;
             s.leafColor = rgb(0.12f, 0.26f, 0.08f);
             s.leafSize = 0.8f;
+            // Large open red flowers.
+            s.bloomForm = static_cast<uint32_t>(BloomForm::Flower);
+            s.bloomColor = rgb(0.8f, 0.06f, 0.08f);
+            s.bloomSize = 0.14f;
         } else {
             // Lavender: a low cushion of upright shoots, grey-green.
             d.root = basalStemsModule(8, 0.8f, 0.18f, 1.0f, "lavender:root");
@@ -312,6 +346,10 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.leafColor = rgb(0.20f, 0.24f, 0.16f);
             s.clumpScale = 0.7f;
             s.leafSize = 0.25f;
+            // Purple spikes held above the cushion.
+            s.bloomForm = static_cast<uint32_t>(BloomForm::Spike);
+            s.bloomColor = rgb(0.3f, 0.16f, 0.55f);
+            s.bloomSize = 0.12f;
         }
         return d;
     }

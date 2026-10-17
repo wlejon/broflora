@@ -1,6 +1,7 @@
 #include "broflora/clumps.h"
 
 #include "bromath/vec.h"
+#include "internal_foliage.h"
 
 #include <algorithm>
 #include <cmath>
@@ -45,11 +46,18 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
     // is measured with heights stretched by 1 / flat.
     const float flat = std::clamp(plant.species.clumpFlat > 0.0f ? plant.species.clumpFlat : 1.0f, 0.2f, 1.0f);
     const float reach = std::max(plant.species.clumpReach, 0.0f);
-    const bool evergreen = plant.species.leafForm != static_cast<uint32_t>(LeafForm::Broad);
+    const float fill = std::clamp(plant.species.clumpFill, 0.0f, 1.0f);
 
     std::vector<int> kids(segs.size(), 0);
     for (const auto& s : segs) {
         if (s.parent >= 0 && static_cast<size_t>(s.parent) < segs.size()) ++kids[s.parent];
+    }
+    // Children that have grown any length: a shoot whose buds have only just
+    // broken (its children still of no length) is still a tip.
+    std::vector<int> grownKids(segs.size(), 0);
+    for (const auto& s : segs) {
+        if (s.parent >= 0 && static_cast<size_t>(s.parent) < segs.size() && bromath::vdist2(s.from, s.to) >= 1e-8f)
+            ++grownKids[s.parent];
     }
 
     const uint64_t seed = opts.seed ^ (static_cast<uint64_t>(std::llround(plant.origin.x * 977.0f)) * 0x9E3779B97F4A7C15ULL)
@@ -64,9 +72,18 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
         if (bromath::vdist2(s.from, s.to) < 1e-12f) continue;
         const size_t gi = segBase + i;
         FoliageSample f = fol[i];
-        // An evergreen's new shoots carry their needles or scales as they
-        // grow: a conifer's young leader and top boughs are clothed, not bare.
-        if (evergreen) f.age01 = std::max(f.age01, 0.7f);
+        // A filled crown (Species::clumpFill): new shoots carry their
+        // foliage as they grow (a conifer's young leader and top boughs are
+        // clothed, not bare), and every shoot tip carries it, wherever it
+        // grows: a whorl's short shoots on a leader still lengthening are the
+        // spire's foliage, though their module has gone on to branch.
+        if (fill > 0.0f) {
+            f.age01 = std::max(f.age01, 0.7f * fill);
+            if (grownKids[i] == 0) {
+                f.isTerminal = true;
+                f.twigGrade01 = std::max(f.twigGrade01, internal::leafGrade(plant.species, 2.0f * s.radius));
+            }
+        }
         const float w = opts.densityWeight.empty() ? foliageDensity(f)
                       : gi < opts.densityWeight.size() ? opts.densityWeight[gi] : 0.0f;
         if (!(w >= opts.minDensity)) continue;

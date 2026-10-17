@@ -34,7 +34,8 @@ float* speciesField(Species& s, const std::string& f) {
         {"maxVigor", &Species::maxVigor}, {"minVigor", &Species::minVigor},
         {"clumpScale", &Species::clumpScale}, {"apicalDominance", &Species::apicalDominance},
         {"maxBranchOrder", &Species::maxBranchOrder}, {"crownSlope", &Species::crownSlope},
-        {"crownBase", &Species::crownBase}, {"crownRadiusMax", &Species::crownRadiusMax}, {"distributionWeightTropism", &Species::distributionWeightTropism},
+        {"crownBase", &Species::crownBase}, {"crownRadiusMax", &Species::crownRadiusMax}, {"crownLift", &Species::crownLift}, {"heightMax", &Species::heightMax},
+        {"clumpFlat", &Species::clumpFlat}, {"clumpReach", &Species::clumpReach},{"distributionWeightTropism", &Species::distributionWeightTropism},
         {"distributionWeightCollisions", &Species::distributionWeightCollisions},
     };
     for (const auto& x : fields)

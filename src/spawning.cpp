@@ -308,6 +308,8 @@ void spawnModules(Plant& plant,
             // and the per-node tropism so the descent reasons about
             // where the terminal actually sits, not its rigid pose.
             Vec3 attachWorld = u.worldPos + nodeOffsetFromRoot(sp, u, termNode);
+            // Nothing buds above the species' height (Species::heightMax).
+            if (sp.heightMax > 0.0f && attachWorld.y - plant.origin.y > sp.heightMax) continue;
             if (envelope && childLateral &&
                 std::hypot(attachWorld.x - plant.origin.x, attachWorld.z - plant.origin.z) > envelopeAt(attachWorld.y))
                 continue;
