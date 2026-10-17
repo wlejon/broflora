@@ -69,6 +69,22 @@ struct Species {
     // instead of running ruler-straight. 0 emits the grown skeleton exactly.
     float kink = 0.2f;
 
+    // Bark (emit only, like `kink`: the simulation never reads it). What
+    // the renderer draws on the wood (sway.h packBarkWord carries the first
+    // three in every bark record) and the shape of the wood at the ground
+    // and at its forks (tubeSegments):
+    //   barkFurrow    0 smooth (beech) .. 1 deep furrows between ridges (oak)
+    //   barkScale     the ridges' spacing, x the default (which already
+    //                 widens with the girth)
+    //   barkMoss      moss and lichen, 0 none .. 1 lush
+    //   rootFlare     the trunk's swell where it meets the ground, x its radius
+    //   branchCollar  a side branch's swell where it leaves its parent, x its radius
+    float barkFurrow   = 0.55f;
+    float barkScale    = 1.0f;
+    float barkMoss     = 0.5f;
+    float rootFlare    = 0.6f;
+    float branchCollar = 0.5f;
+
     // Terrain anchoring (broflora extension, not in the paper).
     //
     // terrainAnchorWeight in [0,1] blends the root module's per-tick

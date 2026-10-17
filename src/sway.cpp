@@ -172,9 +172,14 @@ void computePlantSway(const Plant& plant,
     // segments share both, so a limb bends as one piece.
     const uint64_t plantSeed = static_cast<uint64_t>(std::llround(plant.origin.x * 1013.0f)) * 0x9E3779B97F4A7C15ULL
                              ^ static_cast<uint64_t>(std::llround(plant.origin.z * 7919.0f));
+    common.bark = packBarkWord(plant.species.barkFurrow, plant.species.barkScale, plant.species.barkMoss);
     for (size_t i = 0; i < n; ++i) {
         SegmentSway& s = out[base + i];
         s = common;
+        {
+            const int p = parentOf(i);
+            s.pathFrom = p < 0 ? 0.0f : out[base + p].pathFrom + len[p];
+        }
         if (trunk[i]) continue;
         const int p = parentOf(i);
         const bool limbStart = (p < 0) || trunk[p];
@@ -405,13 +410,35 @@ std::vector<float> vegetationPerVertex(const std::vector<float>& perItem, size_t
 }
 
 void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s) {
+    appendSegmentVegetation(out, s, 0.0f, 1.0f, 0.0f);
+}
+
+void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s, float along0, float along1,
+                             float length) {
+    const auto at = [&](float t) { return s.weightFrom + (s.weightTo - s.weightFrom) * t; };
     const float v[kSegmentVegetationFloats] = {
         s.root.x, s.root.y, s.root.z, s.height,
         s.crown.x, s.crown.y, s.crown.z, s.crownRadius,
-        s.weightFrom, s.weightTo, 0.0f, 0.0f,
+        at(along0), at(along1), s.pathFrom + along0 * length, s.bark,
         0.0f, packSwayTwig(s.phase, s.twig), packSwayLimb(s.limb), packSwayTrunk(s.trunk),
     };
     out.insert(out.end(), v, v + kSegmentVegetationFloats);
+}
+
+float packBarkWord(float furrow, float scale, float moss) {
+    const auto lin = [](float v) { return 1u + static_cast<uint32_t>(std::lround(std::clamp(v, 0.0f, 1.0f) * 254.0f)); };
+    const uint32_t sc = scale > 0.0f ? logCode(scale, kBarkScaleRange, 8) : 0u;
+    return static_cast<float>(lin(furrow) | (sc << 8) | (lin(moss) << 16));
+}
+
+void unpackBarkWord(float word, float& furrow, float& scale, float& moss) {
+    const uint32_t w = wordOf(word);
+    const auto lin = [](uint32_t c, float dflt) { return c == 0 ? dflt : static_cast<float>(c - 1u) / 254.0f; };
+    const Species dflt;
+    furrow = lin(w & 255u, dflt.barkFurrow);
+    const uint32_t sc = (w >> 8) & 255u;
+    scale = sc == 0 ? dflt.barkScale : logValue(sc, kBarkScaleRange, 8);
+    moss = lin((w >> 16) & 255u, dflt.barkMoss);
 }
 
 // Bark-mesh vegetation, laid out like bromesh::meshBranches' chains (the

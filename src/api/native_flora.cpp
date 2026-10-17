@@ -393,6 +393,14 @@ Value jsForestCoverAt(Value /*thisVal*/, std::span<const Value> args) {
     return ev::fromDouble(cover->at(ev::toDouble(args[1]), ev::toDouble(args[2])));
 }
 
+// forestCanopyAt(handle, x, z) -> 0..1
+Value jsForestCanopyAt(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.size() < 3) return ev::fromDouble(0.0);
+    const auto* cover = getCover(args[0]);
+    if (!cover) return ev::throwTypeError("forestCanopyAt: not a forest cover");
+    return ev::fromDouble(cover->canopyAt(ev::toDouble(args[1]), ev::toDouble(args[2])));
+}
+
 // grow(world, ticks, dt, cacheDir) -> { cached, key, ms, error? }
 Value jsGrow(Value /*thisVal*/, std::span<const Value> args) {
     if (args.empty()) return ev::undefined();
@@ -477,6 +485,11 @@ Value jsPlantInfo(Value /*thisVal*/, std::span<const Value> args) {
     sp.set(ev::setProperty(sp.get(), "pipeExp", ev::fromDouble(s.pipeExp)));
     sp.set(ev::setProperty(sp.get(), "leafDiameter", ev::fromDouble(s.leafDiameter)));
     sp.set(ev::setProperty(sp.get(), "kink", ev::fromDouble(s.kink)));
+    sp.set(ev::setProperty(sp.get(), "barkFurrow", ev::fromDouble(s.barkFurrow)));
+    sp.set(ev::setProperty(sp.get(), "barkScale", ev::fromDouble(s.barkScale)));
+    sp.set(ev::setProperty(sp.get(), "barkMoss", ev::fromDouble(s.barkMoss)));
+    sp.set(ev::setProperty(sp.get(), "rootFlare", ev::fromDouble(s.rootFlare)));
+    sp.set(ev::setProperty(sp.get(), "branchCollar", ev::fromDouble(s.branchCollar)));
     sp.set(ev::setProperty(sp.get(), "terrainAnchorWeight", ev::fromDouble(s.terrainAnchorWeight)));
     sp.set(ev::setProperty(sp.get(), "maxSeedingSlope", ev::fromDouble(s.maxSeedingSlope)));
     sp.set(ev::setProperty(sp.get(), "distributionWeightCollisions", ev::fromDouble(s.distributionWeightCollisions)));
@@ -718,6 +731,7 @@ void registerFloraNativeHelpers() {
     REG_FN(grow, 4, jsGrow);
     REG_FN(forestCover, 4, jsForestCover);
     REG_FN(forestCoverAt, 3, jsForestCoverAt);
+    REG_FN(forestCanopyAt, 3, jsForestCanopyAt);
     REG_FN(plantInfo, 2, jsPlantInfo);
     REG_FN(setClimate, 2, jsSetClimate);
     REG_FN(sampleShadow, 2, jsSampleShadow);

@@ -351,7 +351,9 @@
     // (x, z) -> 0..1 that is 0 under a closed canopy, thin in the crowns'
     // shade, clear at each trunk, full in the open. `instances` defaults to
     // the forest's own. `floor` is the shade's least cover before the canopy
-    // closes; `closed` the crown overlap at which nothing grows.
+    // closes; `closed` the crown overlap at which nothing grows. Its
+    // `canopy` member is the crowns' shade over a point (createGrass's
+    // `floor`).
     fn(ns_flora, "forestCover", function forestCover(forest, opts) {
         const o = opts || {};
         const inst = o.instances || (forest && forest.instances) || new Float32Array(0);
@@ -379,8 +381,13 @@
             m++;
         }
         const handle = _native.forestCover(trees.subarray(0, m * 5), floor, closed, clear);
-        const at = _native.forestCoverAt;
-        return function cover(x, z) { return at(handle, x, z); };
+        const at = _native.forestCoverAt, canopyAt = _native.forestCanopyAt;
+        const cover = function cover(x, z) { return at(handle, x, z); };
+        // The crowns over a point, 0 in the open .. 1 under a crown's middle
+        // or where crowns overlap: createGrass's `floor` (the leaf litter and
+        // the low leafy plants of a forest floor).
+        cover.canopy = function canopy(x, z) { return canopyAt(handle, x, z); };
+        return cover;
     });
 
     // ---- bro.flora.FloraWorld ------------------------------------------------

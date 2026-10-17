@@ -66,7 +66,20 @@ ForestCover::ForestCover(const std::vector<ForestCoverTree>& trees, const Forest
 
 double ForestCover::at(double x, double z) const {
     double canopy = 0.0, trunk = 1.0;
-    const double clear = opts_.trunkClear, closed = opts_.closed, floor = opts_.floor;
+    sum(x, z, canopy, trunk);
+    const double closed = opts_.closed, floor = opts_.floor;
+    const double lit = 1 - std::min(1.0, canopy / closed);
+    return trunk * (1 - smooth(0.7 * closed, closed, canopy)) * (floor + (1 - floor) * lit * lit);
+}
+
+double ForestCover::canopyAt(double x, double z) const {
+    double canopy = 0.0, trunk = 1.0;
+    sum(x, z, canopy, trunk);
+    return std::min(1.0, canopy);
+}
+
+void ForestCover::sum(double x, double z, double& canopy, double& trunk) const {
+    const double clear = opts_.trunkClear;
     // Far off (or NaN) no tree reaches: the open-ground answer, as in JS.
     const bool inRange = std::abs(x) < 1e9 && std::abs(z) < 1e9;
     const int32_t gi = inRange ? static_cast<int32_t>(std::floor(x / kCell)) : 0;
@@ -88,8 +101,6 @@ double ForestCover::at(double x, double z) const {
             }
         }
     }
-    const double lit = 1 - std::min(1.0, canopy / closed);
-    return trunk * (1 - smooth(0.7 * closed, closed, canopy)) * (floor + (1 - floor) * lit * lit);
 }
 
 }  // namespace broflora

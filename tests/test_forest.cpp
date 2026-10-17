@@ -99,16 +99,17 @@ TEST(forest_specimens_are_their_plants_relative_to_where_they_stand) {
     const ForestSpecimen& b = f.specimens[1];
     ASSERT(a.segCount == b.segCount && a.segCount > 0, "same bark");
     ASSERT(b.segStart == a.segStart + a.segCount, "specimens follow each other");
-    // The bark is the plant's segments less its origin (in thickness order).
+    // The bark is the plant's segments less its origin (in thickness order;
+    // a segment split at a flare or a collar ends in its last piece).
     for (size_t k = 0; k < 2; ++k) {
         const ForestSpecimen& s = f.specimens[k];
         const auto segs = emitPlantSegments(w.plants[k]);
-        bool found = true;
-        for (uint32_t i = 0; i < s.segCount; ++i) {
-            const float* r = &f.segments[(s.segStart + i) * 8];
+        bool found = s.segCount >= segs.size();
+        for (const auto& g : segs) {
+            const bromath::Vec3 d = g.to - s.origin;
             bool hit = false;
-            for (const auto& g : segs) {
-                const bromath::Vec3 d = g.to - s.origin;
+            for (uint32_t i = 0; i < s.segCount; ++i) {
+                const float* r = &f.segments[(s.segStart + i) * 8];
                 hit = hit || (std::fabs(d.x - r[4]) + std::fabs(d.y - r[5]) + std::fabs(d.z - r[6]) < 1e-4f &&
                               g.radius == r[7]);
             }
@@ -129,7 +130,11 @@ TEST(forest_bark_is_thickest_first_and_a_prefix_stays_connected) {
         bool sorted = true, covers = true;
         for (uint32_t i = 0; i < s.segCount; ++i) {
             if (i) sorted = sorted && f.keepRadius[s.segStart + i] <= f.keepRadius[s.segStart + i - 1];
-            covers = covers && f.keepRadius[s.segStart + i] >= f.segments[(s.segStart + i) * 8 + 7];
+            // A root flare's or collar's piece swells past its segment's
+            // pipe radius by up to that much.
+            const Species sp = w.plants[s.plant].species;
+            const float swell = 1.0f + std::max(sp.rootFlare, sp.branchCollar);
+            covers = covers && f.keepRadius[s.segStart + i] * swell >= f.segments[(s.segStart + i) * 8 + 7];
         }
         ASSERT(f.keepRadius.size() == f.segments.size() / 8, "a keep radius per segment");
         ASSERT(sorted, "the keep radius never grows down the list");
@@ -210,4 +215,86 @@ TEST(forest_tube_segments_match_the_branch_tubes) {
     }
     ASSERT(ok, "radii from the pipe model, unit joint directions");
     ASSERT(tubeSegments(segs, 1.0f).empty(), "minRadius drops thin bark");
+}
+
+TEST(forest_tube_root_flare_and_branch_collar) {
+    const Plant p = forkPlantAt({0.0f, 0.0f, 0.0f});
+    const auto segs = emitPlantSegments(p);
+    TubeShape shape;
+    shape.rootFlare = 0.6f;
+    shape.branchCollar = 0.5f;
+    const auto tubes = tubeSegments(segs, shape);
+    ASSERT(tubes.size() > segs.size(), "the flare and a collar split segments");
+
+    // Each segment's pieces are adjacent, in order, end to end and cover it.
+    bool joined = true, covered = true;
+    for (size_t i = 0; i < tubes.size();) {
+        size_t j = i;
+        while (j + 1 < tubes.size() && tubes[j + 1].segment == tubes[i].segment) ++j;
+        covered = covered && tubes[i].along0 == 0.0f && tubes[j].along1 == 1.0f;
+        for (size_t k = i; k < j; ++k)
+            joined = joined && bromath::vlen(tubes[k].to - tubes[k + 1].from) < 1e-5f &&
+                     std::fabs(tubes[k].rTo - tubes[k + 1].rFrom) < 1e-6f && tubes[k].along1 == tubes[k + 1].along0;
+        i = j + 1;
+    }
+    ASSERT(joined && covered, "a segment's pieces run on unbroken over the whole of it");
+
+    // The root swells toward the ground and narrows up it.
+    const TubeSegment& root = tubes.front();
+    const float r = segs[static_cast<size_t>(root.segment)].radius;
+    ASSERT(segs[static_cast<size_t>(root.segment)].parent < 0, "the root first");
+    ASSERT(std::fabs(root.rFrom - 1.6f * r) < 1e-5f && root.rTo < root.rFrom && root.rTo > r, "the flare at the ground");
+
+    // A side shoot's collar: no wider than its parent, a short swell.
+    bool collar = false;
+    for (size_t k = 0; k + 1 < tubes.size(); ++k) {
+        const TubeSegment& a = tubes[k];
+        if (a.segment != tubes[k + 1].segment || segs[static_cast<size_t>(a.segment)].parent < 0) continue;
+        const auto& s = segs[static_cast<size_t>(a.segment)];
+        collar = a.rFrom <= segs[static_cast<size_t>(s.parent)].radius + 1e-6f && a.rFrom > a.rTo &&
+                 a.rTo > s.radius && bromath::vlen(a.to - a.from) < 2.01f * s.radius;
+    }
+    ASSERT(collar, "a side shoot swells over two radii from its fork");
+}
+
+TEST(forest_bark_records_carry_the_path_and_the_bark_word) {
+    WorldState w = twoPlants();
+    w.plants[1].species.barkFurrow = 0.9f;
+    w.plants[1].species.barkScale = 2.0f;
+    w.plants[1].species.barkMoss = 0.1f;
+    const ForestEmit f = emitForest(w, forestOptions());
+    const ForestSpecimen& b = f.specimens[1];
+    float furrow, scale, moss;
+    unpackBarkWord(f.segmentVegetation[b.segStart * 16 + 11], furrow, scale, moss);
+    ASSERT(std::fabs(furrow - 0.9f) < 0.005f && std::fabs(scale - 2.0f) < 0.05f && std::fabs(moss - 0.1f) < 0.005f,
+           "the species' bark in every record");
+    unpackBarkWord(0.0f, furrow, scale, moss);
+    const Species dflt;
+    ASSERT(furrow == dflt.barkFurrow && scale == dflt.barkScale && moss == dflt.barkMoss, "an unset word: the defaults");
+
+    // The path at a piece's from-end is the path to it: the piece that ends
+    // there (a module's base can stand off its parent's tip, where none
+    // does) has the path less its own length.
+    bool path = true;
+    uint32_t checked = 0;
+    float most = 0.0f;
+    for (uint32_t i = 0; i < b.segCount; ++i) {
+        const float* s = &f.segments[(b.segStart + i) * 8];
+        const float at = f.segmentVegetation[(b.segStart + i) * 16 + 10];
+        most = std::max(most, at);
+        if (std::hypot(s[0], s[2]) < 1e-4f && std::fabs(s[1]) < 1e-4f) {
+            path = path && at == 0.0f;
+            continue;
+        }
+        for (uint32_t j = 0; j < b.segCount; ++j) {
+            const float* q = &f.segments[(b.segStart + j) * 8];
+            if (std::fabs(q[4] - s[0]) + std::fabs(q[5] - s[1]) + std::fabs(q[6] - s[2]) > 1e-5f) continue;
+            const float len = std::hypot(q[4] - q[0], q[5] - q[1], q[6] - q[2]);
+            path = path && std::fabs(f.segmentVegetation[(b.segStart + j) * 16 + 10] + len - at) < 1e-4f;
+            ++checked;
+            break;
+        }
+    }
+    ASSERT(path && checked * 2 >= b.segCount, "each piece's path is its parent's plus the parent's length");
+    ASSERT(most > 2.0f, "the path reaches the twigs");
 }

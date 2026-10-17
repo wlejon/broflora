@@ -5,6 +5,7 @@
 #include <bromath/vec.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <numeric>
 #include <vector>
@@ -14,6 +15,20 @@ namespace broflora {
 using bromath::Vec3;
 
 std::vector<TubeSegment> tubeSegments(const std::vector<bromesh::BranchSegment>& segs, float minRadius) {
+    TubeShape shape;
+    shape.minRadius = minRadius;
+    return tubeSegments(segs, shape);
+}
+
+void appendTubeVegetation(std::vector<float>& out, const TubeSegment& t, const std::vector<SegmentSway>& sway,
+                          const std::vector<bromesh::BranchSegment>& segs) {
+    const size_t i = static_cast<size_t>(t.segment);
+    if (i >= sway.size() || i >= segs.size()) return;
+    appendSegmentVegetation(out, sway[i], t.along0, t.along1, bromath::vlen(segs[i].to - segs[i].from));
+}
+
+std::vector<TubeSegment> tubeSegments(const std::vector<bromesh::BranchSegment>& segs, const TubeShape& shape) {
+    const float minRadius = shape.minRadius;
     // Each segment's continuation: its thickest child.
     std::vector<int> mainChild(segs.size(), -1);
     for (size_t i = 0; i < segs.size(); ++i) {
@@ -52,7 +67,46 @@ std::vector<TubeSegment> tubeSegments(const std::vector<bromesh::BranchSegment>&
         t.tangentFrom = continues ? bisect(dirOf(static_cast<size_t>(p)), di) : di;
         t.tangentTo = mainChild[i] >= 0 ? bisect(di, dirOf(static_cast<size_t>(mainChild[i]))) : di;
         t.segment = static_cast<int32_t>(i);
-        out.push_back(t);
+
+        // The pieces of the segment, at these distances from its from-end
+        // with these radii (the first and last ends are t's own).
+        const float L = bromath::vlen(s.to - s.from), r = s.radius;
+        float cut[4], rad[4];
+        int cuts = 0;
+        if (!hasParent && shape.rootFlare > 0.0f && r > 0.0f) {
+            // The root flare: r (1 + F e^(-h / r)), sampled where it bends.
+            for (float h : {0.35f, 1.0f, 2.2f}) {
+                if (h * r > L - 0.25f * r) break;
+                cut[cuts] = h * r;
+                rad[cuts++] = r * (1.0f + shape.rootFlare * std::exp(-h));
+            }
+            t.rFrom = r * (1.0f + shape.rootFlare);
+        } else if (hasParent && !continues && shape.branchCollar > 0.0f && L > 4.0f * r) {
+            // The collar: a short swell at the fork, then the branch.
+            if (segs[p].radius > 0.0f) t.rFrom = std::min(segs[p].radius, (1.0f + shape.branchCollar) * r);
+            cut[0] = 2.0f * r;
+            rad[cuts++] = r * (1.0f + 0.25f * shape.branchCollar);
+        }
+        if (cuts == 0) {
+            out.push_back(t);
+            continue;
+        }
+        float at = 0.0f, rAt = t.rFrom;
+        for (int k = 0; k <= cuts; ++k) {
+            TubeSegment piece = t;
+            const float end = k < cuts ? cut[k] : L;
+            piece.from = s.from + di * at;
+            piece.to = k < cuts ? s.from + di * end : s.to;
+            piece.rFrom = rAt;
+            piece.rTo = k < cuts ? rad[k] : t.rTo;
+            piece.tangentFrom = k == 0 ? t.tangentFrom : di;
+            piece.tangentTo = k < cuts ? di : t.tangentTo;
+            piece.along0 = at / L;
+            piece.along1 = k < cuts ? end / L : 1.0f;
+            out.push_back(piece);
+            at = end;
+            rAt = piece.rTo;
+        }
     }
     return out;
 }
@@ -127,7 +181,11 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
                 }
             }
         }
-        std::vector<TubeSegment> tubes = tubeSegments(segs, opts.minRadius);
+        TubeShape shape;
+        shape.minRadius = opts.minRadius;
+        shape.rootFlare = plant.species.rootFlare;
+        shape.branchCollar = plant.species.branchCollar;
+        std::vector<TubeSegment> tubes = tubeSegments(segs, shape);
         std::stable_sort(tubes.begin(), tubes.end(), [&](const TubeSegment& a, const TubeSegment& b) {
             return keep[static_cast<size_t>(a.segment)] > keep[static_cast<size_t>(b.segment)];
         });
@@ -140,7 +198,7 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
             out.tangents.insert(out.tangents.end(), {t.tangentFrom.x, t.tangentFrom.y, t.tangentFrom.z,
                                                      t.tangentTo.x, t.tangentTo.y, t.tangentTo.z});
             const size_t at = out.segmentVegetation.size();
-            appendSegmentVegetation(out.segmentVegetation, sway[static_cast<size_t>(t.segment)]);
+            appendTubeVegetation(out.segmentVegetation, t, sway, segs);
             relativeRecord(&out.segmentVegetation[at], o);
         }
 

@@ -30,8 +30,14 @@ class ForestCover {
 public:
     ForestCover(const std::vector<ForestCoverTree>& trees, const ForestCoverOptions& opts);
     double at(double x, double z) const;
+    /// How shaded the floor is at a point: the crowns over it, 0 in the
+    /// open, 1 under one crown's middle or where crowns overlap (the leaf
+    /// litter and the understory bro.scene's grass draws there).
+    double canopyAt(double x, double z) const;
 
 private:
+    // The crowns' overlap at a point and how clear of trunks it is.
+    void sum(double x, double z, double& canopy, double& trunk) const;
     // The trees by grid cell (a counting sort: each cell keeps them in the
     // order given), structure of arrays.
     std::vector<double> x_, z_, cx_, cz_, r_;

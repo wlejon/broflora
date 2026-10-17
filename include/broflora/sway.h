@@ -133,6 +133,12 @@ struct SegmentSway {
     float weightFrom = 0.0f;
     float weightTo = 0.0f;
     float phase = 0.0f;
+    // Bark: the way along the wood from the plant's root to this segment's
+    // `from` (metres, through every fork), so a pattern laid along the stem
+    // runs on unbroken across joints; and the plant's bark word
+    // (packBarkWord).
+    float pathFrom = 0.0f;
+    float bark = 0.0f;
     Cantilever trunk;
     Cantilever limb;
     Cantilever twig;
@@ -201,10 +207,26 @@ std::vector<float> vegetationPerVertex(const std::vector<float>& perItem, size_t
 
 // Per-segment vegetation blocks for bro.scene's tube / scatter records,
 // 16 floats per segment: (root.xyz, height) (crown.xyz, crownRadius)
-// (weightFrom, weightTo, 0, 0) (0, twig, limb, trunk). The renderer puts
-// each leaf's own axis in the zero.
+// (weightFrom, weightTo, path, bark) (0, twig, limb, trunk). The renderer
+// puts each leaf's own axis in the zero. `path` is the way from the root to
+// the record's from-end (SegmentSway::pathFrom) and `bark` the plant's bark
+// word: what bro.scene's bark shading reads.
+//
+// A tube piece covering only [along0, along1] of its segment (tubeSegments
+// splits a segment at a root flare or a branch collar) takes the weights
+// and the path at its own ends; `length` is the whole segment's.
 inline constexpr size_t kSegmentVegetationFloats = 16;
 void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s);
+void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s, float along0, float along1,
+                             float length);
+
+// The bark word: Species::barkFurrow, barkScale and barkMoss as three 8-bit
+// codes in one float (an integer below 2^24, exact). Code 0 of a field means
+// "unset" (the renderer's default); furrow and moss are linear over 0..1,
+// scale logarithmic over kBarkScaleRange.
+inline constexpr float kBarkScaleRange[2] = {0.25f, 4.0f};
+float packBarkWord(float furrow, float scale, float moss);
+void unpackBarkWord(float word, float& furrow, float& scale, float& moss);
 
 // Bark-mesh vegetation for `mesh` as bromesh::meshBranches laid it out over
 // `segs` with `sides` sides (emitPlantMesh / emitWorldMesh).

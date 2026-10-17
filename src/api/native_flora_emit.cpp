@@ -357,40 +357,46 @@ Value jsEmitBranchTubes(Value /*thisVal*/, std::span<const Value> args) {
     auto* w = getWrapper(args[0]);
     if (!w || !w->world) return ev::createObject();
 
-    auto segs = broflora::emitWorldSegments(*w->world);
-    auto sway = broflora::emitWorldSway(*w->world);
     float minRadius = 0.0f;
     if (args.size() >= 2 && ev::isObject(args[1])) {
         readFloatField(args[1], "minRadius", minRadius);
     }
 
     std::vector<float> vegetation;
-    vegetation.reserve(segs.size() * broflora::kSegmentVegetationFloats);
     std::vector<float> packed;
-    packed.reserve(segs.size() * 8);
     std::vector<float> tangents;
-    tangents.reserve(segs.size() * 6);
     float bmin[3] = { 1e30f, 1e30f, 1e30f };
     float bmax[3] = { -1e30f, -1e30f, -1e30f };
     float maxR = 0.0f;
+    bool allSway = true;
 
     // A continuation starts at its parent's radius and a side shoot with a
     // collar; a joint with the continuation is mitred on the bisector, so the
-    // tube bends there without a crack or an overlap (broflora::tubeSegments).
-    for (const broflora::TubeSegment& t : broflora::tubeSegments(segs, minRadius)) {
-        packed.insert(packed.end(), {t.from.x, t.from.y, t.from.z, t.rFrom, t.to.x, t.to.y, t.to.z, t.rTo});
-        if (static_cast<size_t>(t.segment) < sway.size())
-            broflora::appendSegmentVegetation(vegetation, sway[static_cast<size_t>(t.segment)]);
-        tangents.insert(tangents.end(), {t.tangentFrom.x, t.tangentFrom.y, t.tangentFrom.z,
-                                         t.tangentTo.x, t.tangentTo.y, t.tangentTo.z});
-        maxR = std::max({ maxR, t.rFrom, t.rTo });
-        bmin[0] = std::min({ bmin[0], t.from.x, t.to.x });
-        bmin[1] = std::min({ bmin[1], t.from.y, t.to.y });
-        bmin[2] = std::min({ bmin[2], t.from.z, t.to.z });
-        bmax[0] = std::max({ bmax[0], t.from.x, t.to.x });
-        bmax[1] = std::max({ bmax[1], t.from.y, t.to.y });
-        bmax[2] = std::max({ bmax[2], t.from.z, t.to.z });
+    // tube bends there without a crack or an overlap; the trunk flares at the
+    // ground (broflora::tubeSegments, each plant with its species' shape).
+    for (const broflora::Plant& plant : w->world->plants) {
+        const auto segs = broflora::emitPlantSegments(plant);
+        const auto sway = broflora::emitPlantSway(plant);
+        if (sway.size() != segs.size()) allSway = false;
+        broflora::TubeShape shape;
+        shape.minRadius = minRadius;
+        shape.rootFlare = plant.species.rootFlare;
+        shape.branchCollar = plant.species.branchCollar;
+        for (const broflora::TubeSegment& t : broflora::tubeSegments(segs, shape)) {
+            packed.insert(packed.end(), {t.from.x, t.from.y, t.from.z, t.rFrom, t.to.x, t.to.y, t.to.z, t.rTo});
+            broflora::appendTubeVegetation(vegetation, t, sway, segs);
+            tangents.insert(tangents.end(), {t.tangentFrom.x, t.tangentFrom.y, t.tangentFrom.z,
+                                             t.tangentTo.x, t.tangentTo.y, t.tangentTo.z});
+            maxR = std::max({ maxR, t.rFrom, t.rTo });
+            bmin[0] = std::min({ bmin[0], t.from.x, t.to.x });
+            bmin[1] = std::min({ bmin[1], t.from.y, t.to.y });
+            bmin[2] = std::min({ bmin[2], t.from.z, t.to.z });
+            bmax[0] = std::max({ bmax[0], t.from.x, t.to.x });
+            bmax[1] = std::max({ bmax[1], t.from.y, t.to.y });
+            bmax[2] = std::max({ bmax[2], t.from.z, t.to.z });
+        }
     }
+    if (!allSway) vegetation.clear();
 
     size_t segCount = packed.size() / 8;
     if (segCount == 0) {

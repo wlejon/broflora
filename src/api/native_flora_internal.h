@@ -547,6 +547,11 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readFloatField(spec, "pipeExp",                     s.pipeExp);
     readFloatField(spec, "leafDiameter",                s.leafDiameter);
     readFloatField(spec, "kink",                        s.kink);
+    readFloatField(spec, "barkFurrow",                  s.barkFurrow);
+    readFloatField(spec, "barkScale",                   s.barkScale);
+    readFloatField(spec, "barkMoss",                    s.barkMoss);
+    readFloatField(spec, "rootFlare",                   s.rootFlare);
+    readFloatField(spec, "branchCollar",                s.branchCollar);
     readFloatField(spec, "terrainAnchorWeight",         s.terrainAnchorWeight);
     readFloatField(spec, "maxSeedingSlope",             s.maxSeedingSlope);
     readFloatField(spec, "distributionWeightCollisions",s.distributionWeightCollisions);
