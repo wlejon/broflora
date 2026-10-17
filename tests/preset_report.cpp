@@ -36,7 +36,7 @@ float* speciesField(Species& s, const std::string& f) {
         {"maxBranchOrder", &Species::maxBranchOrder}, {"crownSlope", &Species::crownSlope},
         {"crownBase", &Species::crownBase}, {"crownRadiusMax", &Species::crownRadiusMax}, {"crownLift", &Species::crownLift}, {"heightMax", &Species::heightMax},
         {"clumpFlat", &Species::clumpFlat}, {"clumpReach", &Species::clumpReach},
-        {"clumpFill", &Species::clumpFill}, {"clumpInner", &Species::clumpInner},
+        {"clumpFill", &Species::clumpFill}, {"clumpInner", &Species::clumpInner}, {"clumpGap", &Species::clumpGap},
         {"distributionWeightTropism", &Species::distributionWeightTropism},
         {"distributionWeightCollisions", &Species::distributionWeightCollisions},
     };

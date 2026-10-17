@@ -212,6 +212,9 @@ struct Species {
     //               as a tip in half light (a shrub's mound, leaved inside
     //               and down to the ground, its stems hidden), and the
     //               clumps packed up to 40% closer so they merge into one mass
+    //   clumpGap    the clumps' spacing, x the emit's (1): above 1 they stand
+    //               apart as separate tufts with sky between them (a pine's
+    //               open crown of tufts at its shoots' ends)
     //   bloomForm   BloomForm: what it flowers as once flowering (none, an
     //               open flower, a round head of florets, an upright spike)
     //   bloomColor  its blooms' albedo (linear)
@@ -226,7 +229,8 @@ struct Species {
     float clumpReach         = 0.0f;
     float clumpFill          = 0.0f;
     float clumpInner         = 0.0f;
-    uint32_t bloomForm       = 0;
+    float clumpGap           = 1.0f;
+    uint32_t bloomForm      = 0;
     bromath::Vec3 bloomColor = {0.0f, 0.0f, 0.0f};
     float bloomSize          = 0.0f;
 };

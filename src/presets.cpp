@@ -201,15 +201,20 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             // A wide cone outline (crownSlope) under an early stop
             // (heightMax): the crown is widest near its top, flat over it.
             s.crownSlope = 0.6f; s.crownBase = 2.5f; s.crownRadiusMax = 5.0f;
-            s.crownLift = 0.45f; s.heightMax = 16.0f;
-            s.kink = 0.22f; s.individualVariation = 0.35f;
+            s.crownLift = 0.55f; s.heightMax = 16.0f;
+            // A straight, stout stem (a Scots pine of 17 m is about half a
+            // metre across): a lower pipe exponent than the other conifers'.
+            s.kink = 0.1f; s.individualVariation = 0.35f;
+            s.pipeExp = 1.55f;
             s.tropismG2 = 0.04f;
             bark(s, 0.8f, 1.8f, 0.2f, 0.5f);
             s.barkColor = rgb(0.44f, 0.21f, 0.10f);
             s.leafColor = rgb(0.05f, 0.085f, 0.055f);
-            // Rounded tufts at the boughs' ends with sky between them, no
-            // spire.
-            s.clumpFlat = 0.7f; s.clumpReach = 0.0f; s.clumpScale = 0.4f;
+            // Tufts at the boughs' ends with sky between them, no spire:
+            // only the outermost shoots carry needles (clumpFill 0), so the
+            // limbs inside the crown are bare.
+            s.clumpFlat = 0.4f; s.clumpReach = 0.0f; s.clumpScale = 0.6f;
+            s.clumpFill = 0.0f; s.clumpGap = 1.3f;
         } else if (name == "spruce") {
             // Norway spruce: a narrow spire, boughs level then drooping, the
             // sprays hanging from them; dark; fine grey-brown scaly bark.
@@ -287,8 +292,10 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.clumpScale = 0.2f;
             // Upright sprays packed round the leader to its tip: round
             // clumps, full size however close to the axis (a flame, not a
-            // spire).
+            // spire); packed and leaved to the core (clumpInner), many small
+            // clumps, so the column is one smooth flame rather than lumps.
             s.clumpFlat = 1.0f; s.clumpReach = 0.0f;
+            s.clumpScale = 0.16f; s.clumpInner = 0.8f;
         } else {
             // Juniper: a small tree of several stems, irregular, blue-grey
             // scale-leaf sprays; shreddy bark.

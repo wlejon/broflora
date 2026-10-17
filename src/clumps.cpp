@@ -124,7 +124,9 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
     const float rMax = R0 * (1.0f + std::max(0.0f, opts.radiusJitter));
     // A crown filled to its core (clumpInner) packs its clumps closer: they
     // overlap into one mass instead of balls with stems between.
-    const float spacing = opts.spacing * (1.0f - 0.4f * inner);
+    // Species::clumpGap sets them apart (a pine's separate tufts).
+    const float gap = std::clamp(plant.species.clumpGap > 0.0f ? plant.species.clumpGap : 1.0f, 0.5f, 4.0f);
+    const float spacing = opts.spacing * (1.0f - 0.4f * inner) * gap;
     const float cell = std::max(1e-4f, spacing * rMax);
     // Grid and spacing in the stretched space (heights over `flat`).
     const auto stretch = [&](const Vec3& p) { return Vec3{p.x, p.y / flat, p.z}; };

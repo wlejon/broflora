@@ -158,10 +158,15 @@ void developModules(Plant& plant, float dt) {
     const float pe = sp.pipeExp > 0.0f ? sp.pipeExp : 2.5f;
     const float invPe = 1.0f / pe;
 
+    // Wood once laid down stays: a stem never grows thinner than it has
+    // been, so a trunk that has shed its lower boughs (crownLift, shade)
+    // keeps the girth they made it grow.
     // Pass 1: zero out, mark which modules have any children.
     std::vector<uint8_t> hasChild(mods.size(), 0);
+    std::vector<float> grown(mods.size());
     for (size_t i = 0; i < mods.size(); ++i) {
         if (mods[i].parent != UINT32_MAX) hasChild[mods[i].parent] = 1;
+        grown[i] = mods[i].diameter;
         mods[i].diameter = 0.0f;
     }
     // Pass 2: accumulate child^pe into parent's diameter slot.
@@ -174,6 +179,7 @@ void developModules(Plant& plant, float dt) {
             // Convert the accumulated sum back to the pe'th root.
             m.diameter = std::pow(m.diameter, invPe);
         }
+        m.diameter = std::max(m.diameter, grown[i]);
         if (m.parent != UINT32_MAX) {
             mods[m.parent].diameter += std::pow(m.diameter, pe);
         }
