@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <numeric>
 #include <unordered_map>
 #include <vector>
@@ -48,6 +49,17 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
     const float reach = std::max(plant.species.clumpReach, 0.0f);
     const float fill = std::clamp(plant.species.clumpFill, 0.0f, 1.0f);
     const float inner = std::clamp(plant.species.clumpInner, 0.0f, 1.0f);
+    // A self-pruned trunk (Species::crownLift) is bare: the short shoots its
+    // leader's modules keep along it below the lift carry no foliage (its
+    // boughs above may droop below the lift; their ends are far from the
+    // axis and keep theirs).
+    float liftY = -std::numeric_limits<float>::infinity();
+    if (plant.species.crownLift > 0.0f) {
+        float top = plant.origin.y;
+        for (const auto& s : segs) top = std::max(top, std::max(s.from.y, s.to.y));
+        liftY = plant.origin.y + std::min(plant.species.crownLift, 0.9f) * (top - plant.origin.y);
+    }
+    const float liftAxis = 0.25f * crownR;
 
     std::vector<int> kids(segs.size(), 0);
     for (const auto& s : segs) {
@@ -71,6 +83,7 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
         if (s.depth < opts.minDepth) continue;
         if (s.radius > 0.0f && s.radius > opts.maxRadius) continue;
         if (bromath::vdist2(s.from, s.to) < 1e-12f) continue;
+        if (s.to.y < liftY && std::hypot(s.to.x - plant.origin.x, s.to.z - plant.origin.z) < liftAxis) continue;
         const size_t gi = segBase + i;
         FoliageSample f = fol[i];
         // A filled crown (Species::clumpFill): new shoots carry their

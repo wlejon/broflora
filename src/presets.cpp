@@ -190,12 +190,14 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             d.lateral = plagiotropicModule(2, 0.7f, 0.7f, 0.35f, 1.0f, "pine:bough");
             s.apicalDominance = 0.35f;
             s.lateralElevation = 0.5f; s.lateralOrthotropy = 0.5f;
-            s.crownSlope = 0.3f; s.crownBase = 2.5f; s.crownRadiusMax = 5.0f;
-            s.crownLift = 0.45f; s.heightMax = 20.0f;
+            // A wide cone outline (crownSlope) under an early stop
+            // (heightMax): the crown is widest near its top, flat over it.
+            s.crownSlope = 0.6f; s.crownBase = 2.5f; s.crownRadiusMax = 5.0f;
+            s.crownLift = 0.45f; s.heightMax = 16.0f;
             s.kink = 0.22f; s.individualVariation = 0.35f;
             s.tropismG2 = 0.04f;
             bark(s, 0.8f, 1.8f, 0.2f, 0.5f);
-            s.barkColor = rgb(0.32f, 0.17f, 0.10f);
+            s.barkColor = rgb(0.44f, 0.21f, 0.10f);
             s.leafColor = rgb(0.05f, 0.085f, 0.055f);
             // Rounded tufts at the boughs' ends with sky between them, no
             // spire.
@@ -247,13 +249,15 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             d.root = leaderWhorlModule(4, -0.05f, 2.2f, 0.3f, 1.0f, "redwood:root");
             d.leader = leaderWhorlModule(4, -0.05f, 0.8f, 0.3f, 1.0f, "redwood:leader");
             d.lateral = plagiotropicModule(2, 0.7f, 0.5f, 0.3f, 1.0f, "redwood:bough");
-            s.apicalDominance = 0.65f;
-            s.lateralElevation = -0.2f; s.lateralOrthotropy = 0.6f;
-            s.crownSlope = 0.15f; s.crownBase = 0.6f; s.crownRadiusMax = 2.2f;
-            s.crownLift = 0.3f;
+            // A leader far ahead of its short, near-level boughs, the lower
+            // half of the trunk clear: a column, not a cone.
+            s.apicalDominance = 0.8f;
+            s.lateralElevation = -0.05f; s.lateralOrthotropy = 0.6f;
+            s.crownSlope = 0.15f; s.crownBase = 0.6f; s.crownRadiusMax = 1.6f;
+            s.crownLift = 0.45f;
             // A massive trunk for its boughs (a low pipe exponent): the
             // column stands on a pillar.
-            s.pipeExp = 1.4f;
+            s.pipeExp = 1.2f;
             s.growthScale = 3.0f;
             s.tropismG2 = 0.08f;
             bark(s, 1.0f, 0.55f, 0.15f, 1.3f);
@@ -284,17 +288,20 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             d.leader = leaderWhorlModule(4, 0.5f, 0.5f, 0.25f, 1.0f, "juniper:leader");
             d.lateral = plagiotropicModule(2, 0.55f, 0.45f, 0.3f, 1.0f, "juniper:bough");
             s.apicalControl = 0.5f; s.apicalControlMature = 0.5f;
-            s.apicalDominance = 0.2f;
+            // Its leaders ahead of rising boughs: a cone, widest at the
+            // foot.
+            s.apicalDominance = 0.5f;
             s.orthotropy = 0.7f;
-            s.lateralElevation = 0.5f; s.lateralOrthotropy = 0.5f;
-            s.crownSlope = 0.45f; s.crownBase = 0.6f; s.crownRadiusMax = 2.2f;
+            s.lateralElevation = 0.2f; s.lateralOrthotropy = 0.5f;
+            s.crownSlope = 0.35f; s.crownBase = 0.6f; s.crownRadiusMax = 2.2f;
             s.rootVigorMax = 10.0f;
             s.leafForm = static_cast<uint32_t>(LeafForm::Scale);
             bark(s, 0.75f, 0.35f, 0.25f, 0.4f);
             s.barkColor = rgb(0.30f, 0.21f, 0.16f);
             s.leafColor = rgb(0.06f, 0.09f, 0.07f);
-            // Bushy: rounded tufts, no spire.
+            // Bushy: rounded tufts, no spire, filled to the core.
             s.clumpFlat = 0.8f; s.clumpReach = 0.0f;
+            s.clumpInner = 1.0f;
         }
         return d;
     }
