@@ -579,6 +579,10 @@ galleries, not by stills.
   the ground is bare and ugly, and from above it is a blurry smear. Far turf
   needs real texture and colour, plus forest-floor litter and understory
   under trees.
+- **Bark.** Trunks are completely barren and look like clay. They need real
+  bark: procedural ridges and furrows that follow the stem, colour and
+  roughness variation, moss or lichen on the shaded side, root flare at the
+  base, and branch collars.
 - Also from the step 6 review:
   - backlit near leaves turn pale grey-white;
   - 24 specimens repeat visibly;
