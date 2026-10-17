@@ -179,6 +179,7 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
         sp.leafForm = plant.species.leafForm;
         sp.leafColor = plant.species.leafColor;
         sp.barkColor = plant.species.barkColor;
+        sp.leafSize = plant.species.leafSize > 0.0f ? plant.species.leafSize : 1.0f;
         const Vec3 o = plant.origin;
 
         // Bark, thickest first by each segment's keep radius: the thickest

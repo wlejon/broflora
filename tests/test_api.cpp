@@ -357,6 +357,8 @@ static void test_api_species_presets() {
         if (needle.specimenLooks.length !== 8 || needle.specimenLooks[3] !== 1 || broad.specimenLooks[3] !== 0) fail("looks: form");
         if (Math.abs(broad.specimenLooks[1] - 0.3) > 1e-6) fail("looks: leaf colour");
         if (needle.specimenLooks[4] <= 0) fail("looks: bark colour");
+        if (!(broad.specimenLooks[7] > 0.1 && broad.specimenLooks[7] < 0.6) || needle.specimenLooks[7] !== 1)
+            fail("looks: leaf size (a boxwood's small leaves, a fir's sprays the card's)");
         // Each emit numbers its own clumps (which seed their leaf counts), so
         // the split is the whole only near enough.
         if (!(needle.leafCount > 0 && broad.leafCount > 0) ||

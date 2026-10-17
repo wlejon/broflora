@@ -600,6 +600,7 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readVec3Prop  (spec, "leafColor",                   s.leafColor);
     readVec3Prop  (spec, "barkColor",                   s.barkColor);
     readFloatField(spec, "clumpScale",                  s.clumpScale);
+    readFloatField(spec, "leafSize",                    s.leafSize);
 }
 
 // A Species as a plain object, every field applySpeciesPartial reads.
@@ -661,6 +662,7 @@ inline Value speciesObject(const broflora::Species& s) {
     vec("leafColor", s.leafColor);
     vec("barkColor", s.barkColor);
     num("clumpScale", s.clumpScale);
+    num("leafSize", s.leafSize);
     return sp.get();
 }
 

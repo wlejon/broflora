@@ -165,11 +165,11 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
     // Per specimen: segStart, segCount, clumpStart, clumpCount, leafStart,
     // leafCount, height, crownRadius, crown.xyz (relative), plant index,
     // origin.xyz, 0.
-    // Per specimen, its look: leafColor.rgb, leafForm, barkColor.rgb, 0.
+    // Per specimen, its look: leafColor.rgb, leafForm, barkColor.rgb, leafSize.
     std::vector<float> spec, inst, looks;
     for (const auto& s : f.specimens) {
         looks.insert(looks.end(), {s.leafColor.x, s.leafColor.y, s.leafColor.z, static_cast<float>(s.leafForm),
-                                   s.barkColor.x, s.barkColor.y, s.barkColor.z, 0.0f});
+                                   s.barkColor.x, s.barkColor.y, s.barkColor.z, s.leafSize});
         spec.insert(spec.end(), {static_cast<float>(s.segStart), static_cast<float>(s.segCount),
                                  static_cast<float>(s.clumpStart), static_cast<float>(s.clumpCount),
                                  static_cast<float>(s.leafStart), static_cast<float>(s.leafCount),

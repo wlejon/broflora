@@ -277,12 +277,14 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.orthotropy = 0.45f;
             s.leafColor = rgb(0.08f, 0.18f, 0.05f);
             s.clumpScale = 0.85f;
+            s.leafSize = 0.3f;
         } else if (name == "holly") {
             // Upright and dense, glossy dark green.
             d.root = basalStemsModule(4, 0.3f, 0.45f, 1.0f, "holly:root");
             d.leader = scaledModule(whorlModule(3, 0.5f), 0.3f);
             s.orthotropy = 0.62f;
             s.leafColor = rgb(0.04f, 0.12f, 0.04f);
+            s.leafSize = 0.55f;
         } else if (name == "hydrangea") {
             // A broad rounded mound of arching stems, big pale leaves.
             d.root = basalStemsModule(8, 0.7f, 0.3f, 1.0f, "hydrangea:root");
@@ -290,12 +292,14 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.orthotropy = 0.45f;
             s.tropismG2 = 0.1f;
             s.leafColor = rgb(0.13f, 0.27f, 0.09f);
+            s.leafSize = 1.1f;
         } else if (name == "hibiscus") {
             // Upright, open; mid-green.
             d.root = basalStemsModule(4, 0.35f, 0.5f, 1.0f, "hibiscus:root");
             d.leader = scaledModule(whorlModule(3, 0.55f), 0.35f);
             s.orthotropy = 0.65f;
             s.leafColor = rgb(0.12f, 0.26f, 0.08f);
+            s.leafSize = 0.8f;
         } else {
             // Lavender: a low cushion of upright shoots, grey-green.
             d.root = basalStemsModule(8, 0.8f, 0.18f, 1.0f, "lavender:root");
@@ -303,6 +307,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.orthotropy = 0.75f;
             s.leafColor = rgb(0.20f, 0.24f, 0.16f);
             s.clumpScale = 0.7f;
+            s.leafSize = 0.25f;
         }
         return d;
     }

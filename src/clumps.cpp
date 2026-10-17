@@ -39,6 +39,8 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
     const float scale = plant.species.clumpScale > 0.0f ? plant.species.clumpScale : 1.0f;
     const float R0 = scale * (opts.radius > 0.0f ? opts.radius : opts.radiusOfCrown * crownR);
     if (!(R0 > 0.0f)) return;
+    const float leafSize = std::clamp(plant.species.leafSize > 0.0f ? plant.species.leafSize : 1.0f, 0.2f, 3.0f);
+    const float leafMore = 1.0f / (leafSize * leafSize);
 
     std::vector<int> kids(segs.size(), 0);
     for (const auto& s : segs) {
@@ -108,7 +110,8 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
         lc.center = center;
         lc.radius = r;
         lc.dir = dir;
-        lc.density = std::clamp(0.3f + 0.9f * c.density, 0.0f, 1.0f);
+        // Smaller leaves (Species::leafSize), more of them: as much cover.
+        lc.density = std::clamp(0.3f + 0.9f * c.density, 0.0f, 1.0f) * leafMore;
         lc.segment = static_cast<int32_t>(segBase + c.seg);
         grid[key(center)].push_back(out.size());
         out.push_back(lc);

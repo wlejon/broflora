@@ -183,10 +183,14 @@ struct Species {
     //   leafColor   the leaves' mean albedo (linear; 0,0,0: the renderer's own)
     //   barkColor   the bark's (0,0,0: the renderer's own)
     //   clumpScale  the crown clumps' size, x what the emit's options give
+    //   leafSize    a leaf's size, x the renderer's card (a boxwood's small
+    //               leaves 0.35); its clumps carry 1/leafSize^2 the leaves,
+    //               so they cover as much
     uint32_t leafForm        = 0;
     bromath::Vec3 leafColor  = {0.0f, 0.0f, 0.0f};
     bromath::Vec3 barkColor  = {0.0f, 0.0f, 0.0f};
     float clumpScale         = 1.0f;
+    float leafSize           = 1.0f;
 };
 
 // What a plant's leaves are drawn as (Species::leafForm).

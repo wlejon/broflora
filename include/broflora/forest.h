@@ -73,6 +73,7 @@ struct ForestSpecimen {
     uint32_t leafForm = 0;
     bromath::Vec3 leafColor{};
     bromath::Vec3 barkColor{};
+    float leafSize = 1.0f;         // Species::leafSize
 };
 
 /// A tube segment: from/to with the radius at each end and the bark's
