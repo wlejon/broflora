@@ -561,3 +561,26 @@ GPU ms a frame over the flight's 1021 frames, two runs:
 
 Each step is judged by motion strips and short videos next to the reference
 galleries, not by stills.
+
+## Next: step 7, refinement (user review of demos/forest)
+
+- **Far trees as good as the "Leaves" mode, without the leaves.** "Leaves"
+  looks far better from above only because it has no sharp contrast at the
+  handover. Clumps look good and should stay, but match leaf mode's colour,
+  value and texture so zooming in never shows a step.
+- **Clump shapes make trees read too small** from above. Crown-scale shapes
+  must match the real crown's extent and silhouette.
+- **No large shade shifts while trees move.** Big patches of shading change as
+  trees sway, which is unnatural. Lighting of a crown's mass should stay
+  stable; only fine detail flickers.
+- **No popping.** Nothing may blink in or out during motion or flight:
+  handover dither stipple, leaves thinning, tier swaps.
+- **The ground.** Lush grass must reach much further out. From canopy height
+  the ground is bare and ugly, and from above it is a blurry smear. Far turf
+  needs real texture and colour, plus forest-floor litter and understory
+  under trees.
+- Also from the step 6 review:
+  - backlit near leaves turn pale grey-white;
+  - 24 specimens repeat visibly;
+  - canopy shade stops past the shadow range;
+  - one transient plateau of about 8 ms per flight.
