@@ -38,6 +38,32 @@ weighted by vertex colour R, with no gusts and no hierarchy.
   oracle. A grove of grown trees and a meadow on uneven ground at golden hour,
   judged in motion against the reference galleries.
 
+## Iteration loop
+
+What a look change costs, and how to keep it cheap (broworkshop
+`demos/forest` and `demos/grove`):
+
+- **Growth is cached.** The demos grow through
+  `world.grow(ticks, dt, { cache: bro.app.cacheDir })` (C++ `growCached`,
+  `include/broflora/world_io.h`). The key covers the world before growth,
+  ticks, dt, the build and `BROFLORA_SIM_HASH`, a build-time hash of the
+  step's source and bromath's headers. An edit to the step regrows once
+  (the forest nursery takes about 5 s). An edit to emit, clumps or the JS
+  keeps the cache. A forest boot is about 5 s to the first frame, a grove
+  boot about 1 s.
+- **Shader edits need no rebuild.** `BRO_SCENE_SHADER_SOURCE=1` compiles
+  bro's built-in scene shaders from its source tree at start-up
+  (`bro/docs/hot-reload.md`). Rebuild once when you are done.
+- **C++ edits rebuild only what they touch.** Each built-in shader
+  recompiles only when an include it reads changes. A one-file broflora or
+  engine edit relinks libbro: about 30 s on Windows (35 s for a shared
+  .glsl).
+- **One boot, many captures.** Join `capture.js` commands with `+`, e.g.
+  `-- still above,glade + handover impostors + trace`.
+- **Profile the step** with `broflora_bench_nursery`. It runs the forest's
+  nursery and prints ms per phase and a checksum of the grown world, so a
+  faster step can be shown to grow the same plants.
+
 ## Step 1 as built: the vegetation records
 
 broflora computes one `SegmentSway` per segment (`emitPlantSway` /
