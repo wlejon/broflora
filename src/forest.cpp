@@ -155,7 +155,7 @@ void appendBlooms(ForestEmit& out, ForestSpecimen& sp, const Plant& plant,
     sp.bloomSize = s.bloomSize > 0.0f ? s.bloomSize : 0.0f;
     if (sp.bloomForm == static_cast<uint32_t>(BloomForm::None) || sp.bloomSize <= 0.0f || tubes.empty()) return;
     const std::vector<BloomAnchor> anchors = emitPlantBloomAnchors(plant);
-    if (anchors.empty()) return;
+    if (anchors.empty() || segs.empty()) return;
 
     // Each segment's piece in the specimen's list: its last (the tip, where
     // the twig's anchor is), else the nearest drawn segment below it.
@@ -173,6 +173,17 @@ void appendBlooms(ForestEmit& out, ForestSpecimen& sp, const Plant& plant,
         }
         return int32_t{0};
     };
+
+    // The plant's shell: the centre of its segments' tips and the farthest
+    // of them from it, and its height.
+    Vec3 shellC{0.0f, 0.0f, 0.0f};
+    float shellR = 0.0f, plantH = 0.0f;
+    for (const auto& g : segs) {
+        shellC = shellC + g.to;
+        plantH = std::max(plantH, g.to.y - plant.origin.y);
+    }
+    shellC = shellC * (1.0f / static_cast<float>(segs.size()));
+    for (const auto& g : segs) shellR = std::max(shellR, bromath::vlen(g.to - shellC));
 
     std::vector<uint32_t> order(anchors.size());
     std::iota(order.begin(), order.end(), 0u);
@@ -202,7 +213,28 @@ void appendBlooms(ForestEmit& out, ForestSpecimen& sp, const Plant& plant,
                            (0.85f + 0.15f * std::clamp(a.lightExposure01, 0.0f, 1.0f)) *
                            (1.0f - 0.5f * std::clamp(a.senescence01, 0.0f, 1.0f));
         if (a.lightExposure01 < 0.04f || a.normal.y < -0.35f || size < 0.3f * sp.bloomSize) continue;
-        const Vec3 p = a.position;
+        Vec3 p = a.position;
+        Vec3 facing = a.normal;
+        // Held on the plant's outer shell, over its lower part: a stem tip
+        // inside the foliage, low by the ground, or on the shell's underside
+        // bears none (an arching stem's tip under the mound sat its heads on
+        // the ground).
+        if (shellR > 0.0f) {
+            const Vec3 out = p - shellC;
+            const float d = bromath::vlen(out);
+            if (d < 0.6f * shellR || out.y < -0.1f * d || p.y - plant.origin.y < 0.4f * plantH) continue;
+            // A head stands proud of the leaves round its stem's tip (they
+            // reach past it), turned out from the mound as well as up its
+            // stem.
+            if (sp.bloomForm == static_cast<uint32_t>(BloomForm::Head) && d > 1e-4f) {
+                const Vec3 o = out * (1.0f / d);
+                Vec3 f = a.normal * 0.5f + o * 0.5f;
+                const float fl = bromath::vlen(f);
+                f = fl > 1e-4f ? f * (1.0f / fl) : o;
+                p = p + f * (0.45f * size);
+                facing = f;
+            }
+        }
         const int64_t cx = static_cast<int64_t>(std::floor(p.x / cell));
         const int64_t cy = static_cast<int64_t>(std::floor(p.y / cell));
         const int64_t cz = static_cast<int64_t>(std::floor(p.z / cell));
@@ -223,7 +255,7 @@ void appendBlooms(ForestEmit& out, ForestSpecimen& sp, const Plant& plant,
         keptAt.push_back(p);
         keptSize.push_back(size);
         const Vec3 r = p - plant.origin;
-        out.blooms.insert(out.blooms.end(), {r.x, r.y, r.z, size, a.normal.x, a.normal.y, a.normal.z,
+        out.blooms.insert(out.blooms.end(), {r.x, r.y, r.z, size, facing.x, facing.y, facing.z,
                                              static_cast<float>(pieceOf(a.segment))});
     }
     sp.bloomCount = static_cast<uint32_t>(out.blooms.size() / 8) - sp.bloomStart;

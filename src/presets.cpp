@@ -330,7 +330,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             d.root = basalStemsModule(7, 0.6f, 0.3f, 1.0f, "boxwood:root");
             d.leader = scaledModule(whorlModule(3, 0.7f), 0.25f);
             s.orthotropy = 0.45f;
-            s.leafColor = rgb(0.08f, 0.18f, 0.05f);
+            s.leafColor = rgb(0.035f, 0.08f, 0.025f);
             s.clumpScale = 0.85f;
             s.leafSize = 0.3f;
         } else if (name == "holly") {
@@ -338,7 +338,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             d.root = basalStemsModule(4, 0.3f, 0.45f, 1.0f, "holly:root");
             d.leader = scaledModule(whorlModule(3, 0.5f), 0.3f);
             s.orthotropy = 0.62f;
-            s.leafColor = rgb(0.04f, 0.12f, 0.04f);
+            s.leafColor = rgb(0.02f, 0.05f, 0.022f);
             s.leafSize = 0.55f;
         } else if (name == "hydrangea") {
             // A broad rounded mound of arching stems, big pale leaves.
@@ -346,18 +346,18 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             d.leader = scaledModule(whorlModule(3, 0.75f), 0.3f);
             s.orthotropy = 0.45f;
             s.tropismG2 = 0.1f;
-            s.leafColor = rgb(0.13f, 0.27f, 0.09f);
+            s.leafColor = rgb(0.065f, 0.13f, 0.04f);
             s.leafSize = 1.1f;
             // Mophead blooms: big round heads of pale blue florets.
             s.bloomForm = static_cast<uint32_t>(BloomForm::Head);
             s.bloomColor = rgb(0.42f, 0.5f, 0.85f);
-            s.bloomSize = 0.2f;
+            s.bloomSize = 0.24f;
         } else if (name == "hibiscus") {
             // Upright, open; mid-green.
             d.root = basalStemsModule(4, 0.35f, 0.5f, 1.0f, "hibiscus:root");
             d.leader = scaledModule(whorlModule(3, 0.55f), 0.35f);
             s.orthotropy = 0.65f;
-            s.leafColor = rgb(0.12f, 0.26f, 0.08f);
+            s.leafColor = rgb(0.06f, 0.125f, 0.035f);
             s.leafSize = 0.8f;
             // Large open red flowers.
             s.bloomForm = static_cast<uint32_t>(BloomForm::Flower);
