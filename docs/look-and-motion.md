@@ -1813,6 +1813,163 @@ In `demos/grove/captures/`:
 - **The max frame:** only machine-load spikes are over 6.0. The canopy
   dive's 5.6 ms is the steady peak.
 
+## Step 8a, round 4: the sky's bands, leaves of their own species, the pine
+
+A short round from a full-size review of round 3's grove panes.
+
+### What changed
+
+- **The sky's bands had two causes.**
+  - **The image viewer.** It re-encodes a PNG over about 3.75 MB (its 5 MB
+    base64 limit), and that re-encode posterised the smooth sky into the
+    wide bands seen in `r7_cypress_noon` and `r7_pine_noon`. The grove's
+    species panes are now written as JPEG q95 (`capture.js` `saveView`),
+    which the viewer shows as rendered.
+  - **The scene's 8-bit target.** The LDR target is RGBA8, and an
+    undithered sky stepped one level every 8 to 12 rows. Under a contrast
+    gain those steps showed as faint bands. `tonemap.frag` now adds
+    triangular (TPDF) dither of one level per channel after the grade,
+    scaled down near black and white so they stay exact.
+    `SceneGraph.setDither(false)` turns it off; two pixel-exact tests do.
+- **The leaf cut never ran on a forest.** `ForestNode::setLook` returned
+  early when nothing but `leafCut` had changed, so round 3's cut outline
+  and curved halves were drawn only by chance. It now compares `leafCut`.
+- **Each species its own leaf.** Species has six new fields:
+  - `leafWidth`, `leafTip`, `leafTeeth`, `leafToothDepth` and `leafGloss`
+    set a broad leaf's outline, margin and sheen;
+  - `sprayBrush` sets how a needle spray is held.
+
+  `emitForest` carries them as `specimenLeaves` (8 floats a specimen), and
+  the forest node holds them as a ninth specimen record. One node then
+  draws several species' leaves:
+  - **The outline** (`forestLeafCut`, `scene_forest_mass.glsl`) is widest a
+    little below the middle and either drawn to a point or rounded. It has
+    serrations, or deeper spines between concave scallops whose margin
+    waves up and down. The card's three rows are set out to the species'
+    width (`mesh_forest_leaf.vert`).
+  - **Veins:** a tapering midrib and curving pinnate laterals, faded out as
+    they near a pixel.
+  - **Gloss** lowers roughness (to 0.26 at 1) and halves translucency.
+  - **Presets:**
+    - holly: spiny (3 a side, depth 0.32), glossy (0.9);
+    - boxwood: small, rounded (tip 1), a little glossy (0.35);
+    - hydrangea: broad and finely serrated (12 a side, depth 0.06);
+    - hibiscus: toothed, glossy;
+    - birch: finely serrated.
+  - **Far off,** a leaf whose half-card is under 2 to 4 pixels hands over
+    to its whole card (`fwidthCoarse`, so a far quad skips the cut). That is
+    the area the far tiers stand in for. Fully cut at every distance, the
+    Leaves tier lost a sixth of its cover and By size minus Leaves rose to
+    +6.8 / +6.9 / +13.3 at noon.
+- **The pine's brushes.** With `sprayBrush` set (pine 1), each spray turns
+  up and out along its twig and gathers toward its clump's end
+  (`forestSprayBrush`, in the leaf and caster vertex shaders alike). At
+  20 m the tufts read as upswept brushes.
+- **The pine's trunk.** Its shaded side had only the sky's lower
+  hemisphere, which is dark in the pure-sky HDR.
+  - `SceneGraph.setGroundBounce(albedo)` adds a level ground's bounce to
+    the ambient of every surface's lower hemisphere, lit by the sun and the
+    sky. It is worked out once a frame
+    (`SceneEnvironment::fillLighting`); the sky's share is integrated from
+    the panorama at bake, so the shader adds one term and makes no fetch.
+    The kit's `daylight({ ground })` sets it (forest
+    `[0.09, 0.12, 0.05]`, grove `[0.11, 0.15, 0.06]`).
+  - The pine's bark is a stronger red-orange (0.50, 0.21, 0.085) with
+    shallower furrows (0.6). At 5 m it reads red-brown and plated at noon,
+    and orange at golden.
+
+### Numbers
+
+**Trace.** 1280x720, 4x MSAA, 16 100 plants. Run-to-run spread is about
+0.1 ms on p95.
+
+| | Round 3 (`r7t1`) | Round 4 (`r8t8`) | Round 4 (`r8t9`) | Target |
+|---|---|---|---|---|
+| max | 6.04 | 5.57 | 5.36 | 6.0 |
+| p95 | 4.88 | 4.98 | 4.98 | 5.1 |
+| median | 4.12 | 4.20 | 4.15 | 4.4 |
+
+- The ground bounce first cost about 0.1 ms as a per-pixel cube fetch.
+  It is now a uniform.
+- Skipping the far leaves' cut whole saved about another 0.1 ms on p95.
+
+**Metrics.** By size minus forced Leaves, luminance per band
+(`r8_metrics.json`).
+
+| Shot, sky | Band | Round 3 dY | Round 4 dY |
+|-----------|------|------------|------------|
+| canopy, noon | 20-40 | +1.4 | +0.7 |
+| canopy, noon | 40-80 | +2.2 | +1.4 |
+| canopy, noon | 80-160 | +4.9 | +3.6 |
+| canopy, golden | 20-40 | -1.0 | -1.3 |
+| canopy, golden | 40-80 | -2.9 | -3.1 |
+| canopy, golden | 80-160 | -6.3 | -7.9 |
+| glade, noon | 10-20 | -3.1 | -4.9 |
+| glade, golden | 10-20 | -4.2 | -5.6 |
+| skim, noon | 10-20 | +3.0 | +3.0 |
+| trunks, noon | 10-20 | +2.0 | +1.6 |
+
+- **The noon far canopy and the golden one pull against each other.**
+  The far crowns are brighter than their leaves under a high sun and
+  darker under a low one. Their sum stays at about 11 whatever the leaves'
+  far cover:
+  - with a far cover of 0.84: noon +6.3, golden -5.6;
+  - with 1: noon +3.6, golden -7.9.
+
+  Reaching both targets (3 and 6.3) needs the gap's dependence on the
+  sun's height fixed.
+- **Some levers were ruled out:**
+  - the crown's self-shade (`FOREST_CROWN_SHADE` 0.5 to 0.3) moved nothing;
+  - the disc casters' cover (0.47 to 0.30) brightened the near bands as
+    much as the far ones;
+  - translucency off brightened the leaves at both skies.
+- **The ground bounce** narrowed noon by 1.2 and widened golden by 0.9:
+  - without it: noon +4.7, golden -7.0;
+  - with the sun's share only: +4.0 / -7.2.
+
+**Sky** (`r7_cypress_noon` against `r8_cypress_noon`, column x = 1680).
+Before, the sky stepped one level every 8 to 12 rows, and the viewer's
+re-encode made bands of those steps. After, the row means run smoothly and
+a 12x contrast crop shows no steps.
+
+**Tests:**
+
+- bro: scene 75/75, flora 7/7, mesh 11/11, `bro_vulkan_scene_test` and
+  `bro_vulkan_scene_passes_test`;
+- broflora ctest 4/4. `test_forest_blooms` now allows a hydrangea head to
+  stand proud of its twig's tip, as round 3 placed it;
+- broworkshop `validate.sh demos/forest demos/grove`: 4/4.
+
+### Captures
+
+In broworkshop `demos/grove/captures/`:
+
+- `r8_<preset>_{noon,golden}.jpg` for all thirteen presets;
+- `r8a`..`r8f_*` are the steps:
+  - `r8a`: the dither;
+  - `r8d` and `r8e`: the leaf cut running, then the brush and the bounce;
+  - `r8f_pine_*`: the bark.
+
+In `demos/forest/captures/`:
+
+- `r8_metrics.json`;
+- `r8t1`..`r8t9_trace.json` (`r8t8` and `r8t9` are the final build);
+- `x1`..`x8_metrics.json`, the experiments above.
+
+### Still open
+
+- **The far canopy's sun-height gap:** noon 80-160 at +3.6 (target 3),
+  golden at -7.9 (round 3 -6.3). See Numbers.
+- **The glade's near band** (10-20 m) went from -3.1 to -4.9 at noon: the
+  leaves there are brighter than By size. The bounce lifts their
+  undersides.
+- **The pine's 5 m trunk at noon** is red-brown under the crown's dapple
+  rather than bright orange. At golden it is orange.
+- **Blooms cast no shadow.**
+- **The forest's compare PNGs** (about 6 MB) are over the viewer's
+  re-encode limit, as the grove's were. They could go to JPEG as the
+  grove's have.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
