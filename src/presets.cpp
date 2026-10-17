@@ -138,8 +138,11 @@ Species shrubBase() {
     s.barkScale = 0.6f;
     s.barkMoss = 0.2f;
     s.barkColor = rgb(0.19f, 0.16f, 0.12f);
-    // A dense mound: every shoot leaved, inside as well as out.
+    // A dense mound: every shoot leaved, inside as well as out, the inner
+    // shoots too (clumpInner), so the foliage runs to the ground over the
+    // stems.
     s.clumpFill = 1.0f;
+    s.clumpInner = 1.0f;
     return s;
 }
 
@@ -343,6 +346,8 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             d.root = basalStemsModule(8, 0.8f, 0.18f, 1.0f, "lavender:root");
             d.leader = scaledModule(whorlModule(4, 0.4f), 0.15f);
             s.orthotropy = 0.75f;
+            // Fine soft shoots from a short woody base, not gnarled stems.
+            s.leafDiameter = 0.006f; s.pipeExp = 2.6f;
             s.leafColor = rgb(0.20f, 0.24f, 0.16f);
             s.clumpScale = 0.7f;
             s.leafSize = 0.25f;

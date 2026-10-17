@@ -47,6 +47,7 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
     const float flat = std::clamp(plant.species.clumpFlat > 0.0f ? plant.species.clumpFlat : 1.0f, 0.2f, 1.0f);
     const float reach = std::max(plant.species.clumpReach, 0.0f);
     const float fill = std::clamp(plant.species.clumpFill, 0.0f, 1.0f);
+    const float inner = std::clamp(plant.species.clumpInner, 0.0f, 1.0f);
 
     std::vector<int> kids(segs.size(), 0);
     for (const auto& s : segs) {
@@ -84,8 +85,19 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
                 f.twigGrade01 = std::max(f.twigGrade01, internal::leafGrade(plant.species, 2.0f * s.radius));
             }
         }
-        const float w = opts.densityWeight.empty() ? foliageDensity(f)
-                      : gi < opts.densityWeight.size() ? opts.densityWeight[gi] : 0.0f;
+        float w = opts.densityWeight.empty() ? foliageDensity(f)
+                : gi < opts.densityWeight.size() ? opts.densityWeight[gi] : 0.0f;
+        // Inner shoots clothed (Species::clumpInner): a shoot that has
+        // branched on keeps as much as a tip in half light, so a shrub's
+        // mound is foliage to its core and down to the ground, not a shell of
+        // tips over bare stems.
+        if (inner > 0.0f && opts.densityWeight.empty() && !f.isTerminal) {
+            FoliageSample g = f;
+            g.isTerminal = true;
+            g.lightExposure01 = std::max(g.lightExposure01, 0.5f);
+            g.twigGrade01 = std::max(g.twigGrade01, internal::leafGrade(plant.species, 2.0f * s.radius));
+            w = std::max(w, inner * foliageDensity(g));
+        }
         if (!(w >= opts.minDensity)) continue;
         const float outer = bromath::vlen(s.to - crown) / crownR;
         const float priority = outer + (kids[i] == 0 ? 0.3f : 0.0f) + 0.25f * mix01(seed + i);
@@ -97,7 +109,10 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
 
     // Accepted clumps on a grid of cells the size of the largest reach.
     const float rMax = R0 * (1.0f + std::max(0.0f, opts.radiusJitter));
-    const float cell = std::max(1e-4f, opts.spacing * rMax);
+    // A crown filled to its core (clumpInner) packs its clumps closer: they
+    // overlap into one mass instead of balls with stems between.
+    const float spacing = opts.spacing * (1.0f - 0.4f * inner);
+    const float cell = std::max(1e-4f, spacing * rMax);
     // Grid and spacing in the stretched space (heights over `flat`).
     const auto stretch = [&](const Vec3& p) { return Vec3{p.x, p.y / flat, p.z}; };
     auto key = [&](const Vec3& q) {
@@ -134,7 +149,7 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
                     if (it == grid.end()) continue;
                     for (size_t j : it->second) {
                         const auto& o = out[j];
-                        const float need = opts.spacing * 0.5f * (r + o.radius);
+                        const float need = spacing * 0.5f * (r + o.radius);
                         if (bromath::vdist2(sc, stretch(o.center)) < need * need) { clear = false; break; }
                     }
                 }

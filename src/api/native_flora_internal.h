@@ -606,6 +606,7 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readFloatField(spec, "clumpFlat",                   s.clumpFlat);
     readFloatField(spec, "clumpReach",                  s.clumpReach);
     readFloatField(spec, "clumpFill",                   s.clumpFill);
+    readFloatField(spec, "clumpInner",                  s.clumpInner);
     {
         // "none" / "flower" / "head" / "spike" or its number.
         Value bf = ev::getProperty(spec, "bloomForm");
@@ -688,6 +689,7 @@ inline Value speciesObject(const broflora::Species& s) {
     num("clumpFlat", s.clumpFlat);
     num("clumpReach", s.clumpReach);
     num("clumpFill", s.clumpFill);
+    num("clumpInner", s.clumpInner);
     {
         static const char* const kBlooms[] = {"none", "flower", "head", "spike"};
         Value str = ev::fromUtf8(s.bloomForm < broflora::kBloomFormCount ? kBlooms[s.bloomForm] : "none");

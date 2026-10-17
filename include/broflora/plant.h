@@ -207,6 +207,11 @@ struct Species {
     //               tip carries foliage however its module has branched on,
     //               new shoots leaved as they grow (a conifer's clothed
     //               boughs and leader, a shrub's dense mound)
+    //   clumpInner  0: a shoot that has branched on carries a tenth of a
+    //               tip's foliage and its shade thins it further; 1: as much
+    //               as a tip in half light (a shrub's mound, leaved inside
+    //               and down to the ground, its stems hidden), and the
+    //               clumps packed up to 40% closer so they merge into one mass
     //   bloomForm   BloomForm: what it flowers as once flowering (none, an
     //               open flower, a round head of florets, an upright spike)
     //   bloomColor  its blooms' albedo (linear)
@@ -220,6 +225,7 @@ struct Species {
     float clumpFlat          = 1.0f;
     float clumpReach         = 0.0f;
     float clumpFill          = 0.0f;
+    float clumpInner         = 0.0f;
     uint32_t bloomForm       = 0;
     bromath::Vec3 bloomColor = {0.0f, 0.0f, 0.0f};
     float bloomSize          = 0.0f;
