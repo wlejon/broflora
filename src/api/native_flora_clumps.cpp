@@ -139,14 +139,37 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
         uint64_t s = fo.seed;
         if (!seedField(optsV, "shuffleSeed", "emitForest opts.shuffleSeed", s)) return ev::undefined();
         fo.seed = s;
+        // Which plants: `plants` (indices), and of them `leafForm`'s.
+        Rooted plantsV(ev::getProperty(optsV, "plants"));
+        if (ev::isObject(plantsV)) {
+            uint32_t n = 0;
+            if (!lengthOf(plantsV, "emitForest opts.plants.length", n)) return ev::undefined();
+            fo.plants.reserve(std::min(n, kReserveCap));
+            for (uint32_t i = 0; i < n; ++i) {
+                int64_t v = 0;
+                if (!intValue(ev::getElement(plantsV, i), "emitForest opts.plants[i]", 0.0, kMaxUint32, v))
+                    return ev::undefined();
+                fo.plants.push_back(static_cast<uint32_t>(v));
+            }
+            // An empty list emits nothing (not every plant).
+            if (n == 0) fo.plants.push_back(UINT32_MAX);
+        }
+        Value lf = ev::getProperty(optsV, "leafForm");
+        if (!ev::isUndefined(lf) && !leafFormOf(lf, fo.leafForm)) {
+            ev::throwRangeError("emitForest opts.leafForm must be 'broad', 'needle', 'scale' or 0..2");
+            return ev::undefined();
+        }
     }
     const broflora::ForestEmit f = broflora::emitForest(*w->world, fo);
 
     // Per specimen: segStart, segCount, clumpStart, clumpCount, leafStart,
     // leafCount, height, crownRadius, crown.xyz (relative), plant index,
     // origin.xyz, 0.
-    std::vector<float> spec, inst;
+    // Per specimen, its look: leafColor.rgb, leafForm, barkColor.rgb, 0.
+    std::vector<float> spec, inst, looks;
     for (const auto& s : f.specimens) {
+        looks.insert(looks.end(), {s.leafColor.x, s.leafColor.y, s.leafColor.z, static_cast<float>(s.leafForm),
+                                   s.barkColor.x, s.barkColor.y, s.barkColor.z, 0.0f});
         spec.insert(spec.end(), {static_cast<float>(s.segStart), static_cast<float>(s.segCount),
                                  static_cast<float>(s.clumpStart), static_cast<float>(s.clumpCount),
                                  static_cast<float>(s.leafStart), static_cast<float>(s.leafCount),
@@ -162,6 +185,7 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
         obj.set(ev::setProperty(obj.get(), name, a.get()));
     };
     put("specimens", spec);
+    put("specimenLooks", looks);
     put("instances", inst);
     put("segments", f.segments);
     put("tangents", f.tangents);

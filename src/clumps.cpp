@@ -137,6 +137,18 @@ std::vector<bromesh::LeafClump> emitWorldClumps(const WorldState& world, const C
     return out;
 }
 
+std::vector<bromesh::LeafClump> emitPlantsClumps(const WorldState& world, const std::vector<uint32_t>& plants,
+                                                 const ClumpOptions& opts) {
+    std::vector<bromesh::LeafClump> out;
+    size_t base = 0;
+    for (const uint32_t pi : plants) {
+        if (pi >= world.plants.size()) continue;
+        plantClumpsInto(world.plants[pi], opts, base, out);
+        base += emitPlantSegments(world.plants[pi]).size();
+    }
+    return out;
+}
+
 std::vector<float> clumpLeafVegetation(const bromesh::LeafPlacements& pl,
                                        const std::vector<bromesh::LeafClump>& clumps,
                                        const std::vector<SegmentSway>& sway) {

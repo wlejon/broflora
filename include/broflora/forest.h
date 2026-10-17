@@ -47,6 +47,14 @@ struct ForestOptions {
     float minRadius = 0.0f;
     /// Seeds the leaves' shuffle.
     uint64_t seed = 0x5eed;
+    /// Which plants to emit (world indices; empty: every plant), and of
+    /// those only the ones whose Species::leafForm is `leafForm` (negative:
+    /// any). A renderer draws each leaf form with its own leaf, so a mixed
+    /// forest is one emit per form. The emit numbers its clumps, and keys
+    /// its leaves, as though the world held only the plants it emits: a
+    /// forest of every plant is the world's scatter, leaf for leaf.
+    std::vector<uint32_t> plants;
+    int leafForm = -1;
 };
 
 /// One plant's share of the arrays below. Counts are of segments, clumps and
@@ -60,6 +68,11 @@ struct ForestSpecimen {
     float height = 0.0f;           // above its origin
     bromath::Vec3 crown{};         // crown centre, relative
     float crownRadius = 0.0f;
+    // The species' look (Species: leafForm, leafColor, barkColor; colours
+    // 0,0,0 where the renderer's own are meant).
+    uint32_t leafForm = 0;
+    bromath::Vec3 leafColor{};
+    bromath::Vec3 barkColor{};
 };
 
 /// A tube segment: from/to with the radius at each end and the bark's

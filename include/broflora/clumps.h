@@ -51,6 +51,12 @@ std::vector<bromesh::LeafClump> emitPlantClumps(const Plant& plant, const ClumpO
 /// `emitWorldSegments(world)`.
 std::vector<bromesh::LeafClump> emitWorldClumps(const WorldState& world, const ClumpOptions& opts = {});
 
+/// The plants `plants` names (world indices, in that order) as though the
+/// world held only them: their clumps concatenated, `segment` indexing their
+/// segments concatenated in that order (as `densityWeight` does too).
+std::vector<bromesh::LeafClump> emitPlantsClumps(const WorldState& world, const std::vector<uint32_t>& plants,
+                                                 const ClumpOptions& opts = {});
+
 /// Vegetation records (mesh_emit.h "Wind sway") for leaves placed in
 /// `clumps` by bromesh::placeLeavesInClumps: one per leaf, the anchor at the
 /// leaf, the axis its tip, the weight its twig tip's. `sway` is aligned with

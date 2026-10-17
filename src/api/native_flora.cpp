@@ -270,9 +270,66 @@ Value jsAddVoronoiSite(Value /*thisVal*/, std::span<const Value> args) {
         const uint32_t protoIdx = static_cast<uint32_t>(idx);
         float det = args.size() >= 3 && ev::isNumber(args[2]) ? static_cast<float>(ev::toDouble(args[2])) : 1.0f;
         float ac = args.size() >= 4 && ev::isNumber(args[3]) ? static_cast<float>(ev::toDouble(args[3])) : 0.5f;
-        broflora::addVoronoiSite(*w->world, protoIdx, det, ac);
+        uint32_t group = 0;
+        if (!optIntArg(args, 4, "bro.flora.FloraWorld.addVoronoiSite: group", 0.0, kMaxUint32 - 1.0, group))
+            return ev::undefined();
+        broflora::addVoronoiSite(*w->world, protoIdx, det, ac, group);
     }
     return args[0];
+}
+
+// speciesPresets() -> the preset names (broflora/presets.h).
+Value jsSpeciesPresets(Value /*thisVal*/, std::span<const Value> /*args*/) {
+    const auto& names = broflora::speciesPresetNames();
+    return hostArrayOf(names.size(), [&](size_t i) { return ev::fromUtf8(names[i]); });
+}
+
+// The preset as {name, habit, rootPrototype, species}.
+Value presetObject(const broflora::SpeciesHandle& h) {
+    ev::Persistent o(ev::createObject());
+    Value n = ev::fromUtf8(h.name);
+    o.set(ev::setProperty(o.get(), "name", n));
+    Value hb = ev::fromUtf8(h.habit);
+    o.set(ev::setProperty(o.get(), "habit", hb));
+    o.set(ev::setProperty(o.get(), "rootPrototype", ev::fromDouble(static_cast<double>(h.rootPrototype))));
+    ev::Persistent sp(speciesObject(h.species));
+    o.set(ev::setProperty(o.get(), "species", sp.get()));
+    return o.get();
+}
+
+// addSpecies(world, name) -> the preset registered in the world (its
+// modules and groups; again: the same ones), or null for an unknown name.
+Value jsAddSpecies(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.size() < 2 || !ev::isString(args[1])) return ev::null();
+    auto* w = getWrapper(args[0]);
+    if (!w || !w->world) return ev::null();
+    const auto h = broflora::addSpeciesPreset(*w->world, ev::toUtf8(args[1]));
+    return h ? presetObject(*h) : ev::null();
+}
+
+// plantSpecies(world, name, spec) -> the plant index, or -1 for an unknown
+// name. spec: {origin, age, species: a partial Species over the preset's}.
+Value jsPlantSpecies(Value /*thisVal*/, std::span<const Value> args) {
+    if (args.size() < 2 || !ev::isString(args[1])) return ev::fromDouble(-1.0);
+    auto* w = getWrapper(args[0]);
+    if (!w || !w->world) return ev::fromDouble(-1.0);
+    auto h = broflora::addSpeciesPreset(*w->world, ev::toUtf8(args[1]));
+    if (!h) return ev::fromDouble(-1.0);
+    bromath::Vec3 origin{};
+    float age = 0.0f;
+    if (args.size() >= 3 && ev::isObject(args[2])) {
+        Rooted spec(args[2]);
+        // The preset's groups are its own: an override cannot move them.
+        const uint32_t pg = h->species.prototypeGroup, lg = h->species.lateralGroup;
+        applySpeciesPartial(ev::getProperty(spec, "species"), h->species);
+        h->species.prototypeGroup = pg;
+        h->species.lateralGroup = lg;
+        readVec3Prop(spec, "origin", origin);
+        readFloatField(spec, "age", age);
+    }
+    broflora::Plant& p = broflora::plantSpecies(*w->world, *h, origin);
+    p.age = age;
+    return ev::fromDouble(static_cast<double>(w->world->plants.size() - 1));
 }
 
 Value jsAddPlant(Value /*thisVal*/, std::span<const Value> args) {
@@ -459,43 +516,7 @@ Value jsPlantInfo(Value /*thisVal*/, std::span<const Value> args) {
         o.set(ev::setProperty(o.get(), "rootLight", ev::fromDouble(p.modules.front().light)));
     }
 
-    const auto& s = p.species;
-    ev::Persistent sp(ev::createObject());
-    sp.set(ev::setProperty(sp.get(), "maxVigor", ev::fromDouble(s.maxVigor)));
-    sp.set(ev::setProperty(sp.get(), "minVigor", ev::fromDouble(s.minVigor)));
-    sp.set(ev::setProperty(sp.get(), "rootVigorMax", ev::fromDouble(s.rootVigorMax)));
-    sp.set(ev::setProperty(sp.get(), "apicalControl", ev::fromDouble(s.apicalControl)));
-    sp.set(ev::setProperty(sp.get(), "determinacy", ev::fromDouble(s.determinacy)));
-    sp.set(ev::setProperty(sp.get(), "shadeTolerance", ev::fromDouble(s.shadeTolerance)));
-    sp.set(ev::setProperty(sp.get(), "apicalControlMature", ev::fromDouble(s.apicalControlMature)));
-    sp.set(ev::setProperty(sp.get(), "determinacyMature", ev::fromDouble(s.determinacyMature)));
-    ev::Persistent tropDir(makeVec3(s.tropismDir));
-    sp.set(ev::setProperty(sp.get(), "tropismDir", tropDir.get()));
-    sp.set(ev::setProperty(sp.get(), "tropismG1", ev::fromDouble(s.tropismG1)));
-    sp.set(ev::setProperty(sp.get(), "tropismG2", ev::fromDouble(s.tropismG2)));
-    sp.set(ev::setProperty(sp.get(), "growthScale", ev::fromDouble(s.growthScale)));
-    sp.set(ev::setProperty(sp.get(), "climateOptT", ev::fromDouble(s.climateOptT)));
-    sp.set(ev::setProperty(sp.get(), "climateOptP", ev::fromDouble(s.climateOptP)));
-    sp.set(ev::setProperty(sp.get(), "climateSigT", ev::fromDouble(s.climateSigT)));
-    sp.set(ev::setProperty(sp.get(), "climateSigP", ev::fromDouble(s.climateSigP)));
-    sp.set(ev::setProperty(sp.get(), "maxAge", ev::fromDouble(s.maxAge)));
-    sp.set(ev::setProperty(sp.get(), "floweringAge", ev::fromDouble(s.floweringAge)));
-    sp.set(ev::setProperty(sp.get(), "seedingRadius", ev::fromDouble(s.seedingRadius)));
-    sp.set(ev::setProperty(sp.get(), "moduleMatureAge", ev::fromDouble(s.moduleMatureAge)));
-    sp.set(ev::setProperty(sp.get(), "pipeExp", ev::fromDouble(s.pipeExp)));
-    sp.set(ev::setProperty(sp.get(), "leafDiameter", ev::fromDouble(s.leafDiameter)));
-    sp.set(ev::setProperty(sp.get(), "kink", ev::fromDouble(s.kink)));
-    sp.set(ev::setProperty(sp.get(), "barkFurrow", ev::fromDouble(s.barkFurrow)));
-    sp.set(ev::setProperty(sp.get(), "barkScale", ev::fromDouble(s.barkScale)));
-    sp.set(ev::setProperty(sp.get(), "barkMoss", ev::fromDouble(s.barkMoss)));
-    sp.set(ev::setProperty(sp.get(), "rootFlare", ev::fromDouble(s.rootFlare)));
-    sp.set(ev::setProperty(sp.get(), "branchCollar", ev::fromDouble(s.branchCollar)));
-    sp.set(ev::setProperty(sp.get(), "terrainAnchorWeight", ev::fromDouble(s.terrainAnchorWeight)));
-    sp.set(ev::setProperty(sp.get(), "maxSeedingSlope", ev::fromDouble(s.maxSeedingSlope)));
-    sp.set(ev::setProperty(sp.get(), "distributionWeightCollisions", ev::fromDouble(s.distributionWeightCollisions)));
-    sp.set(ev::setProperty(sp.get(), "distributionWeightTropism", ev::fromDouble(s.distributionWeightTropism)));
-    sp.set(ev::setProperty(sp.get(), "orthotropy", ev::fromDouble(s.orthotropy)));
-    sp.set(ev::setProperty(sp.get(), "individualVariation", ev::fromDouble(s.individualVariation)));
+    ev::Persistent sp(speciesObject(p.species));
     o.set(ev::setProperty(o.get(), "species", sp.get()));
 
     return o.get();
@@ -724,8 +745,11 @@ void registerFloraNativeHelpers() {
 
     REG_FN(createWorld, 1, jsCreateWorld);
     REG_FN(addPrototype, 2, jsAddPrototype);
-    REG_FN(addVoronoiSite, 4, jsAddVoronoiSite);
+    REG_FN(addVoronoiSite, 5, jsAddVoronoiSite);
     REG_FN(addPlant, 2, jsAddPlant);
+    REG_FN(speciesPresets, 0, jsSpeciesPresets);
+    REG_FN(addSpecies, 2, jsAddSpecies);
+    REG_FN(plantSpecies, 3, jsPlantSpecies);
     REG_FN(removePlant, 2, jsRemovePlant);
     REG_FN(step, 2, jsStep);
     REG_FN(grow, 4, jsGrow);

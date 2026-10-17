@@ -321,6 +321,65 @@ static void test_api_instance_layout() {
     )JS");
 }
 
+// Species presets from JS, a mixed forest emitted one leaf form at a time
+// with each specimen's look, and planted by a mix function.
+static void test_api_species_presets() {
+    runScript("species presets", R"JS(
+        const F = bro.flora;
+        const fail = (m) => { throw new Error(m); };
+        const names = F.speciesPresets();
+        if (names.indexOf("fir") < 0 || names.indexOf("boxwood") < 0) fail("preset names: " + names.join());
+        const w = F.createWorld({ rngSeed: 7, shadow: { origin: [-12, -1, -12], cellSize: 1, width: 24, height: 24, depth: 24 } });
+        const fir = w.addSpecies("fir");
+        if (!fir || fir.habit !== "conifer" || fir.species.leafForm !== "needle") fail("fir preset");
+        if (fir.species.prototypeGroup === fir.species.lateralGroup) fail("fir groups");
+        const again = w.addSpecies("fir");
+        if (again.rootPrototype !== fir.rootPrototype) fail("addSpecies twice");
+        if (w.addSpecies("baobab") !== null) fail("unknown preset");
+        const a = w.plantSpecies("fir", { origin: [-4, 0, 0] });
+        const b = w.plantSpecies("boxwood", { origin: [4, 0, 0], species: { leafColor: [0.1, 0.3, 0.05], clumpScale: 0.9 } });
+        if (a !== 0 || b !== 1 || w.plantSpecies("baobab", {}) !== -1) fail("plantSpecies indices");
+        const info = w.plantInfo(1);
+        if (Math.abs(info.species.leafColor[1] - 0.3) > 1e-6 || Math.abs(info.species.clumpScale - 0.9) > 1e-6) fail("override");
+        if (info.species.prototypeGroup === fir.species.prototypeGroup) fail("boxwood shares fir's group");
+        w.grow(300, 0.02);
+
+        const all = w.emitForest({});
+        const needle = w.emitForest({ leafForm: "needle" });
+        const broad = w.emitForest({ leafForm: 0 });
+        if (all.specimenCount !== 2 || needle.specimenCount !== 1 || broad.specimenCount !== 1) fail("form filter");
+        if (needle.specimens[11] !== 0 || broad.specimens[11] !== 1) fail("specimen plant index");
+        if (needle.specimenLooks.length !== 8 || needle.specimenLooks[3] !== 1 || broad.specimenLooks[3] !== 0) fail("looks: form");
+        if (Math.abs(broad.specimenLooks[1] - 0.3) > 1e-6) fail("looks: leaf colour");
+        if (needle.specimenLooks[4] <= 0) fail("looks: bark colour");
+        // Each emit numbers its own clumps (which seed their leaf counts), so
+        // the split is the whole only near enough.
+        if (!(needle.leafCount > 0 && broad.leafCount > 0) ||
+            Math.abs(needle.leafCount + broad.leafCount - all.leafCount) > 0.1 * all.leafCount) fail("leaves split by form");
+        for (let i = 0; i < broad.leaves.length; i += 2)
+            if (broad.leaves[i] >= broad.clumps.length / 8) fail("leaf clump index past the emit's clumps");
+        if (w.emitForest({ plants: [] }).specimenCount !== 0) fail("an empty plant list");
+        if (w.emitForest({ plants: [1] }).specimenCount !== 1) fail("a plant list");
+        let threw = false;
+        try { w.emitForest({ leafForm: "fern" }); } catch (e) { threw = e instanceof RangeError; }
+        if (!threw) fail("a bad leaf form");
+
+        const area = [-40, -40, 40, 40];
+        const one = F.plantForest(needle, { area: area, seed: 3 });
+        const mixed = F.plantForest([needle, broad], { area: area, seed: 3, mix: (x) => (x < 0 ? [1, 0] : [0, 1]) });
+        if (!Array.isArray(mixed) || mixed.length !== 2) fail("a mixed planting is one array per forest");
+        const rows = mixed[0].length / 8 + mixed[1].length / 8;
+        if (rows !== one.length / 8) fail("the mix splits the same cells: " + rows + " vs " + one.length / 8);
+        for (let i = 0; i < mixed[0].length; i += 8) if (mixed[0][i] >= 0) fail("forest 0 east of 0");
+        for (let i = 0; i < mixed[1].length; i += 8) if (mixed[1][i] < 0) fail("forest 1 west of 0");
+        const byIndex = F.plantForest([needle, broad], { area: area, seed: 3, mix: () => 1 });
+        if (byIndex[0].length !== 0 || byIndex[1].length !== one.length) fail("a mix by index");
+        const cover = F.forestCover([needle, broad], { instances: mixed });
+        if (!(cover(-20, -20) >= 0 && cover(-20, -20) <= 1) || typeof cover.canopy !== "function") fail("mixed cover");
+        "SUCCESS";
+    )JS");
+}
+
 // Counts, sizes and node references are validated, not cast: a negative,
 // NaN or fractional one used to wrap to ~4e9 in a static_cast (a 4-billion
 // sided tube, a 4-billion-cell shadow grid, an out-of-range node index the
@@ -487,6 +546,7 @@ static void test_api_in_realm() {
         test_api_option_readers();
         test_api_wind_paths_agree();
         test_api_instance_layout();
+        test_api_species_presets();
         test_api_count_validation();
         test_api_foreign_handles();
     }

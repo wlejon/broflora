@@ -236,6 +236,23 @@ inline bool readVec3Prop(Value obj, std::string_view prop, bromath::Vec3& out) {
     return false;
 }
 
+// A leaf form (broflora::LeafForm): "broad" / "needle" / "scale" or its
+// number. False (and `out` untouched) for anything else.
+inline bool leafFormOf(Value v, int& out) {
+    if (ev::isNumber(v)) {
+        const double d = ev::toDouble(v);
+        if (d >= 0.0 && d < broflora::kLeafFormCount && d == std::floor(d)) { out = static_cast<int>(d); return true; }
+        return false;
+    }
+    if (!ev::isString(v)) return false;
+    const std::string s = ev::toUtf8(v);
+    if (s == "broad") out = static_cast<int>(broflora::LeafForm::Broad);
+    else if (s == "needle") out = static_cast<int>(broflora::LeafForm::Needle);
+    else if (s == "scale") out = static_cast<int>(broflora::LeafForm::Scale);
+    else return false;
+    return true;
+}
+
 inline void readSdfMeshOptions(Value in, broflora::SdfMeshOptions& opts) {
     if (!ev::isObject(in)) return;
     Rooted obj(in);
@@ -558,6 +575,93 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readFloatField(spec, "distributionWeightTropism",   s.distributionWeightTropism);
     readFloatField(spec, "orthotropy",                  s.orthotropy);
     readFloatField(spec, "individualVariation",         s.individualVariation);
+    // The habit (plant.h).
+    readFloatField(spec, "apicalDominance",             s.apicalDominance);
+    readFloatField(spec, "maxBranchOrder",              s.maxBranchOrder);
+    readFloatField(spec, "crownSlope",                  s.crownSlope);
+    readFloatField(spec, "crownBase",                   s.crownBase);
+    readFloatField(spec, "crownRadiusMax",              s.crownRadiusMax);
+    readFloatField(spec, "lateralOrthotropy",           s.lateralOrthotropy);
+    readFloatField(spec, "lateralElevation",            s.lateralElevation);
+    {
+        // Groups are uint32; a fraction or a negative leaves the field.
+        float g = 0.0f;
+        if (readFloatField(spec, "prototypeGroup", g) && g >= 0.0f && g == std::floor(g))
+            s.prototypeGroup = static_cast<uint32_t>(g);
+        if (readFloatField(spec, "lateralGroup", g) && g >= 0.0f && g == std::floor(g))
+            s.lateralGroup = static_cast<uint32_t>(g);
+    }
+    // The look (emit only).
+    {
+        Value lf = ev::getProperty(spec, "leafForm");
+        int form = -1;
+        if (leafFormOf(lf, form)) s.leafForm = static_cast<uint32_t>(form);
+    }
+    readVec3Prop  (spec, "leafColor",                   s.leafColor);
+    readVec3Prop  (spec, "barkColor",                   s.barkColor);
+    readFloatField(spec, "clumpScale",                  s.clumpScale);
+}
+
+// A Species as a plain object, every field applySpeciesPartial reads.
+inline Value speciesObject(const broflora::Species& s) {
+    ev::Persistent sp(ev::createObject());
+    const auto num = [&](const char* name, double v) { sp.set(ev::setProperty(sp.get(), name, ev::fromDouble(v))); };
+    const auto vec = [&](const char* name, const bromath::Vec3& v) {
+        ev::Persistent a(makeVec3(v));
+        sp.set(ev::setProperty(sp.get(), name, a.get()));
+    };
+    num("maxVigor", s.maxVigor);
+    num("minVigor", s.minVigor);
+    num("rootVigorMax", s.rootVigorMax);
+    num("apicalControl", s.apicalControl);
+    num("determinacy", s.determinacy);
+    num("shadeTolerance", s.shadeTolerance);
+    num("apicalControlMature", s.apicalControlMature);
+    num("determinacyMature", s.determinacyMature);
+    vec("tropismDir", s.tropismDir);
+    num("tropismG1", s.tropismG1);
+    num("tropismG2", s.tropismG2);
+    num("growthScale", s.growthScale);
+    num("climateOptT", s.climateOptT);
+    num("climateOptP", s.climateOptP);
+    num("climateSigT", s.climateSigT);
+    num("climateSigP", s.climateSigP);
+    num("maxAge", s.maxAge);
+    num("floweringAge", s.floweringAge);
+    num("seedingRadius", s.seedingRadius);
+    num("moduleMatureAge", s.moduleMatureAge);
+    num("pipeExp", s.pipeExp);
+    num("leafDiameter", s.leafDiameter);
+    num("kink", s.kink);
+    num("barkFurrow", s.barkFurrow);
+    num("barkScale", s.barkScale);
+    num("barkMoss", s.barkMoss);
+    num("rootFlare", s.rootFlare);
+    num("branchCollar", s.branchCollar);
+    num("terrainAnchorWeight", s.terrainAnchorWeight);
+    num("maxSeedingSlope", s.maxSeedingSlope);
+    num("distributionWeightCollisions", s.distributionWeightCollisions);
+    num("distributionWeightTropism", s.distributionWeightTropism);
+    num("orthotropy", s.orthotropy);
+    num("individualVariation", s.individualVariation);
+    num("apicalDominance", s.apicalDominance);
+    num("maxBranchOrder", s.maxBranchOrder);
+    num("crownSlope", s.crownSlope);
+    num("crownBase", s.crownBase);
+    num("crownRadiusMax", s.crownRadiusMax);
+    num("lateralOrthotropy", s.lateralOrthotropy);   // NaN: the paper's lateral lift
+    num("lateralElevation", s.lateralElevation);
+    num("prototypeGroup", s.prototypeGroup);
+    num("lateralGroup", s.lateralGroup);
+    {
+        static const char* const kForms[] = {"broad", "needle", "scale"};
+        Value str = ev::fromUtf8(s.leafForm < broflora::kLeafFormCount ? kForms[s.leafForm] : "broad");
+        sp.set(ev::setProperty(sp.get(), "leafForm", str));
+    }
+    vec("leafColor", s.leafColor);
+    vec("barkColor", s.barkColor);
+    num("clumpScale", s.clumpScale);
+    return sp.get();
 }
 
 // ── Prototype builder ──────────────────────────────────────────────────

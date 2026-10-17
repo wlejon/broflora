@@ -133,9 +133,23 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
     ForestEmit out;
     out.leafOptions = opts.leaves;
 
-    // The world's clumps, numbered as emitWorldClumps and the scatter node
-    // number them; their leaves keyed as placeLeavesInClumps keys them.
-    const std::vector<bromesh::LeafClump> clumps = emitWorldClumps(world, opts.clumps);
+    // The plants emitted, in order.
+    std::vector<uint32_t> chosen;
+    if (opts.plants.empty()) {
+        for (size_t i = 0; i < world.plants.size(); ++i) chosen.push_back(static_cast<uint32_t>(i));
+    } else {
+        for (const uint32_t i : opts.plants)
+            if (i < world.plants.size()) chosen.push_back(i);
+    }
+    if (opts.leafForm >= 0)
+        std::erase_if(chosen, [&](uint32_t i) {
+            return world.plants[i].species.leafForm != static_cast<uint32_t>(opts.leafForm);
+        });
+
+    // Their clumps, numbered as emitWorldClumps and the scatter node number
+    // them over these plants; their leaves keyed as placeLeavesInClumps keys
+    // them.
+    const std::vector<bromesh::LeafClump> clumps = emitPlantsClumps(world, chosen, opts.clumps);
     std::vector<uint32_t> leafKey(clumps.size() + 1, 0);
     std::vector<int> leafCount(clumps.size(), 0);
     for (size_t c = 0; c < clumps.size(); ++c) {
@@ -143,9 +157,9 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
         leafKey[c + 1] = leafKey[c] + static_cast<uint32_t>(leafCount[c]);
     }
 
-    size_t segBase = 0;   // the plant's first segment in emitWorldSegments' list
+    size_t segBase = 0;   // the plant's first segment in the chosen plants' list
     size_t clumpAt = 0;   // clumps are in plant order
-    for (size_t pi = 0; pi < world.plants.size(); ++pi) {
+    for (const uint32_t pi : chosen) {
         const Plant& plant = world.plants[pi];
         const auto segs = emitPlantSegments(plant);
         const auto sway = emitPlantSway(plant);
@@ -162,6 +176,9 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
         sp.height = sway[0].height;
         sp.crown = sway[0].crown - plant.origin;
         sp.crownRadius = sway[0].crownRadius;
+        sp.leafForm = plant.species.leafForm;
+        sp.leafColor = plant.species.leafColor;
+        sp.barkColor = plant.species.barkColor;
         const Vec3 o = plant.origin;
 
         // Bark, thickest first by each segment's keep radius: the thickest

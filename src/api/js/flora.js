@@ -307,31 +307,66 @@
     //   specimens which specimens to use (indices; default all), or
     //             weights per specimen
     //   seed
+    // A mixed forest: `forest` an array of emits (one per leaf form, say, or
+    // per species) and `mix(x, z, y)` -> a weight per forest (or the index
+    // of one) at that point: by elevation, by patch. Each cell then holds a
+    // tree of the forest its weights pick, and the answer is an array of
+    // instance arrays, one per forest. `specimens` and `scale` may then be
+    // arrays with an entry per forest (`scale: [[1, 1.2], 0.9]`).
+    function _specimenPool(count, sel) {
+        const pool = [];
+        if (Array.isArray(sel) && sel.length === count && sel.every((v) => typeof v === 'number' && v <= 1)) {
+            // Weights per specimen.
+            let sum = 0;
+            for (let i = 0; i < count; i++) sum += Math.max(0, sel[i]);
+            let acc = 0;
+            for (let i = 0; i < count; i++) { acc += Math.max(0, sel[i]) / (sum || 1); pool.push([acc, i]); }
+        } else {
+            const ids = Array.isArray(sel) ? sel.filter((i) => i >= 0 && i < count) : [...Array(count).keys()];
+            ids.forEach((id, k) => pool.push([(k + 1) / ids.length, id]));
+        }
+        return pool;
+    }
+    function _scaleRange(v) {
+        return Array.isArray(v) ? [_numberOr(v[0], 1), _numberOr(v[1], _numberOr(v[0], 1))] : [_numberOr(v, 1), _numberOr(v, 1)];
+    }
     fn(ns_flora, "plantForest", function plantForest(forest, opts) {
         const o = opts || {};
+        const mixed = Array.isArray(forest);
+        const forests = mixed ? forest : [forest];
         const area = o.area || [-50, -50, 50, 50];
         const spacing = Math.max(0.5, _numberOr(o.spacing, 7));
         const jitter = _numberOr(o.jitter, 0.42);
         const ground = typeof o.ground === 'function' ? o.ground : () => 0;
         const density = typeof o.density === 'function' ? o.density : () => _numberOr(o.density, 1);
-        const scale = Array.isArray(o.scale) ? o.scale : [_numberOr(o.scale, 1), _numberOr(o.scale, 1)];
         const sink = _numberOr(o.sink, 0.1);
         const seed = _numberOr(o.seed, 1) | 0;
-        const count = forest && forest.specimenCount ? forest.specimenCount | 0 : 0;
-        if (count <= 0) return new Float32Array(0);
-        let pool = [];
-        if (Array.isArray(o.specimens) && o.specimens.length === count && o.specimens.every((v) => typeof v === 'number' && v <= 1)) {
-            // Weights per specimen.
+        const perForest = (v, k) => (mixed && Array.isArray(v) && v.length === forests.length ? v[k] : v);
+        const pools = forests.map((f, k) => {
+            const count = f && f.specimenCount ? f.specimenCount | 0 : 0;
+            return count > 0 ? _specimenPool(count, perForest(o.specimens, k)) : [];
+        });
+        const scales = forests.map((f, k) => _scaleRange(perForest(o.scale, k)));
+        const outs = forests.map(() => []);
+        const mix = typeof o.mix === 'function' ? o.mix : null;
+        // The forest a cell's u in [0, 1) picks from the weights at (x, z).
+        const pickForest = (x, z, y, u) => {
+            if (!mix || forests.length === 1) return pools[0].length ? 0 : -1;
+            const w = mix(x, z, y);
+            if (typeof w === 'number') return w >= 0 && w < forests.length && pools[w | 0].length ? w | 0 : -1;
             let sum = 0;
-            for (let i = 0; i < count; i++) sum += Math.max(0, o.specimens[i]);
+            for (let k = 0; k < forests.length; k++) if (pools[k].length) sum += Math.max(0, _numberOr(w && w[k], 0));
+            if (!(sum > 0)) return -1;
             let acc = 0;
-            for (let i = 0; i < count; i++) { acc += Math.max(0, o.specimens[i]) / (sum || 1); pool.push([acc, i]); }
-        } else {
-            const ids = Array.isArray(o.specimens) ? o.specimens.filter((i) => i >= 0 && i < count) : [...Array(count).keys()];
-            ids.forEach((id, k) => pool.push([(k + 1) / ids.length, id]));
-        }
-        const pick = (u) => { for (const [c, id] of pool) if (u < c) return id; return pool[pool.length - 1][1]; };
-        const out = [];
+            for (let k = 0; k < forests.length; k++) {
+                if (!pools[k].length) continue;
+                acc += Math.max(0, _numberOr(w && w[k], 0)) / sum;
+                if (u < acc) return k;
+            }
+            for (let k = forests.length; k-- > 0;) if (pools[k].length && _numberOr(w && w[k], 0) > 0) return k;
+            return -1;
+        };
+        const pick = (pool, u) => { for (const [c, id] of pool) if (u < c) return id; return pool[pool.length - 1][1]; };
         const i0 = Math.floor(area[0] / spacing), i1 = Math.ceil(area[2] / spacing);
         const j0 = Math.floor(area[1] / spacing), j1 = Math.ceil(area[3] / spacing);
         for (let j = j0; j <= j1; j++) {
@@ -340,11 +375,16 @@
                 const z = (j + 0.5 + jitter * 2 * (_cellHash(i, j, seed, 2) - 0.5)) * spacing;
                 if (x < area[0] || x > area[2] || z < area[1] || z > area[3]) continue;
                 if (_cellHash(i, j, seed, 3) >= Math.min(1, Math.max(0, density(x, z)))) continue;
+                const y = ground(x, z);
+                const k = pickForest(x, z, y, _cellHash(i, j, seed, 7));
+                if (k < 0) continue;
+                const scale = scales[k];
                 const s = scale[0] + (scale[1] - scale[0]) * _cellHash(i, j, seed, 4);
-                out.push(x, ground(x, z) - sink, z, s, _cellHash(i, j, seed, 5) * 6.283185307, pick(_cellHash(i, j, seed, 6)), 0, 0);
+                outs[k].push(x, y - sink, z, s, _cellHash(i, j, seed, 5) * 6.283185307, pick(pools[k], _cellHash(i, j, seed, 6)), 0, 0);
             }
         }
-        return new Float32Array(out);
+        const arrays = outs.map((a) => new Float32Array(a));
+        return mixed ? arrays : arrays[0];
     });
 
     // Ground cover under a forest (scene.createGrass `density`): a function
@@ -354,31 +394,40 @@
     // closes; `closed` the crown overlap at which nothing grows. Its
     // `canopy` member is the crowns' shade over a point (createGrass's
     // `floor`).
+    // A mixed forest is `forest` an array of emits, `instances` (if given)
+    // an array with each one's instances.
     fn(ns_flora, "forestCover", function forestCover(forest, opts) {
         const o = opts || {};
-        const inst = o.instances || (forest && forest.instances) || new Float32Array(0);
-        const spec = forest && forest.specimens ? forest.specimens : new Float32Array(0);
+        const forests = Array.isArray(forest) ? forest : [forest];
+        const insts = forests.map((f, k) => (Array.isArray(forest) ? (o.instances && o.instances[k]) : o.instances) ||
+                                            (f && f.instances) || new Float32Array(0));
         const floor = _numberOr(o.floor, 0.35);
         const closed = _numberOr(o.closed, 1.6);
         const clear = _numberOr(o.trunkClear, 0.7);
-        const n = (inst.length / 8) | 0;
+        let n = 0;
+        for (const inst of insts) n += (inst.length / 8) | 0;
         // Each tree as its trunk, crown centre and crown radius; the native
         // ForestCover (broflora/forest_cover.h) buckets them by 16 m cell and
         // answers each point, since the grass bakes ask once a texel,
         // hundreds of thousands of times.
         const trees = new Float64Array(n * 5);
         let m = 0;
-        for (let i = 0; i < n; i++) {
-            const sp = inst[i * 8 + 5] | 0, s = inst[i * 8 + 3];
-            if (sp * 16 + 15 >= spec.length) continue;
-            const cr = spec[sp * 16 + 7] * s, yaw = inst[i * 8 + 4];
-            const cx = spec[sp * 16 + 8] * s, cz = spec[sp * 16 + 10] * s;
-            trees[m * 5] = inst[i * 8];
-            trees[m * 5 + 1] = inst[i * 8 + 2];
-            trees[m * 5 + 2] = inst[i * 8] + cx * Math.cos(yaw) + cz * Math.sin(yaw);
-            trees[m * 5 + 3] = inst[i * 8 + 2] - cx * Math.sin(yaw) + cz * Math.cos(yaw);
-            trees[m * 5 + 4] = Math.max(cr, 0.5);
-            m++;
+        for (let k = 0; k < forests.length; k++) {
+            const inst = insts[k];
+            const spec = forests[k] && forests[k].specimens ? forests[k].specimens : new Float32Array(0);
+            const count = (inst.length / 8) | 0;
+            for (let i = 0; i < count; i++) {
+                const sp = inst[i * 8 + 5] | 0, s = inst[i * 8 + 3];
+                if (sp * 16 + 15 >= spec.length) continue;
+                const cr = spec[sp * 16 + 7] * s, yaw = inst[i * 8 + 4];
+                const cx = spec[sp * 16 + 8] * s, cz = spec[sp * 16 + 10] * s;
+                trees[m * 5] = inst[i * 8];
+                trees[m * 5 + 1] = inst[i * 8 + 2];
+                trees[m * 5 + 2] = inst[i * 8] + cx * Math.cos(yaw) + cz * Math.sin(yaw);
+                trees[m * 5 + 3] = inst[i * 8 + 2] - cx * Math.sin(yaw) + cz * Math.cos(yaw);
+                trees[m * 5 + 4] = Math.max(cr, 0.5);
+                m++;
+            }
         }
         const handle = _native.forestCover(trees.subarray(0, m * 5), floor, closed, clear);
         const at = _native.forestCoverAt, canopyAt = _native.forestCanopyAt;
@@ -405,15 +454,31 @@
         return _native ? _native.addPrototype(this, spec) : -1;
     });
 
-    fn(FloraWorld.prototype, "addVoronoiSite", function addVoronoiSite(prototypeIndex, determinacy, apicalControl) {
+    fn(FloraWorld.prototype, "addVoronoiSite", function addVoronoiSite(prototypeIndex, determinacy, apicalControl, group) {
         if (prototypeIndex === undefined) throw new TypeError("bro.flora.FloraWorld.prototype.addVoronoiSite: prototypeIndex is required");
         var det = determinacy === undefined ? 1 : determinacy;
         var ap = apicalControl === undefined ? 0.5 : apicalControl;
         if (_native) {
-            if (typeof _native.addVoronoiSite === 'function') return _native.addVoronoiSite(this, prototypeIndex, det, ap);
+            if (typeof _native.addVoronoiSite === 'function') return _native.addVoronoiSite(this, prototypeIndex, det, ap, group);
             if (typeof _native.FloraWorld_addVoronoiSite === 'function') return _native.FloraWorld_addVoronoiSite(this, prototypeIndex, det, ap);
         }
         return 0;
+    });
+
+    // Species presets (broflora/presets.h): addSpecies(name) registers one's
+    // modules in the world (again: the same ones) and answers {name, habit,
+    // rootPrototype, species}; plantSpecies(name, {origin, age, species})
+    // plants one, `species` a partial Species over the preset's.
+    fn(ns_flora, "speciesPresets", function speciesPresets() {
+        return _native && _native.speciesPresets ? _native.speciesPresets() : [];
+    });
+
+    fn(FloraWorld.prototype, "addSpecies", function addSpecies(name) {
+        return _native && _native.addSpecies ? _native.addSpecies(this, '' + name) : null;
+    });
+
+    fn(FloraWorld.prototype, "plantSpecies", function plantSpecies(name, spec) {
+        return _native && _native.plantSpecies ? _native.plantSpecies(this, '' + name, spec) : -1;
     });
 
     fn(FloraWorld.prototype, "addPlant", function addPlant(spec) {
