@@ -852,6 +852,164 @@ In broworkshop `demos/forest/captures/`:
   clump structure of its own.
 - p95 is 5.25 ms against a 5.1 target.
 
+## Step 7a, round 2
+
+The open items above, still with nothing baked per tree: every tier is
+derived at run time from the tree's own records, and the only shared data is
+tree-independent.
+
+### What changed
+
+- **Crowns trace the tree's own clumps** (`scene_forest_crown.glsl`). A
+  crown is still one card per tree, but each pixel walks the specimen's
+  clump records along its ray: every clump is the ellipsoid its leaves fill
+  (0.9 r up, 0.7 r down, as `clumpLeafFrame` places them), covered by the
+  optical depth of its leaves along the chord. The nearest two clumps hit are
+  the ones seen, the second through the first's gaps. So a far crown has the
+  clumps tier's lobes, gaps, outline and true extent, not one sphere. Each
+  hit is lit like a lobe: the analytic self-shadow through *that* clump, and
+  one shadow tap where the light leaves it. The fragment stage now reads the
+  procedural records (descriptor binding 1 is VERTEX|FRAGMENT).
+- **Clusters are lit as their lobe.** A thinned leaf's cluster carries its
+  lobe's sphere and density from the vertex shader. Its members face out of
+  the lobe, leaning up (`forestClusterLayer`'s lobe direction and tilt),
+  instead of copying the kept leaf. Clusters take the lobe sprite's analytic
+  self-shadow at half the lobe's density, plus one tap at the exit, like the
+  sprite that takes over from them. Before, they were shadowed by casters
+  among their own leaves, and the mid range came out darker than both
+  neighbours.
+- **Sprite casters are calibrated against leaf casters.** A disc stopped
+  about 19 more light than the leaf casters on the same receivers, because a
+  binary 9x9 cell over a whole lobe fills in the gaps the leaves leave. Its
+  depth is now x0.75.
+- **The exit tap is soft**, with twice the filter like a leaf's own tap. A
+  sharp tap printed the discs' cells and the wider casters' edges as hard
+  blotches on the lobes they fall on.
+- **The visible-depth term `1 / (1 + cos(view, light))` is gone.** With the
+  casters calibrated, it only darkened crowns seen down the light.
+- **Sunflecks at a quarter strength.** Lobes go a quarter of the way from
+  the mean sun to a pixel's few lit-or-not leaves, and crowns keep the mean.
+  At full strength the flecks read as noise at this size.
+- **Leaf facing.** A placed leaf's frame is mirrored, so `gl_FrontFacing`
+  named the wrong face. The eye saw sunlit tops lit as undersides, and leaves
+  against the sun lit on the far side. That was the pale grey-white backlit
+  near leaves. The face is now the one the normal points to.
+- **Per-tree variation** (`procClumpBare`, `scene_procedural.glsl`). Each
+  tree drops up to a fifth of its clumps, a share drawn from the tree's hash.
+  Leaves, leaf casters, clusters, lobes, disc casters and the crown trace all
+  skip the same clumps, so the gaps hold through every tier and in the
+  shadow. Two instances of one specimen no longer read as copies.
+- **`lod.barkKeepPixels`** (default 2). Bark at least this wide on screen is
+  drawn whatever the widening and budget ask, so a mid tree keeps its trunk
+  and scaffold limbs under its crown.
+
+Tried and dropped:
+
+- A disc spread through its chord's depth: darker and noisier.
+- Shading lobes at the shell's projection.
+- Offsetting cluster members' depth.
+- Jittering widened leaf casters along the light.
+
+### Numbers
+
+`capture.js metrics`, Leaves / By size. Leaves' own values moved too: the
+facing fix and the dropout reach it. So the useful number is each row's
+By size minus Leaves (dY), before (da11d4cf, `r2base_metrics.json`) and
+after (`r2_metrics.json`):
+
+| View, band | before L / B (dY) | after L / B (dY) | drgb before / after |
+|---|---|---|---|
+| canopy noon 20-40 | 142 / 150 (+8.1) | 155 / 150 (-4.5) | 16.1 / 7.6 |
+| canopy noon 40-80 | 143 / 150 (+7.0) | 158 / 159 (+0.5) | 13.5 / 0.9 |
+| canopy noon 80-160 | 159 / 152 (-7.3) | 167 / 168 (+1.7) | 12.4 / 2.3 |
+| canopy golden 20-40 | 137 / 135 (-1.7) | 145 / 136 (-8.9) | 4.9 / 14.1 |
+| canopy golden 80-160 | 142 / 135 (-7.4) | 152 / 149 (-2.9) | 17.3 / 5.8 |
+| skim noon 40-80 | 165 / 157 (-7.9) | 173 / 173 (+0.4) | 15.0 / 0.6 |
+| skim noon 80-160 | 178 / 167 (-10.3) | 179 / 176 (-3.0) | 17.7 / 5.2 |
+| skim golden 80-160 | 156 / 152 (-3.9) | 172 / 169 (-3.2) | 13.1 / 6.8 |
+| glade noon 10-20 | 144 / 130 (-13.5) | 128 / 132 (+4.4) | 24.0 / 7.8 |
+| glade noon 20-40 | 121 / 118 (-2.9) | 117 / 123 (+5.5) | 5.9 / 8.9 |
+| glade golden 20-40 | 126 / 128 (+2.1) | 131 / 131 (+0.1) | 4.3 / 0.7 |
+| trunks noon 20-40 | 123 / 123 (-0.1) | 116 / 126 (+9.6) | 8.6 / 14.0 |
+| trunks noon 40-80 | 90 / 98 (+7.9) | 88 / 96 (+8.1) | 11.7 / 11.1 |
+| trunks golden 20-40 | 135 / 137 (+1.6) | 136 / 138 (+2.2) | 10.4 / 3.0 |
+| trunks golden 40-80 | 109 / 118 (+8.6) | 108 / 114 (+5.8) | 15.1 / 7.9 |
+
+Far crowns took on the leaves' structure. Canopy noon 80-160 hard edges are
+now 8.2 against 8.2 (before, 10.4 against 4.7), and the far skim's contrast
+holds. The canopy and skim mid bands are within 1 of Leaves, with the colour
+gone (drgb under 1); the minty cast is gone. The mean colour is now within 9
+of Leaves in every band but three (14.1, 14.0 and 11.1).
+
+Trace (`capture.js trace`, 1280x720, 4x MSAA, RTX 4090, breeze, 1021
+frames), GPU ms, three runs:
+
+| Run | Max | p95 | Median |
+|---|---|---|---|
+| da11d4cf (step 7a mid range) | 7.65 to 10.67 | 5.25 to 5.78 | 4.08 to 4.09 |
+| now | 6.12 to 7.21 | 5.78 to 5.91 | 4.18 to 4.20 |
+
+**The bursts.** `BRO_SCENE_GPU_PASSES` (bro/docs/headless.md) times each
+pass and each opaque draw. The 1 to 2 s bursts are a staircase: 17, then
+13.8, then 11, then 6.3 ms, each step held 4 to 7 frames. It starts about
+8.3 s of wall time after the device comes up, whatever view is drawn. Only
+the fragment-heavy forest sprite draws slow down (clumps 3x, crowns 10x);
+shadow, bark and static draws do not.
+
+It is not caused by any of these:
+
+- pipeline creation (all pipelines exist at boot);
+- a CPU stall;
+- grass;
+- the `gl_FragDepth` write (the staircase is there without it);
+- clocks (2670 MHz throughout).
+
+da11d4cf shows the same staircase, and it disappears once the GPU has been
+kept busy past that point. It is on the driver or OS side, not in the
+frame. The trace now warms until 10 s of wall time have passed before it
+times anything, so the max is the flight's own.
+
+**What is left over budget.** The dive into the canopy, from 10 to 13 s,
+runs about 5.5 to 6.4 ms:
+
+| Draw | GPU ms |
+|---|---|
+| clump sprites | 2.4 |
+| cluster leaves | 1.0 to 1.8 |
+| near leaves | 0.6 |
+| shadow | 0.65 |
+| bark | 0.5 |
+
+The flight's p95 is set by that one second, and the clusters and crown
+traces cost about 0.1 ms of median. Nothing was given up for the budget.
+
+The flight video shows no popping. ffmpeg's scene score finds no frame over
+0.04 beyond the first frames and the last. The handover strips change
+smoothly through all three tiers.
+
+### Captures
+
+In broworkshop `demos/forest/captures/`:
+
+- `r2_metrics.json`, `r2_trace.json`; `r2base_metrics.json` is da11d4cf.
+- `r2_<shot>_<sky>_compare.png` for canopy, skim, glade and trunks, at noon
+  and at golden.
+- `r2_handover_{cards,clumps,crowns}_strip.png`.
+- `r2.webm`: the flight.
+
+### Still open
+
+- **Trunks, mid range.** Past 20 m the mid tiers are still about 8 brighter
+  than the leaves (trunks noon 20-40 and 40-80). The backlit trees behind
+  the trunks read as a paler, denser wall than the leaves draw. At golden
+  hour, 40 to 80 m is better (+5.8, was +8.6) but not closed. Lighter mid
+  shadows help the canopy top and hurt this view, and the two pull against
+  each other.
+- **Canopy golden 20-40** is 9 darker than the leaves (the near clumps from
+  above, sun low).
+- **p95 5.8 ms against 5.1.** It needs the clump sprites cheaper in the
+  canopy dive (2.4 ms): fewer lobes per pixel there, or an earlier mean.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
