@@ -198,6 +198,12 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
         ev::Persistent a(makeUint32Array(f.leaves.empty() ? nullptr : f.leaves.data(), f.leaves.size()));
         obj.set(ev::setProperty(obj.get(), "leaves", a.get()));
     }
+    if (fo.leafForm >= 0) {
+        // The form it was filtered to (bro.scene's createForest draws it).
+        static const char* const kForms[] = {"broad", "needle", "scale"};
+        Value lfName = ev::fromUtf8(kForms[std::clamp(fo.leafForm, 0, 2)]);
+        obj.set(ev::setProperty(obj.get(), "leafForm", lfName));
+    }
     obj.set(ev::setProperty(obj.get(), "specimenCount", ev::fromDouble(static_cast<double>(f.specimens.size()))));
     obj.set(ev::setProperty(obj.get(), "leafCount", ev::fromDouble(static_cast<double>(f.leaves.size() / 2))));
     obj.set(ev::setProperty(obj.get(), "seed", ev::fromDouble(static_cast<double>(f.leafOptions.seed))));

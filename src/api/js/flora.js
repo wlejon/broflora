@@ -617,7 +617,22 @@
     // (scene.createForest): bark thickest first, crown clumps, leaves in a
     // thinning order, one instance per plant where it grew. Swap
     // `instances` (bro.flora.plantForest) to draw the specimens many times.
+    // A conifer's leaf is a whole spray (bro.scene draws a needle or scale
+    // form's leaves as spray cards): fewer of them, lying flatter. These fill
+    // in what an emit filtered to that form does not say.
+    const _FORM_EMIT = {
+        needle: { perArea: 80, upBias: 0.65, tiltJitter: 0.3 },
+        scale: { perArea: 80, upBias: 0.6, tiltJitter: 0.3 },
+        1: { perArea: 80, upBias: 0.65, tiltJitter: 0.3 },
+        2: { perArea: 80, upBias: 0.6, tiltJitter: 0.3 },
+    };
     fn(FloraWorld.prototype, "emitForest", function emitForest(opts) {
+        const d = opts && opts.leafForm !== undefined ? _FORM_EMIT[opts.leafForm] : undefined;
+        if (d) {
+            const o = Object.assign({}, opts);
+            for (const k in d) if (o[k] === undefined) o[k] = d[k];
+            opts = o;
+        }
         return _native ? _native.emitForest(this, opts) : null;
     });
 
