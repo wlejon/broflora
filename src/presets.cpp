@@ -175,7 +175,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             // bright leaves on twigs that hang; white bark.
             s.growthScale = 2.0f; s.orthotropy = 0.85f; s.tropismG2 = 0.09f; s.apicalControl = 0.55f;
             s.leafSize = 0.6f; s.pipeExp = 2.4f;   // a slender stem
-            s.leafColor = rgb(0.13f, 0.25f, 0.07f);
+            s.leafColor = rgb(0.08f, 0.155f, 0.04f);
             bark(s, 0.15f, 0.7f, 0.1f, 0.3f);
             s.barkColor = rgb(0.72f, 0.70f, 0.65f);
         }
