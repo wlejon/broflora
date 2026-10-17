@@ -105,6 +105,10 @@ Species coniferBase() {
     // form defaults): many sprays' worth along every bough, so the crown
     // is a dense cone, not a few tufts at the boughs' ends.
     s.clumpScale = 0.3f;
+    // Flat pads along level boughs, with dark gaps between the tiers, and
+    // small clumps on the short top boughs so the crown ends in a spire.
+    s.clumpFlat = 0.42f;
+    s.clumpReach = 0.6f;
     return s;
 }
 
@@ -181,7 +185,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.tropismG2 = 0.04f;
             bark(s, 0.8f, 1.8f, 0.2f, 0.5f);
             s.barkColor = rgb(0.32f, 0.17f, 0.10f);
-            s.leafColor = rgb(0.12f, 0.20f, 0.09f);
+            s.leafColor = rgb(0.075f, 0.12f, 0.05f);
         } else if (name == "spruce") {
             // Norway spruce: a narrow spire, boughs level then drooping, the
             // sprays hanging from them; dark; fine grey-brown scaly bark.
@@ -193,7 +197,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.tropismG2 = 0.1f;
             bark(s, 0.3f, 0.5f, 0.35f, 0.7f);
             s.barkColor = rgb(0.22f, 0.17f, 0.13f);
-            s.leafColor = rgb(0.06f, 0.13f, 0.07f);
+            s.leafColor = rgb(0.028f, 0.068f, 0.045f);
         } else if (name == "fir") {
             // Silver fir: a regular cone of level boughs and flat sprays,
             // smooth grey bark.
@@ -203,7 +207,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.tropismG2 = 0.05f;
             bark(s, 0.06f, 1.2f, 0.4f, 0.5f);
             s.barkColor = rgb(0.31f, 0.30f, 0.28f);
-            s.leafColor = rgb(0.06f, 0.14f, 0.075f);
+            s.leafColor = rgb(0.032f, 0.08f, 0.05f);
         } else if (name == "cedar") {
             // Cedar of Lebanon: broad flat shelves of long level boughs,
             // blue-green; dark fissured bark.
@@ -216,7 +220,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.tropismG2 = 0.03f;
             bark(s, 0.6f, 0.8f, 0.3f, 0.6f);
             s.barkColor = rgb(0.24f, 0.20f, 0.17f);
-            s.leafColor = rgb(0.10f, 0.17f, 0.13f);
+            s.leafColor = rgb(0.055f, 0.1f, 0.085f);
         } else if (name == "redwood") {
             // Coast redwood: very tall and narrow, a long clear trunk, short
             // boughs drooping then lifting; deep red fibrous bark, a big
@@ -231,7 +235,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.tropismG2 = 0.08f;
             bark(s, 1.0f, 0.55f, 0.15f, 1.3f);
             s.barkColor = rgb(0.36f, 0.15f, 0.08f);
-            s.leafColor = rgb(0.09f, 0.17f, 0.08f);
+            s.leafColor = rgb(0.05f, 0.1f, 0.045f);
         } else if (name == "cypress") {
             // Italian cypress: a dark column, every bough turned up tight
             // against the leader; scale-leaf sprays.
@@ -244,7 +248,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.leafForm = static_cast<uint32_t>(LeafForm::Scale);
             bark(s, 0.5f, 0.5f, 0.2f, 0.5f);
             s.barkColor = rgb(0.24f, 0.18f, 0.13f);
-            s.leafColor = rgb(0.07f, 0.13f, 0.06f);
+            s.leafColor = rgb(0.035f, 0.075f, 0.035f);
             s.clumpScale = 0.3f;
         } else {
             // Juniper: a small tree of several stems, irregular, blue-grey
@@ -261,7 +265,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.leafForm = static_cast<uint32_t>(LeafForm::Scale);
             bark(s, 0.75f, 0.35f, 0.25f, 0.4f);
             s.barkColor = rgb(0.30f, 0.21f, 0.16f);
-            s.leafColor = rgb(0.11f, 0.16f, 0.12f);
+            s.leafColor = rgb(0.06f, 0.09f, 0.07f);
         }
         return d;
     }

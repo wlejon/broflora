@@ -180,6 +180,7 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
         sp.leafColor = plant.species.leafColor;
         sp.barkColor = plant.species.barkColor;
         sp.leafSize = plant.species.leafSize > 0.0f ? plant.species.leafSize : 1.0f;
+        sp.clumpFlat = std::clamp(plant.species.clumpFlat > 0.0f ? plant.species.clumpFlat : 1.0f, 0.2f, 1.0f);
         const Vec3 o = plant.origin;
 
         // Bark, thickest first by each segment's keep radius: the thickest

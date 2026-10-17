@@ -186,11 +186,20 @@ struct Species {
     //   leafSize    a leaf's size, x the renderer's card (a boxwood's small
     //               leaves 0.3); its clumps carry 1/leafSize^2 the leaves,
     //               so they cover as much
+    //   clumpFlat   a clump's height over its width: 1 a broadleaf's round
+    //               lobes, ~0.4 the flat pads of a fir's level sprays (the
+    //               clumps pack closer up and down by as much)
+    //   clumpReach  a clump reaches no further across than this times its
+    //               distance from the plant's axis, plus a quarter of its
+    //               size (0: no limit): a conifer's short top boughs carry
+    //               small clumps, so its crown narrows to a spire
     uint32_t leafForm        = 0;
     bromath::Vec3 leafColor  = {0.0f, 0.0f, 0.0f};
     bromath::Vec3 barkColor  = {0.0f, 0.0f, 0.0f};
     float clumpScale         = 1.0f;
     float leafSize           = 1.0f;
+    float clumpFlat          = 1.0f;
+    float clumpReach         = 0.0f;
 };
 
 // What a plant's leaves are drawn as (Species::leafForm).

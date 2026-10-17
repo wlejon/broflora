@@ -41,6 +41,11 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
     if (!(R0 > 0.0f)) return;
     const float leafSize = std::clamp(plant.species.leafSize > 0.0f ? plant.species.leafSize : 1.0f, 0.2f, 3.0f);
     const float leafMore = 1.0f / (leafSize * leafSize);
+    // Flat clumps (Species::clumpFlat) stack closer up and down: the spacing
+    // is measured with heights stretched by 1 / flat.
+    const float flat = std::clamp(plant.species.clumpFlat > 0.0f ? plant.species.clumpFlat : 1.0f, 0.2f, 1.0f);
+    const float reach = std::max(plant.species.clumpReach, 0.0f);
+    const bool evergreen = plant.species.leafForm != static_cast<uint32_t>(LeafForm::Broad);
 
     std::vector<int> kids(segs.size(), 0);
     for (const auto& s : segs) {
@@ -58,7 +63,11 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
         if (s.radius > 0.0f && s.radius > opts.maxRadius) continue;
         if (bromath::vdist2(s.from, s.to) < 1e-12f) continue;
         const size_t gi = segBase + i;
-        const float w = opts.densityWeight.empty() ? foliageDensity(fol[i])
+        FoliageSample f = fol[i];
+        // An evergreen's new shoots carry their needles or scales as they
+        // grow: a conifer's young leader and top boughs are clothed, not bare.
+        if (evergreen) f.age01 = std::max(f.age01, 0.7f);
+        const float w = opts.densityWeight.empty() ? foliageDensity(f)
                       : gi < opts.densityWeight.size() ? opts.densityWeight[gi] : 0.0f;
         if (!(w >= opts.minDensity)) continue;
         const float outer = bromath::vlen(s.to - crown) / crownR;
@@ -72,10 +81,12 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
     // Accepted clumps on a grid of cells the size of the largest reach.
     const float rMax = R0 * (1.0f + std::max(0.0f, opts.radiusJitter));
     const float cell = std::max(1e-4f, opts.spacing * rMax);
-    auto key = [&](const Vec3& p) {
-        const int64_t x = static_cast<int64_t>(std::floor(p.x / cell));
-        const int64_t y = static_cast<int64_t>(std::floor(p.y / cell));
-        const int64_t z = static_cast<int64_t>(std::floor(p.z / cell));
+    // Grid and spacing in the stretched space (heights over `flat`).
+    const auto stretch = [&](const Vec3& p) { return Vec3{p.x, p.y / flat, p.z}; };
+    auto key = [&](const Vec3& q) {
+        const int64_t x = static_cast<int64_t>(std::floor(q.x / cell));
+        const int64_t y = static_cast<int64_t>(std::floor(q.y / cell));
+        const int64_t z = static_cast<int64_t>(std::floor(q.z / cell));
         return (x * 73856093) ^ (y * 19349663) ^ (z * 83492791);
     };
     std::unordered_map<int64_t, std::vector<size_t>> grid;
@@ -85,13 +96,19 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
         const auto& s = segs[c.seg];
         Vec3 dir = s.to - s.from;
         dir = dir * (1.0f / bromath::vlen(dir));
-        const float r = R0 * (1.0f + opts.radiusJitter * (2.0f * mix01(seed ^ (c.seg * 0x2545F4914F6CDD1DULL)) - 1.0f));
+        float r = R0 * (1.0f + opts.radiusJitter * (2.0f * mix01(seed ^ (c.seg * 0x2545F4914F6CDD1DULL)) - 1.0f));
+        if (reach > 0.0f) {
+            // No wider than its bough reaches from the axis.
+            const float ax = std::hypot(s.to.x - plant.origin.x, s.to.z - plant.origin.z);
+            r = std::min(r, reach * ax + 0.25f * R0);
+        }
         const Vec3 center = s.to + dir * (0.35f * r);
+        const Vec3 sc = stretch(center);
 
         bool clear = true;
-        const int64_t cx = static_cast<int64_t>(std::floor(center.x / cell));
-        const int64_t cy = static_cast<int64_t>(std::floor(center.y / cell));
-        const int64_t cz = static_cast<int64_t>(std::floor(center.z / cell));
+        const int64_t cx = static_cast<int64_t>(std::floor(sc.x / cell));
+        const int64_t cy = static_cast<int64_t>(std::floor(sc.y / cell));
+        const int64_t cz = static_cast<int64_t>(std::floor(sc.z / cell));
         for (int64_t dz = -1; dz <= 1 && clear; ++dz)
             for (int64_t dy = -1; dy <= 1 && clear; ++dy)
                 for (int64_t dx = -1; dx <= 1 && clear; ++dx) {
@@ -101,7 +118,7 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
                     for (size_t j : it->second) {
                         const auto& o = out[j];
                         const float need = opts.spacing * 0.5f * (r + o.radius);
-                        if (bromath::vdist2(center, o.center) < need * need) { clear = false; break; }
+                        if (bromath::vdist2(sc, stretch(o.center)) < need * need) { clear = false; break; }
                     }
                 }
         if (!clear) continue;
@@ -113,7 +130,7 @@ void plantClumpsInto(const Plant& plant, const ClumpOptions& opts, size_t segBas
         // Smaller leaves (Species::leafSize), more of them: as much cover.
         lc.density = std::clamp(0.3f + 0.9f * c.density, 0.0f, 1.0f) * leafMore;
         lc.segment = static_cast<int32_t>(segBase + c.seg);
-        grid[key(center)].push_back(out.size());
+        grid[key(sc)].push_back(out.size());
         out.push_back(lc);
     }
     // Clumps in segment order: neighbouring clumps (and so their leaves)

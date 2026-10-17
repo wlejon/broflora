@@ -74,6 +74,7 @@ struct ForestSpecimen {
     bromath::Vec3 leafColor{};
     bromath::Vec3 barkColor{};
     float leafSize = 1.0f;         // Species::leafSize
+    float clumpFlat = 1.0f;        // Species::clumpFlat: its clumps' height over their width
 };
 
 /// A tube segment: from/to with the radius at each end and the bark's

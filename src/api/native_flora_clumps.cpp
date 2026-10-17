@@ -164,7 +164,7 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
 
     // Per specimen: segStart, segCount, clumpStart, clumpCount, leafStart,
     // leafCount, height, crownRadius, crown.xyz (relative), plant index,
-    // origin.xyz, 0.
+    // origin.xyz, its clumps' height over their width (Species::clumpFlat).
     // Per specimen, its look: leafColor.rgb, leafForm, barkColor.rgb, leafSize.
     std::vector<float> spec, inst, looks;
     for (const auto& s : f.specimens) {
@@ -174,7 +174,7 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
                                  static_cast<float>(s.clumpStart), static_cast<float>(s.clumpCount),
                                  static_cast<float>(s.leafStart), static_cast<float>(s.leafCount),
                                  s.height, s.crownRadius, s.crown.x, s.crown.y, s.crown.z,
-                                 static_cast<float>(s.plant), s.origin.x, s.origin.y, s.origin.z, 0.0f});
+                                 static_cast<float>(s.plant), s.origin.x, s.origin.y, s.origin.z, s.clumpFlat});
         // x, y, z, scale, yaw, specimen, 0, 0: drawn where the plant grew.
         inst.insert(inst.end(), {s.origin.x, s.origin.y, s.origin.z, 1.0f, 0.0f,
                                  static_cast<float>(inst.size() / 8), 0.0f, 0.0f});
