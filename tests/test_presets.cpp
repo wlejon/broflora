@@ -140,6 +140,50 @@ TEST(presets_shrubs_grow_low_mounds_of_stems) {
     }
 }
 
+TEST(presets_conifer_twigs_are_thin_and_its_trunk_stout) {
+    // A conifer's many twigs are a few millimetres thick, so a renderer's
+    // bark detail drops them with distance, while its boughs add up to a
+    // stout trunk.
+    WorldState world;
+    grow("fir", 900, &world);
+    const auto segs = emitPlantSegments(world.plants[0]);
+    float trunk = 0.0f;
+    size_t thin = 0;
+    for (const auto& s : segs) {
+        trunk = std::max(trunk, s.radius);
+        if (s.radius < 0.006f) ++thin;
+    }
+    ASSERT(thin * 2 > segs.size(), ("most of a fir's shoots are twigs under 6 mm: " + std::to_string(thin) + " of " +
+                                    std::to_string(segs.size())).c_str());
+    ASSERT(trunk > 0.08f, ("and its trunk is stout: " + std::to_string(trunk)).c_str());
+}
+
+TEST(presets_newborn_modules_stand_on_their_plant) {
+    // A module born in a step is drawn where it attaches even when the
+    // world is emitted before the next step places it (not at the world's
+    // origin): a plant away from the origin keeps every segment by it, at
+    // whatever step the emit falls.
+    WorldState world = openWorld();
+    auto h = addSpeciesPreset(world, "fir");
+    ASSERT(h.has_value(), "fir registers");
+    const bromath::Vec3 at{9.0f, 0.0f, 6.0f};
+    plantSpecies(world, *h, at);
+    int stray = 0, steps = 0;
+    for (int t = 0; t < 420; ++t) {
+        step(world, 0.02f);
+        if (t < 300) continue;
+        ++steps;
+        const Plant& p = world.plants[0];
+        float height = 0.0f;
+        const auto segs = emitPlantSegments(p);
+        for (const auto& g : segs) height = std::max(height, g.to.y - at.y);
+        for (const auto& g : segs)
+            for (const auto& q : {g.from, g.to})
+                if (std::hypot(q.x - at.x, q.z - at.z) > std::max(2.0f, height)) ++stray;
+    }
+    ASSERT(steps > 100 && stray == 0, "no segment strays from its plant");
+}
+
 TEST(presets_world_round_trips) {
     WorldState a;
     grow("spruce", 200, &a);

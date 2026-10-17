@@ -224,6 +224,7 @@ TEST(prototypes_monopodial_grows_taller_with_apical_dominance) {
 
     float monoHeight = growMaxHeight(monopodialLeaderModule(2, 0.5f), 0.85f);
     float symHeight  = growMaxHeight(sympodialForkModule(0.3f, 0.7f), 0.85f);
-    ASSERT(monoHeight > symHeight, "monopodial leader grows taller under apical dominance");
+    ASSERT(monoHeight > symHeight, ("monopodial leader grows taller under apical dominance: " +
+                                    std::to_string(monoHeight) + " vs " + std::to_string(symHeight)).c_str());
 }
 

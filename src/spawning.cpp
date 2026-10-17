@@ -20,6 +20,9 @@
 
 namespace broflora {
 
+// development.cpp: a module's node positions at its age.
+void refreshModuleNodePositions(BranchModuleInstance& m);
+
 using bromath::Vec3;
 using bromath::vdot;
 using bromath::vlen2;
@@ -402,7 +405,13 @@ void spawnModules(Plant& plant,
             child.isMainChild = (!terms.empty() && termNode == terms.front());
             child.orientation.theta = theta;
             child.orientation.psi   = psi;
-            // worldPos / bbox will be filled in next development tick.
+            // Where it attaches (development's own worldPos) and its nodes
+            // at age 0, so a world emitted before the next tick draws the
+            // newborn as the bud it is, there, not full grown at the
+            // world's origin. Development recomputes both next tick (the
+            // simulation reads neither before then); the bbox waits for it.
+            child.worldPos = attachWorld;
+            refreshModuleNodePositions(child);
             spawns.push_back(child);
             occupied.insert(key(i, termNode));
 
