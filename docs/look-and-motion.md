@@ -1010,6 +1010,189 @@ In broworkshop `demos/forest/captures/`:
 - **p95 5.8 ms against 5.1.** It needs the clump sprites cheaper in the
   canopy dive (2.4 ms): fewer lobes per pixel there, or an earlier mean.
 
+## Step 7b as built: the ground and the bark
+
+Everything here comes from data that is local to the point being drawn:
+the species' bark fields, the wood's place on its plant, the grass field's
+cells, and the canopy cover (a function of the planted trees). On top of
+that, everything uses shared value noise and jittered cells. Nothing is
+baked for any one place, so a world that streams in draws the same way.
+
+### Bark
+
+- **The data.** broflora's species carry `barkFurrow`, `barkScale`,
+  `barkMoss`, `rootFlare` and `branchCollar` (plant.h; emit-only, world
+  format 2).
+  - `packBarkWord` packs the first three into one word, in record 2 of
+    every bark vegetation record. The word goes on forest tubes and
+    `emitBranchTubes` alike.
+  - Record 2 also carries the wood's path from the root, so the pattern
+    runs on through joints.
+- **Root flare and collars** are geometry, made in `tubeSegments`.
+  - A trunk's root segment is split at 0.35, 1 and 2.2 radii and swells as
+    r(1 + F e^-h).
+  - A side shoot swells into a collar where it leaves its parent.
+- **The vertex stage** (bro `scene_bark.glsl`, in `mesh_tube.vert` and
+  `mesh_forest_tube.vert`) places each point on the stem: around it, along
+  the path, the radius, and the height over the root. It also splits a
+  trunk's foot into five buttresses.
+- **The fragment stage** (the `SCENE_BARK` build of mesh.frag) cuts plates
+  parted by ragged furrows.
+  - The plates are a jittered 3x3x3 cell pattern (F2 - F1), stretched six
+    times along the stem.
+  - Their spacing is the girth's (0.01 + 0.13 r) times `barkScale`.
+  - The furrows' width and depth come from `barkFurrow`.
+- **The normal** bends by the pattern's analytic gradient, so there are no
+  derivative taps.
+- **The colour.**
+  - Furrows are dark and warm; plate faces are greyed.
+  - Each plate gets its own tone.
+  - Blotches and streaks are sized to outlast the plates with distance.
+  - Moss grows on the side away from the sun, a limb's top and the foot,
+    in patches, scaled by `barkMoss`. Lichen crusts the plates.
+- **Distance.** Each pattern fades to its mean once its period nears a
+  pixel or two, and is not computed at all once faded. The bark draw is
+  vertex-bound, so its fragment cost does not show.
+
+### The ground
+
+- **Forest floor and understory.** `createGrass({ floor })` takes a second
+  field: `bro.flora.forestCover(...).canopy` (`ForestCover::canopyAt`), 0
+  in the open and 1 under closed crowns.
+  - Where the floor closes, some tufts in the near tuft rings become low
+    leafy plants: six broad leaves in a rosette.
+  - They grow in patches, whether grass grows there or not.
+  - A block of the field is drawn when either grass or floor grows in it.
+- **Turf.** `turf: mesh | [meshes]`, or `grass.shadeGround(mesh)`, draws a
+  ground mesh through the `SCENE_GROUND` build of mesh.frag
+  (`scene_ground.glsl`). Set 4 there is the grass's own field.
+  - The sward is the blades' mean colour, dryness and clumps. Near the eye
+    it shows the roots and soil between the blades; toward the range it
+    shows the blade tops, so the turf meets the blades without a step.
+  - Soil shows where nothing grows.
+  - Under a closed floor: overlapping fallen leaves (two ovals a cell,
+    shadow rims, midribs), twigs, damp soil and moss.
+  - Off the field the same data comes from the mesh's vertex colour
+    (density, dryness, floor), which is how the far ground carries it.
+  - Every octave fades as its period nears two pixels, so the ground keeps
+    texture from standing height to far above.
+- **Range.** The forest's blades now reach 150 m (were 100 m), and the
+  turf continues past them.
+
+### Cost
+
+- **Leaf shadows.** A leaf in a sphere (lobes, a crown's clumps, a
+  cluster's lobe) now takes its exit shadow as four hardware-filtered taps
+  spanning the nine-tap grid (`sampleShadow` with a negative spread),
+  instead of the nine.
+  - That is 0.4 ms at the canopy dive (hold t = 12: 5.89 to 5.49 ms).
+  - The canopy bands hold against the nine taps. At canopy noon, 80 to
+    160 m: drgb 2.3 against 2.4, hard edges 8.0/8.5 against 8.1/8.1. At
+    golden hour: drgb 5.7 against 6.0.
+- **Tried and dropped: an earlier hand-over to the lobes' mean**
+  (`forestLobeMeanShare` 0.45..0.9 instead of 0.7..1.4).
+  - It saves another 0.3 ms.
+  - It costs the far canopy band: noon hard edges 11.8 against 8.1; golden
+    drgb 9.8 against 6.0.
+- **Ground and bark cost little.**
+  - At t = 24 (6 m up among the trunks), the grass draws total about
+    0.3 ms and the turf about 0.07 ms.
+  - Grove frame times hold: grove 6.26 to 6.30 ms, trunk 4.90 to 4.66, the
+    bark close-up 3.87 to 3.91. The bark draw is 0.35 to 0.38 ms.
+- **The canopy dive still sets the frame.** At hold t = 11.5 (5.57 ms):
+  - forest sprites 2.31 + 0.36 ms;
+  - forest leaves 0.41 + 1.14;
+  - shadow 0.65;
+  - tubes 0.32 + 0.16;
+  - grass and ground under 0.15.
+
+### Numbers
+
+The flight trace is at 1280x720 with 4x MSAA. "Before" is step 7a round
+2's head; the target is this step's.
+
+|        | before | 7b   | target |
+|--------|--------|------|--------|
+| max    | 6.97   | 6.12 | 6.0    |
+| p95    | 5.93   | 5.45 | 5.1    |
+| median | 4.21   | 4.19 | 4.4    |
+
+By second of the flight, the frame stays under 4.5 ms except at two
+points:
+
+- t = 10 to 13 s (50 to 32 m up, the canopy dive): 5.0 to 5.6 ms on
+  average, 6.2 ms at worst.
+- t = 24 s (6 m up, among the trunks): 5.1 ms.
+
+**Canopy, Leaves against By size** (the metrics mode), with four taps
+against nine:
+
+- At 80 to 160 m, noon: drgb 2.3 against 2.4, hard edges 8.0/8.5 against
+  8.1/8.1. Golden: drgb 5.7 against 6.0.
+- **The full `s7b_metrics.json` against round 2**, all four shots at both
+  skies, with this step's ground and grass behind the crowns too:
+  - drgb per band moves both ways, mostly within ±3, and averages -0.1;
+  - skim golden 20 to 40 m improves from 13.7 to 6.2;
+  - canopy noon 80 to 160 m goes from 2.4 to 1.3;
+  - the largest rises are skim noon 80 to 160 m (5.4 to 8.4) and canopy
+    golden 80 to 160 m (7.1 to 9.7).
+
+**The ground** (By size frame, per grass ring):
+
+- **Glade, noon.** d9 (texture at the crown-mass scale) is 5.6, 11.4 and
+  13.7 for 7 to 20, 20 to 55 and 55 to 150 m. The turf keeps its texture
+  with distance rather than smearing.
+- **Seams at noon**, step at the edge against its controls:
+  - glade, 20 m: drgb 18.8 against 8.7;
+  - trunks, 7 m: 2.6 against 5.7.
+- **Seams with the trees hidden, golden:**
+  - glade, 20 m: 17.7 against 7.3;
+  - trunks, 7 m: 22.0 against 9.4;
+  - trunks, 20 m: 28.6 against 16.5.
+- These steps are the glade giving way to the forest floor (the cover, and
+  so the turf, darkens past the glade's edge). The stills show no band at
+  any ring.
+
+**Bark** (`tests/flora/test_bark_options.js`, tube bark close up):
+
+- `barkFurrow` 0 to 1 doubles the trunk's local contrast, 0.092 to 0.187.
+- `barkMoss` 0 to 1 raises its green over red from 0.876 to 0.984.
+
+### Captures
+
+In broworkshop `demos/forest/captures/`:
+
+- `s7b_<shot>.png` (noon) and `s7bg_<shot>.png` (golden), for above,
+  canopy, skim, glade and trunks.
+  - Before: `r2_<shot>_<sky>_compare.png` (step 7a round 2) and
+    `bk1_{glade,trunks}.png`.
+- `sh_{trunks,glade}.png`: golden hour with the trees hidden (`hide=node`),
+  the ground alone.
+- Bark: `bk6_trunks.png` / `bk7_trunks.png`, and `bk6g_trunks.png` /
+  `bk7g_trunks.png` at golden hour.
+- Ground: `g1`..`g6` stills, including the views
+  `at-26_1.6_12_-21_0_15`, `at60_40_40_0_0_18` (from 40 m up) and
+  `at-24_0.5_10_-23_0_11.5`.
+- `s7b_trace.json` and `s7b_metrics.json`. The metrics now carry each
+  shot's `ground`.
+
+In `demos/grove/captures/`: `bk3`..`bk7` trunk and bark close-ups.
+
+### Still open
+
+- **The flight trace misses its max and p95 targets** (6.0 / 5.1). The
+  rest is the clump sprites in the canopy dive, t = 10 to 13 s.
+  - An earlier mean hand-over would close most of it, at the far band's
+    look.
+  - What is left is to make the exact lobe loop itself cheaper.
+- **Overhead turf** from 40 m up reads as texture, but it is still softer
+  than the near grass.
+- **The ground seam measure** cannot tell a ring's edge from the view's
+  own change at that distance. The edges show steps of about twice their
+  controls, darker beyond, but the stills show no band. The steps are the
+  glade's edge and the forest floor's cover.
+- **Canopy shade past the shadow range** was not attempted.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
@@ -1026,7 +1209,8 @@ In broworkshop `demos/forest/captures/`:
 7. Refinement. 7a, the trees: far trees as octahedral impostors of their own
    specimens (removed: nothing may be baked per tree), then the mid range
    as leaves placed at run time in clusters, lobes and crowns. 7b: the
-   ground and the bark.
+   ground and the bark (forest floor, turf, bark plates and moss, root
+   flare and collars).
 
 Each step is judged by motion strips and short videos next to the reference
 galleries, not by stills.
