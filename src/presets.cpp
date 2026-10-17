@@ -69,8 +69,11 @@ Species broadleafBase() {
 // boughs that branch flat.
 Species coniferBase() {
     Species s;
-    s.pipeExp = 2.2f;
-    s.leafDiameter = 0.022f;
+    // A spray's twig is a few millimetres thick, and the many boughs add up
+    // to a stout stem: thin tips under a low pipe exponent (a 12 m fir's
+    // trunk ~0.25 m in radius, a bough at the stem ~3 cm, its twigs 4-7 mm).
+    s.pipeExp = 1.75f;
+    s.leafDiameter = 0.007f;
     s.shadeTolerance = 0.3f;
     s.moduleMatureAge = 0.5f;
     s.rootVigorMax = 4.0f;
@@ -98,7 +101,10 @@ Species coniferBase() {
     s.lateralElevation = 0.0f;
     s.crownSlope = 0.35f;
     s.crownBase = 0.8f;
-    s.clumpScale = 0.4f;
+    // Small clumps (an emit for needles packs them closer, flora.js's
+    // form defaults): many sprays' worth along every bough, so the crown
+    // is a dense cone, not a few tufts at the boughs' ends.
+    s.clumpScale = 0.3f;
     return s;
 }
 

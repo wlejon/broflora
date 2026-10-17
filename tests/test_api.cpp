@@ -344,9 +344,14 @@ static void test_api_species_presets() {
         if (info.species.prototypeGroup === fir.species.prototypeGroup) fail("boxwood shares fir's group");
         w.grow(300, 0.02);
 
-        const all = w.emitForest({});
-        const needle = w.emitForest({ leafForm: "needle" });
-        const broad = w.emitForest({ leafForm: 0 });
+        // The same options for each (a form's emit otherwise takes its own
+        // defaults for whatever is unset).
+        const O = { perArea: 60, upBias: 0.5, tiltJitter: 0.2, clumpSpacing: 1.2 };
+        const all = w.emitForest(O);
+        const needle = w.emitForest(Object.assign({ leafForm: "needle" }, O));
+        const broad = w.emitForest(Object.assign({ leafForm: 0 }, O));
+        const sprays = w.emitForest({ leafForm: "needle" });
+        if (!(sprays.leafCount > needle.leafCount)) fail("a needle emit packs its clumps by default");
         if (all.specimenCount !== 2 || needle.specimenCount !== 1 || broad.specimenCount !== 1) fail("form filter");
         if (needle.specimens[11] !== 0 || broad.specimens[11] !== 1) fail("specimen plant index");
         if (needle.specimenLooks.length !== 8 || needle.specimenLooks[3] !== 1 || broad.specimenLooks[3] !== 0) fail("looks: form");
