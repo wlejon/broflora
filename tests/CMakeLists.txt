@@ -30,6 +30,11 @@ endif()
 
 add_test(NAME broflora_test COMMAND broflora_test)
 
+# The step's cost on a forest nursery, per phase (not a test: it prints).
+add_executable(broflora_bench_nursery bench_nursery.cpp)
+target_link_libraries(broflora_bench_nursery PRIVATE broflora)
+target_compile_features(broflora_bench_nursery PRIVATE cxx_std_20)
+
 add_executable(test_sdf_mesh test_sdf_mesh.cpp)
 target_link_libraries(test_sdf_mesh PRIVATE broflora bromesh)
 target_compile_features(test_sdf_mesh PRIVATE cxx_std_20)
