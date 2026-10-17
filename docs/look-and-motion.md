@@ -430,6 +430,121 @@ from 1.35 to 0.89 ms.
   ground's own colour (darkened by the same dry and density masks) can stand
   in for blades.
 
+## Step 6 as built: forest scale
+
+A forest is many trees from a few grown specimens. Only the nearest few
+trees deep need every leaf and its flutter; further out a crown is read by
+its masses and its gusts. Every tier is posed by the same `vegPose` from the
+same records, so a handover swaps detail and never moves the tree.
+
+### The API
+
+- **`world.emitForest(foliage)`** (broflora) emits the world's grown plants
+  as specimens: one buffer of bark segments, crown clumps and leaves, each
+  record in the vegetation layout, with a specimen table.
+- **`bro.flora.plantForest(emit, {area, spacing, jitter, seed, ground,
+  density, scale, sink})`** stands specimens on a jittered grid, 8 floats a
+  tree.
+- **`bro.flora.forestCover(emit, {instances, floor, closed})`** is a
+  density function for `createGrass`: full in the open, down to `floor` in a
+  crown's shade, nothing where `closed` crowns overlap, clear round a trunk.
+- **`scene.createForest({forest, instances, leaf, lod, ...})`** draws them.
+  `node.forestStats()` reports trees at each tier, vertices sent, and the
+  detail factor; `setForestTier()` pins one tier for comparisons.
+
+### The tiers
+
+The tier is chosen per tree each frame by size on screen, so the distances
+scale with the resolution and the field of view. Let `leafPx` be a leaf's
+length in pixels at the crown (the nearest point of an upright cylinder
+around the clumps, so a tree under an overhead crown counts as near), and
+the widening `w = max(1, leafPixels / leafPx)`.
+
+| Tier | When | What draws | Motion |
+|---|---|---|---|
+| leaves | `w` < `clumpFrom` (3) | every leaf while `w` is 1; past it `1 / w²` of them, each `w` times larger, so the crown's cover holds; 6-vertex cards past `cardWidening` (1.6) | `vegPose` + `vegLeaf`, flutter fading out by `flutterFade` (2) |
+| clumps | `w` past `clumpTo` (4.5), until the mean clump is `crownFrom` (5 px) | each clump as three camera-facing lobes with a leafy cutout, lit as spheres, a leaf-scale shade inside | `vegPose` at the clump's centre on its limb, with its weight |
+| crowns | mean clump under `crownTo` (3 px) | one leafy disc a tree | `vegPose` at the crown centre, on the central clump's limb at the clumps' mean weight |
+
+- **Handovers** are dithered: through `clumpFrom..clumpTo` and
+  `crownFrom..crownTo` both tiers draw, splitting each pixel between them,
+  so a tree is covered once and never doubled.
+- **Bark** keeps the segments thicker than `barkPixels * w` on screen,
+  thickest first, measured to the tree's box at rest. Twigs go as fast as
+  the leaves widen.
+- **The horizon** is the crown tier. Each crown sprite carries the gust at
+  its tree and turns paler as a gust shows the leaves' undersides, so gusts
+  roll across the far canopy as lighter bands. There is no separate canopy
+  surface.
+- **Pose agreement** (bro `tests/flora/test_forest.js`): under a steady
+  9 m/s wind, the silhouette of the same tree moves 3.14 / 2.82 / 3.03 px
+  as leaves / clumps / crowns.
+
+### The budget
+
+`lod.budget` (14 M vertices) caps the leaves and bark sent. When the trees
+in view would send more, a per-frame bisection scales `leafPixels` and
+`barkPixels` together by a detail factor (at most 8). Every tree thins alike
+and the furthest hand over to clumps first. Sprites are not counted, since
+they cost one quad a clump. Shadows choose their tiers per shadow tile
+against `lod.shadowBudget` (6 M), handing over to crowns twice as early.
+
+### Grass at forest scale
+
+Each item from step 5's list:
+
+- **Under a closed canopy.** A field density under 0.06 counts as none, so
+  whole tiles go unissued. `forestCover` gives the density.
+- **From above.** Once the eye is 2 m over the field, ring distance is
+  measured in 3D from the eye, so the near rings are not issued under a
+  camera above the canopy.
+- **One shadow-map cost.** Grass casts into each sun's first cascade only.
+- **Far turf.** The forest demo stops the grass at 100 m and colours the
+  ground by the same cover and dryness, so it stands in past that.
+- **Canopy shade.** The near cascades' tree shadows fall on the grass, and
+  `forestCover` thins it under crowns. There is no shade term past the
+  shadow range.
+
+### Cost
+
+From broworkshop `demos/forest` (`capture.js trace`), at 1280x720 on an
+RTX 4090 with 4x MSAA. The test scene is 12,878 trees from 24 specimens on
+900 m of terrain. A 34 s flight runs from 150 m over the ground, down across
+the crowns, into a glade and in among the trunks.
+
+GPU ms a frame over the flight's 1021 frames, two runs:
+
+| | Max | p95 | Median |
+|---|---|---|---|
+| run 1 | 8.26 | 5.09 | 4.30 |
+| run 2 | 7.32 | 5.51 | 4.36 |
+
+| Part of the flight | Frame | Leaves + bark sent | Trees as leaves / clumps / crowns |
+|---|---|---|---|
+| 150 m up | 3.1 ms | 2.7 M | 0 / 3.3k / 6.5k |
+| skimming the crowns | 5.0 ms | 16.6 M | 150 / 3.3k / 3.5k |
+| among the trunks | 4.0-4.7 ms | 16.4 M | 45 / 3.1k / 2.4k |
+
+- **The max is a transient.** Each run has one plateau of about 25 frames
+  (8.2, then 7.1, then 6.3 ms, stepping down every 8 frames). It falls at a
+  different point of the flight in each run (8.3 s, 16.1 s), so it is not
+  the scene. Without it, the worst second of the flight is 5.8 ms.
+- **The budget holds.** The view's leaves and bark stay at the 14 M budget
+  from 44 m up, with the detail factor rising to about 3 among the trunks.
+  The shadow pass stays at its 6 M.
+- **The grove still costs what it did:** 4.66 / 6.14 / 6.06 ms for the
+  ground / grove / meadow shots, against 4.72 / 5.75 / 5.98 at step 5.
+
+**Still open:**
+
+- 24 specimens stand in for 12.9k trees, so repeats are visible from above.
+- The dither of a handover shows as a stipple while it runs.
+- Clumps read darker and rounder than the leaves they replace, so the
+  leaves-to-clumps handover is visible in a dolly
+  (`capture.js handover clumps`).
+- Backlit near leaves read pale grey-white.
+- The leaves' pose is still computed per vertex.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
@@ -440,6 +555,9 @@ from 1.35 to 0.89 ms.
    response, the leaf layer, softer leaf light, MSAA, seamless tubes.
 5. Lush grass: tufts of fine blades an instance, four rings at a level
    cover, view-culled tiles, darker soil.
+6. Forest scale: specimens planted many times over, leaves / clumps / crowns
+   chosen by size on screen under a vertex budget, one pose for every tier,
+   grass skipped under closed canopy and scaled to the eye's height.
 
 Each step is judged by motion strips and short videos next to the reference
 galleries, not by stills.
