@@ -615,7 +615,9 @@
 
     // Every plant as a specimen for bro.scene's forest node
     // (scene.createForest): bark thickest first, crown clumps, leaves in a
-    // thinning order, one instance per plant where it grew. Swap
+    // thinning order, one instance per plant where it grew, and a flowering
+    // plant's blooms (`blooms`, `specimenBlooms`: its species' bloomForm,
+    // colour and size, at its twigs' tips, each on its twig's segment). Swap
     // `instances` (bro.flora.plantForest) to draw the specimens many times.
     // A conifer's leaf is a whole spray (bro.scene draws a needle or scale
     // form's leaves as spray cards): fewer of them, lying flatter. These fill

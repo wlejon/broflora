@@ -10,6 +10,7 @@ add_executable(broflora_test
     test_mesh_emit.cpp
     test_look.cpp
     test_forest.cpp
+    test_forest_blooms.cpp
     test_prototypes.cpp
     test_regression.cpp
     test_spatial_hash.cpp

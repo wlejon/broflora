@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <numeric>
+#include <unordered_map>
 #include <vector>
 
 namespace broflora {
@@ -125,6 +126,107 @@ uint64_t splitmix(uint64_t& s) {
 void relativeRecord(float* r, const Vec3& o) {
     r[0] -= o.x; r[1] -= o.y; r[2] -= o.z;
     r[4] -= o.x; r[5] -= o.y; r[6] -= o.z;
+}
+
+// How far apart (in bloom sizes, centre to centre) a plant's blooms stand at
+// the least: a head or a flower about its own size, so neighbours touch but
+// do not pile into each other; a spike, slender, a third of its length, so
+// a lavender's spikes stand in a sheaf.
+float bloomSpacing(uint32_t form) {
+    switch (static_cast<BloomForm>(form)) {
+    case BloomForm::Head: return 0.9f;
+    case BloomForm::Spike: return 0.35f;
+    default: return 0.8f;
+    }
+}
+
+// `plant`'s blooms into `out.blooms`, its range and look into `sp`: its
+// bloom anchors, each sized by its shoot's state, visited in a shuffled
+// order (so the survivors are shuffled too) and kept only when no bloom
+// kept before stands nearer than the spacing. `segs` are the plant's
+// segments, `tubes` its tube pieces in the order the specimen emitted them.
+void appendBlooms(ForestEmit& out, ForestSpecimen& sp, const Plant& plant,
+                  const std::vector<bromesh::BranchSegment>& segs, const std::vector<TubeSegment>& tubes,
+                  uint64_t seed) {
+    const Species& s = plant.species;
+    sp.bloomStart = static_cast<uint32_t>(out.blooms.size() / 8);
+    sp.bloomForm = s.bloomForm < kBloomFormCount ? s.bloomForm : 0u;
+    sp.bloomColor = s.bloomColor;
+    sp.bloomSize = s.bloomSize > 0.0f ? s.bloomSize : 0.0f;
+    if (sp.bloomForm == static_cast<uint32_t>(BloomForm::None) || sp.bloomSize <= 0.0f || tubes.empty()) return;
+    const std::vector<BloomAnchor> anchors = emitPlantBloomAnchors(plant);
+    if (anchors.empty()) return;
+
+    // Each segment's piece in the specimen's list: its last (the tip, where
+    // the twig's anchor is), else the nearest drawn segment below it.
+    std::vector<int32_t> tubeOf(segs.size(), -1);
+    for (size_t t = 0; t < tubes.size(); ++t) {
+        const int32_t g = tubes[t].segment;
+        if (g < 0 || static_cast<size_t>(g) >= segs.size()) continue;
+        if (tubeOf[g] < 0 || tubes[t].along1 >= tubes[static_cast<size_t>(tubeOf[g])].along1)
+            tubeOf[g] = static_cast<int32_t>(t);
+    }
+    const auto pieceOf = [&](int32_t g) {
+        for (size_t guard = 0; g >= 0 && static_cast<size_t>(g) < segs.size() && guard <= segs.size(); ++guard) {
+            if (tubeOf[g] >= 0) return tubeOf[g];
+            g = segs[g].parent;
+        }
+        return int32_t{0};
+    };
+
+    std::vector<uint32_t> order(anchors.size());
+    std::iota(order.begin(), order.end(), 0u);
+    uint64_t rng = seed;
+    for (size_t i = order.size(); i > 1; --i) std::swap(order[i - 1], order[splitmix(rng) % i]);
+
+    // Kept blooms by grid cell, a cell the spacing between the largest.
+    const float spacing = bloomSpacing(sp.bloomForm);
+    const float cell = std::max(spacing * sp.bloomSize, 1e-3f);
+    std::unordered_map<uint64_t, std::vector<uint32_t>> grid;
+    std::vector<Vec3> keptAt;
+    std::vector<float> keptSize;
+    const auto key = [](int64_t x, int64_t y, int64_t z) {
+        return static_cast<uint64_t>(x * 73856093) ^ static_cast<uint64_t>(y * 19349663) ^
+               static_cast<uint64_t>(z * 83492791);
+    };
+    for (const uint32_t i : order) {
+        const BloomAnchor& a = anchors[i];
+        if (a.segment < 0) continue;
+        // A young shoot's bloom is still opening, a weak or shaded one's
+        // smaller, and they shrink as the plant senesces; one deep in the
+        // shade, or too small to read, is not borne at all, nor one on a
+        // shoot hanging down (an arching stem's tip under the mound: blooms
+        // are held up and out, where the light is).
+        const float age = std::clamp(a.age01, 0.0f, 1.0f);
+        const float size = sp.bloomSize * (0.75f + 0.25f * age) * (0.9f + 0.1f * std::clamp(a.vigor01, 0.0f, 1.0f)) *
+                           (0.85f + 0.15f * std::clamp(a.lightExposure01, 0.0f, 1.0f)) *
+                           (1.0f - 0.5f * std::clamp(a.senescence01, 0.0f, 1.0f));
+        if (a.lightExposure01 < 0.04f || a.normal.y < -0.35f || size < 0.3f * sp.bloomSize) continue;
+        const Vec3 p = a.position;
+        const int64_t cx = static_cast<int64_t>(std::floor(p.x / cell));
+        const int64_t cy = static_cast<int64_t>(std::floor(p.y / cell));
+        const int64_t cz = static_cast<int64_t>(std::floor(p.z / cell));
+        bool crowded = false;
+        for (int64_t dx = -1; dx <= 1 && !crowded; ++dx)
+            for (int64_t dy = -1; dy <= 1 && !crowded; ++dy)
+                for (int64_t dz = -1; dz <= 1 && !crowded; ++dz) {
+                    const auto it = grid.find(key(cx + dx, cy + dy, cz + dz));
+                    if (it == grid.end()) continue;
+                    for (const uint32_t k : it->second) {
+                        const float d = spacing * 0.5f * (size + keptSize[k]);
+                        const Vec3 e = keptAt[k] - p;
+                        if (bromath::vdot(e, e) < d * d) { crowded = true; break; }
+                    }
+                }
+        if (crowded) continue;
+        grid[key(cx, cy, cz)].push_back(static_cast<uint32_t>(keptAt.size()));
+        keptAt.push_back(p);
+        keptSize.push_back(size);
+        const Vec3 r = p - plant.origin;
+        out.blooms.insert(out.blooms.end(), {r.x, r.y, r.z, size, a.normal.x, a.normal.y, a.normal.z,
+                                             static_cast<float>(pieceOf(a.segment))});
+    }
+    sp.bloomCount = static_cast<uint32_t>(out.blooms.size() / 8) - sp.bloomStart;
 }
 
 }  // namespace
@@ -250,6 +352,9 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
         }
         out.leaves.insert(out.leaves.end(), mine.begin(), mine.end());
         sp.leafCount = static_cast<uint32_t>(n);
+
+        // Its blooms, on the pieces just emitted.
+        appendBlooms(out, sp, plant, segs, tubes, opts.seed ^ (static_cast<uint64_t>(pi + 1) * 0x8CB92BA72F3D8DD7ULL));
 
         out.specimens.push_back(sp);
         segBase = segEnd;

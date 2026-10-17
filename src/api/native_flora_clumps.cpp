@@ -124,7 +124,8 @@ Value scatterClumps(const broflora::WorldState& world, Value opts) {
 // node (broflora/forest.h): typed arrays plus the leaf placement, and one
 // instance per specimen where its plant stands. The clump options read as
 // the foliage emits'; `minRadius` drops thin bark; `shuffleSeed` seeds the
-// leaves' thinning order.
+// leaves' thinning order (and the blooms'). A flowering plant whose species
+// bears blooms carries them too: `blooms` and `specimenBlooms`.
 Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
     if (args.empty()) return ev::createObject();
     auto* w = getWrapper(args[0]);
@@ -166,10 +167,16 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
     // leafCount, height, crownRadius, crown.xyz (relative), plant index,
     // origin.xyz, its clumps' height over their width (Species::clumpFlat).
     // Per specimen, its look: leafColor.rgb, leafForm, barkColor.rgb, leafSize.
-    std::vector<float> spec, inst, looks;
+    // Per specimen, its blooms: bloomStart, bloomCount (into `blooms`),
+    // bloomForm (0 none, 1 flower, 2 head, 3 spike), bloomSize,
+    // bloomColor.rgb, 0.
+    std::vector<float> spec, inst, looks, blooms;
     for (const auto& s : f.specimens) {
         looks.insert(looks.end(), {s.leafColor.x, s.leafColor.y, s.leafColor.z, static_cast<float>(s.leafForm),
                                    s.barkColor.x, s.barkColor.y, s.barkColor.z, s.leafSize});
+        blooms.insert(blooms.end(), {static_cast<float>(s.bloomStart), static_cast<float>(s.bloomCount),
+                                     static_cast<float>(s.bloomForm), s.bloomSize, s.bloomColor.x, s.bloomColor.y,
+                                     s.bloomColor.z, 0.0f});
         spec.insert(spec.end(), {static_cast<float>(s.segStart), static_cast<float>(s.segCount),
                                  static_cast<float>(s.clumpStart), static_cast<float>(s.clumpCount),
                                  static_cast<float>(s.leafStart), static_cast<float>(s.leafCount),
@@ -193,6 +200,10 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
     put("keepRadius", f.keepRadius);
     put("clumps", f.clumps);
     put("clumpVegetation", f.clumpVegetation);
+    put("specimenBlooms", blooms);
+    // Per bloom: position.xyz (relative), size, direction.xyz, its segment
+    // (an index into its specimen's segments).
+    put("blooms", f.blooms);
     {
         // Leaf (clump, key) pairs stay integers: a world's keys pass 2^24.
         ev::Persistent a(makeUint32Array(f.leaves.empty() ? nullptr : f.leaves.data(), f.leaves.size()));
@@ -206,6 +217,7 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
     }
     obj.set(ev::setProperty(obj.get(), "specimenCount", ev::fromDouble(static_cast<double>(f.specimens.size()))));
     obj.set(ev::setProperty(obj.get(), "leafCount", ev::fromDouble(static_cast<double>(f.leaves.size() / 2))));
+    obj.set(ev::setProperty(obj.get(), "bloomCount", ev::fromDouble(static_cast<double>(f.blooms.size() / 8))));
     obj.set(ev::setProperty(obj.get(), "seed", ev::fromDouble(static_cast<double>(f.leafOptions.seed))));
     obj.set(ev::setProperty(obj.get(), "upBias", ev::fromDouble(f.leafOptions.upBias)));
     obj.set(ev::setProperty(obj.get(), "tiltJitter", ev::fromDouble(f.leafOptions.tiltJitter)));

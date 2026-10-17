@@ -19,7 +19,10 @@
 //     keeps, holding the crown's cover while the work falls);
 //   - clumps are the crown's masses (clumps.h), the same ones the leaves
 //     fill, so a far tier drawn as clumps keeps the near tier's silhouette
-//     and colour.
+//     and colour;
+//   - blooms (a flowering plant's whose Species::bloomForm is not None) are
+//     its bloom anchors (emitPlantBloomAnchors) thinned so no two crowd
+//     each other, in a shuffled order, each on the segment of its twig.
 //
 // The leaves are exactly the world's clump-mode scatter: leaf k of a
 // specimen carries its clump's index (global, as emitWorldClumps numbers
@@ -75,6 +78,13 @@ struct ForestSpecimen {
     bromath::Vec3 barkColor{};
     float leafSize = 1.0f;         // Species::leafSize
     float clumpFlat = 1.0f;        // Species::clumpFlat: its clumps' height over their width
+    // Its blooms (ForestEmit::blooms), and what they are: Species::bloomForm,
+    // bloomColor and bloomSize (count 0 for a plant not flowering, or one
+    // whose species bears none).
+    uint32_t bloomStart = 0, bloomCount = 0;
+    uint32_t bloomForm = 0;
+    bromath::Vec3 bloomColor{};
+    float bloomSize = 0.0f;
 };
 
 /// A tube segment: from/to with the radius at each end and the bark's
@@ -135,6 +145,17 @@ struct ForestEmit {
     std::vector<float> clumpVegetation;
     /// Per leaf: its clump (global index) and its placement key (2 values).
     std::vector<uint32_t> leaves;
+    /// Per bloom: position.xyz (relative, the twig's tip), size (m: a
+    /// flower's or a head's across, a spike's length; the species'
+    /// bloomSize, smaller on a young, weak or shaded shoot and as the plant
+    /// senesces; none on a shoot hanging down or deep in shade), the twig's
+    /// outward direction.xyz, and its segment as an
+    /// index into its specimen's segments here (the last piece of its twig's
+    /// tube, or of the nearest drawn segment below it when the twig is
+    /// thinner than `minRadius`), so it sways with its twig (8 floats).
+    /// A specimen's blooms are thinned to about a bloom's spacing apart and
+    /// shuffled, so the first n are an even thinning of them.
+    std::vector<float> blooms;
     /// The leaf placement every clump is filled by.
     bromesh::LeafClumpOptions leafOptions;
 };
