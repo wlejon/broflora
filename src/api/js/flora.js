@@ -361,38 +361,65 @@
         const clear = _numberOr(o.trunkClear, 0.7);
         const n = (inst.length / 8) | 0;
         const cell = 16;
-        const grid = new Map();
-        let reach = 1;
-        const trees = [];
+        // The trees bucketed by the 16 m cell of their crown's centre into
+        // flat arrays (a counting sort, so each cell keeps the trees in their
+        // instance order): the grass bakes call this once a texel, hundreds
+        // of thousands of times, so it reads numbers, never string keys.
+        const tx = new Float64Array(n), tz = new Float64Array(n), tcx = new Float64Array(n),
+              tcz = new Float64Array(n), tr = new Float64Array(n), tgi = new Int32Array(n), tgj = new Int32Array(n);
+        let m = 0, reach = 1, gi0 = 0, gj0 = 0, gi1 = -1, gj1 = -1;
         for (let i = 0; i < n; i++) {
             const sp = inst[i * 8 + 5] | 0, s = inst[i * 8 + 3];
             if (sp * 16 + 15 >= spec.length) continue;
             const cr = spec[sp * 16 + 7] * s, yaw = inst[i * 8 + 4];
             const cx = spec[sp * 16 + 8] * s, cz = spec[sp * 16 + 10] * s;
-            const t = {
-                x: inst[i * 8], z: inst[i * 8 + 2],
-                cx: inst[i * 8] + cx * Math.cos(yaw) + cz * Math.sin(yaw),
-                cz: inst[i * 8 + 2] - cx * Math.sin(yaw) + cz * Math.cos(yaw),
-                r: Math.max(cr, 0.5),
-            };
-            trees.push(t);
-            reach = Math.max(reach, t.r);
-            const k = Math.floor(t.cx / cell) + ',' + Math.floor(t.cz / cell);
-            if (!grid.has(k)) grid.set(k, []);
-            grid.get(k).push(t);
+            tx[m] = inst[i * 8];
+            tz[m] = inst[i * 8 + 2];
+            tcx[m] = inst[i * 8] + cx * Math.cos(yaw) + cz * Math.sin(yaw);
+            tcz[m] = inst[i * 8 + 2] - cx * Math.sin(yaw) + cz * Math.cos(yaw);
+            tr[m] = Math.max(cr, 0.5);
+            reach = Math.max(reach, tr[m]);
+            const a = Math.floor(tcx[m] / cell), b = Math.floor(tcz[m] / cell);
+            tgi[m] = a; tgj[m] = b;
+            if (m === 0) { gi0 = gi1 = a; gj0 = gj1 = b; }
+            gi0 = Math.min(gi0, a); gi1 = Math.max(gi1, a); gj0 = Math.min(gj0, b); gj1 = Math.max(gj1, b);
+            m++;
+        }
+        const gw = gi1 - gi0 + 1, gh = gj1 - gj0 + 1;
+        const start = new Int32Array(Math.max(0, gw * gh) + 1);
+        for (let k = 0; k < m; k++) start[(tgj[k] - gj0) * gw + (tgi[k] - gi0) + 1]++;
+        for (let c = 0; c < gw * gh; c++) start[c + 1] += start[c];
+        const order = new Int32Array(m), fill = start.slice(0, Math.max(0, gw * gh));
+        for (let k = 0; k < m; k++) order[fill[(tgj[k] - gj0) * gw + (tgi[k] - gi0)]++] = k;
+        const sx = new Float64Array(m), sz = new Float64Array(m), scx = new Float64Array(m),
+              scz = new Float64Array(m), sr = new Float64Array(m);
+        for (let k = 0; k < m; k++) {
+            const t = order[k];
+            sx[k] = tx[t]; sz[k] = tz[t]; scx[k] = tcx[t]; scz[k] = tcz[t]; sr[k] = tr[t];
         }
         const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
         const span = Math.ceil(reach / cell);
+        // Past these the terms are exactly 1 (trunk) and 0 (canopy); the
+        // margin keeps a distance that rounds to the edge on the computed side.
+        const trunkFar2 = (clear * 3.5) * (clear * 3.5) * 1.001;
         return function cover(x, z) {
             let canopy = 0, trunk = 1;
             const gi = Math.floor(x / cell), gj = Math.floor(z / cell);
-            for (let dj = -span; dj <= span; dj++) for (let di = -span; di <= span; di++) {
-                const list = grid.get((gi + di) + ',' + (gj + dj));
-                if (!list) continue;
-                for (const t of list) {
-                    const d = Math.hypot(x - t.cx, z - t.cz) / t.r;
-                    if (d < 1.15) canopy += 1 - smooth(0.55, 1.15, d);
-                    trunk = Math.min(trunk, smooth(clear, clear * 3.5, Math.hypot(x - t.x, z - t.z)));
+            const ja = Math.max(gj - span, gj0), jb = Math.min(gj + span, gj1);
+            const ia = Math.max(gi - span, gi0), ib = Math.min(gi + span, gi1);
+            for (let j = ja; j <= jb; j++) {
+                const row = (j - gj0) * gw - gi0;
+                for (let i = ia; i <= ib; i++) {
+                    const end = start[row + i + 1];
+                    for (let k = start[row + i]; k < end; k++) {
+                        const dx = x - scx[k], dz = z - scz[k], r = sr[k];
+                        if (dx * dx + dz * dz < 1.3225 * 1.001 * r * r) {
+                            const d = Math.hypot(dx, dz) / r;
+                            if (d < 1.15) canopy += 1 - smooth(0.55, 1.15, d);
+                        }
+                        const ex = x - sx[k], ez = z - sz[k];
+                        if (ex * ex + ez * ez < trunkFar2) trunk = Math.min(trunk, smooth(clear, clear * 3.5, Math.hypot(ex, ez)));
+                    }
                 }
             }
             const lit = 1 - Math.min(1, canopy / closed);
