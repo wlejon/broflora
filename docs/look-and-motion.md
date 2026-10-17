@@ -1575,6 +1575,244 @@ In `demos/grove/captures/`:
 - **Blooms cast no shadow.**
 - **Shrub cost:** about 0.44 ms of leaves with the filled mounds.
 
+## Step 8a, round 3: species reading as themselves, motion by stiffness, the frame under target
+
+Everything stays derived per plant at run time. Nothing is baked per tree;
+the only shared pieces are tree-independent shader functions.
+
+### What changed
+
+**Motion follows stiffness** (broflora `sway.cpp`). Before, a conifer's
+lowest boughs swung metres while its leader barely moved.
+
+- Each cantilever (trunk, limb, twig) now takes the wind it actually
+  catches:
+  - a piece's drag is sheltered by the crown above and around it,
+    `exp(-2 * 2.5 * depth)`, normalised at 0.75 of the height;
+  - a twig's drag is sheltered by the share of its limb that is open.
+- Its spring is the larger of two:
+  - bending stiffness, 3EI/L³, where I grows as r⁴;
+  - the stiffness that holds its own weight to a sag of 8% of its length.
+- Its deflection is capped at a working strain of 0.2% (a thick limb
+  cannot swing further than its wood bends).
+- The trunk chain runs out at a tenth of the base radius (was 0.35), so the
+  whole stem sways from the base.
+
+Static tip deflection at the 10 m/s reference wind (`preset_report`
+REPORT_SWAY):
+
+| Preset | Lowest bough, before | Lowest bough, after | Upper limbs / top, after |
+|--------|---------------------|---------------------|--------------------------|
+| fir | 2.53 m | 0.046 m | 0.13 m |
+| spruce | 2.84 m | 0.040 m | 0.12 m, top 0.65 m |
+| cedar | 4.9 m | 0.074 m | 0.36 to 0.76 m |
+| pine (trunk top) | 4.3 m | | 1.1 m |
+| oak (limb) | 0.251 m | | 0.178 m |
+| birch (limb) | 0.69 m | | 0.127 m |
+
+Rendered: the grove's `swayprofile` (gusty wind, side on, RMS of the
+silhouette's left and right edges, in cm, by eighths of the height from low
+to high):
+
+| Preset | Before | After (`r7_swayprofile.json`) |
+|--------|--------|-------------------------------|
+| fir | 97, 50, 41, 37, 23, 12, 10.5, 10 | 18, 4, 6, 12, 11, 6, 6, 10 |
+| spruce | 232, 150, 120, 53, 22, 18, 18, 16 | 10, 10, 5, 9, 22, 27, 22, 27 |
+| cedar | 216, 98, 108, 154, 152, 114, 117, 156 | 19, 12, 36, 21, 24, 32, 28, 62 |
+| pine | 0.9, 3.6, 8.8, 105, 120, 113, 104, 100 | 0.4, 1.4, 2.7, 4.9, 21, 29, 38, 54 |
+| birch | 0.2, 0.5, 13.6, 11.1, 9, 10, 9.3, 38 | 0.0, 0.4, 8.4, 6.0, 5.3, 3.1, 4.3, 22 |
+
+Notes on the rendered profile:
+
+- With no wind every band reads 0.
+- The fir's lowest band is lifted by its flat boughs' vertical bob, which
+  makes the silhouette's edge jump. It is not a swing.
+
+**Pine** (Scots pine):
+
+- A straight, stout stem: kink 0.1, pipe exponent 1.55, about 0.45 m
+  across at 17 m.
+- The crown sits on the top 45% (crownLift 0.55).
+- The needles are only on the outermost shoots (clumpFill 0), so the limbs
+  inside the crown are bare.
+- The clumps stand apart as tufts: `clumpGap`, a new Species field (world
+  format 8), is the spacing along a shoot times the emit's. Pine's is 1.3.
+- Bark of strong colour keeps it on its plates' faces (`scene_bark.glsl`).
+  Before, every bark's plates were greyed, which turned the pine's
+  red-orange dark grey.
+- The pipe model keeps wood once grown, so a shed limb no longer thins the
+  stem under it.
+
+**Cypress:**
+
+- Small packed clumps (clumpScale 0.16, clumpInner 0.8) make a smooth flame
+  rather than a lumpy column.
+- Scale sprays are narrower and closer, with deeper scallops.
+- A spray's mean cover thins across its needles' ragged tips rather than
+  ending at a clean outline.
+
+**Shrubs:**
+
+- **The near leaf.**
+  - A broad form's own card is cut to its outline per pixel:
+    `MESH_FOREST_LEAF_CUT`, widest a little below its middle, rounded, drawn
+    to a point.
+  - The card is three rows wide enough to hold the outline: 9 vertices,
+    where the old card was its own outline in 12 and showed its corners.
+  - The halves curve away from a level midrib (tilt as the square of the
+    distance out) rather than folding into two flat facets.
+  - `Look::leafCut` marks the form's own card, so a leaf an app gives is
+    drawn as it is.
+- **Leaf colours:**
+  - hydrangea and hibiscus mid green, boxwood darker, holly near
+    black-green;
+  - the presets were about twice a real leaf's albedo.
+- **Hydrangea heads:**
+  - borne only on the upper shell (past 0.6 of its radius, above 0.4 of
+    the height, not on its underside);
+  - held proud of the leaves, turned out from the mound;
+  - 0.24 m across.
+- **The smeared brown backdrop** was bare soil. The grove's presets stood
+  where its own ground cover had no grass. The grove now grows each preset
+  world's cover at its spot.
+
+**Sky:**
+
+- **The posterised bands are the image viewer's.** A downscaled 1920 wide
+  composite bands; full-resolution crops of the same sky are smooth (the
+  targets are RGBA16F).
+- **The dark navy noon sky was real.** The kit's noon preset dimmed the
+  environment to 0.2 to set off a strong sun, and the environment is both
+  the sky seen and the light in the shade.
+- **The fix keeps one light:** noon's environment is 0.45. The sky is a pale
+  noon blue, and shade is no longer black: a pine's trunk under its crown
+  was near black before.
+
+**Leaf tone:**
+
+- The forest's and the grove's leaf colour is a leaf's, (0.07, 0.13, 0.04)
+  linear. It was (0.2, 0.36, 0.11), an acid yellow-green.
+- Birch's leaves were darkened the same way.
+
+**Birch twigs:** a pale bark comes with age. Wood under a couple of
+centimetres across is dark red-brown.
+
+**Frame time**, at the same leaf density:
+
+- **Cheaper cards.** The broad leaf card is 9 vertices (was 12) and a
+  spray's is 4 (was 6, losing its bend: the sprays are posed per leaf
+  anyway).
+- **A lower budget.** The shared vertex budget is 12.5 M (was 14). It still
+  draws more leaves than before at the views where it binds:
+
+  | View | Leaves, before | Leaves, after | Detail, before | Detail, after |
+  |------|----------------|---------------|----------------|---------------|
+  | skim | 779 k | 801 k | 2.02 | 1.98 |
+  | trunks | 1.15 M | 1.20 M | 2.18 | 2.09 |
+
+- **A cheaper leaf shadow.** A leaf's shadow is four hardware-filtered taps
+  as wide as the nine point taps it took, as a lobe's leaves already were
+  (about 0.35 ms).
+- **A spray's cover:** the sharp needles or their mean are each worked out
+  only where they count.
+- **Tried and reverted:**
+  - dithering the cascade blend for leaves: no measurable gain;
+  - a split-sum fit with an irradiance lookup for a leaf's ambient
+    specular: no measurable gain.
+
+### Numbers
+
+**Trace.** 1280x720, 4x MSAA, 16 100 plants.
+
+| | Round 2 (`r5c`) | Round 3 (`r7t1`) | Round 3 (`r7t2`) | Target |
+|---|---|---|---|---|
+| max | 6.01 | 6.04 | 6.41 | 6.0 |
+| p95 | 5.32 | 4.88 | 4.88 | 5.1 |
+| median | 4.47 | 4.12 | 4.14 | 4.4 |
+
+- The max frames are lone spikes in seconds whose mean is ordinary: t =
+  32 s in `r7t1` (mean 5.00, usually 4.1) and t = 29 and 31 s in `r7t2`.
+  The other GPU was running another session's job at 33 to 60%
+  utilisation.
+- The steady peak is the canopy dive at t = 13 s: 5.55 / 5.66 ms.
+- Leaf lighting is about 40 to 60% of a leaf draw's cost, measured by
+  stubbing it. Of that, the shadow was about a third; the rest is ambient
+  and the sun's specular and translucency.
+- With the leaf vertex budget pinned, the remaining structural cost is the
+  leaf frame (clumpLeafFrame, sway). It is worked out per vertex, 4 to 9
+  times a leaf.
+
+**Metrics.** By size minus forced Leaves, luminance per band
+(`r7_metrics.json`). The levels are lower than round 2's because the leaves
+are darker.
+
+| Shot, sky | Band | Round 2 dY | Round 3 dY |
+|-----------|------|------------|------------|
+| canopy, noon | 20-40 | -0.3 | +1.4 |
+| canopy, noon | 40-80 | +0.2 | +2.2 |
+| canopy, noon | 80-160 | +3.1 | +4.9 |
+| canopy, golden | 20-40 | -1.9 | -1.0 |
+| canopy, golden | 40-80 | -4.2 | -2.9 |
+| canopy, golden | 80-160 | -6.4 | -6.3 |
+| glade, noon | 10-20 | -0.7 | -3.1 |
+| glade, golden | 10-20 | +0.9 | -4.2 |
+| glade, golden | 20-40 | +0.5 | +1.8 |
+| skim, noon | 10-20 | +1.2 (`r5`) | +3.0 |
+| trunks, noon | 10-20 | +1.4 (`r5`) | +2.0 |
+
+- The golden canopy holds: 1.0 / 2.9 / 6.3, against 1.9 / 4.2 / 6.4.
+- The noon far canopy moved from +3.1 to +4.9 (crowns brighter than their
+  leaves). Of that:
+  - about 0.7 is the brighter noon environment (old leaf colour with the
+    new sky: +3.8);
+  - about 1.1 is the darker leaf albedo.
+- The leaf shadow filter is not the cause: with the nine taps back, it
+  reads +4.6.
+- Leaf translucency is not the cause either: with it off, the gap is +5.3.
+
+**Tests:**
+
+- bro: scene 79/79 (the native Vulkan scene test included), flora 7/7,
+  mesh 15/15;
+- broflora ctest 4/4;
+- broworkshop `validate.sh demos/forest demos/grove`: 4/4.
+
+### Captures
+
+In broworkshop `demos/forest/captures/`:
+
+- **Data:** `r7t1_trace.json`, `r7t2_trace.json` and `r7_metrics.json`.
+  `r6*` are the steps.
+- **Hand-over strips:** `r7_handover_crowns_strip.png` and
+  `r7_needle_handover_{cards,clumps,crowns}_needle_strip.png`.
+- **Stills:** `r6_skim.png` and `r6_canopy.png` (the leaf tone), plus
+  `r6k_*` and `r6o_*` (the leaf-count checks).
+- **Flight:** `r7.webm`.
+
+In `demos/grove/captures/`:
+
+- `r7_<preset>_{noon,golden,sil}.png` for all thirteen presets;
+- `r7_swayprofile.json`;
+- `s45_*` / `s46_*` / `s47_*` / `s48_*` / `s49_*`, the steps:
+  - `s46_pine_noon` and `s46_cypress_noon`;
+  - `s48_hydrangea_noon` and `s48_holly_noon` (the leaf cut);
+  - `s48_birch_noon` (the twigs).
+
+### Still open
+
+- **The noon far canopy gap**, +4.9 at 80 to 160 m. The crowns' ambient
+  reads brighter than their leaves'.
+- **Pine's crown** is open with bare limbs and stands on a bare trunk, and
+  its umbrella silhouette parts from a broadleaf's at 60 and 150 m. But
+  at 20 m its tufts are still soft clumps rather than upswept brushes of
+  needles.
+- **Holly is dark but neither spiny nor glossy.** A leaf's outline and
+  roughness are the node's, not the species', so a holly needs a
+  per-species leaf margin and gloss in the look records.
+- **Blooms cast no shadow.**
+- **The max frame:** only machine-load spikes are over 6.0. The canopy
+  dive's 5.6 ms is the steady peak.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
