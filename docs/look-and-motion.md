@@ -1193,6 +1193,184 @@ In `demos/grove/captures/`: `bk3`..`bk7` trunk and bark close-ups.
   glade's edge and the forest floor's cover.
 - **Canopy shade past the shadow range** was not attempted.
 
+## Step 8a as built: conifers and shrubs
+
+Conifers and shrubs are species presets any app gets by name
+(`bro.flora.speciesPresets()`, `world.plantSpecies(name, {origin})`).
+They grow through the same simulation as the broadleaves and are drawn by
+the same forest node. Nothing is baked per plant.
+
+### Habits
+
+The habit fields (`Species`: apicalDominance, maxBranchOrder, crownSlope,
+crownBase, crownRadiusMax, prototype and lateral groups, lateralElevation,
+lateralOrthotropy) give the leader its own modules and the laterals theirs.
+
+- **Monopodial leader with whorled tiers.** fir, spruce, pine, cedar and
+  redwood keep a strong leader (apicalDominance) that grows a whorl of
+  boughs at each tier. The boughs branch twice (bough, then spray) inside
+  a cone (crownSlope).
+- **Drooping laterals.** spruce and redwood set a negative
+  lateralElevation; pine's boughs rise and fir's stay level.
+- **Columnar.** cypress turns every bough up against the leader
+  (lateralElevation 1.2, crownRadiusMax 0.9).
+- **Multi-stemmed shrubs.** boxwood, holly, hydrangea, hibiscus, lavender
+  and juniper grow from a basal clump of stems.
+- **Fixed in the step:** a newborn module now gets its world position at
+  spawn (`spawning.cpp`). Before, a few segments sat at the world origin
+  until the next develop pass.
+
+### Foliage
+
+- **Leaf form** (`Species::leafForm`): broad, needle or scale. A needle or
+  scale node's leaf is a whole spray's card. The needles or scale leaves
+  are cut out of it per pixel into the sample mask
+  (`scene_forest_spray.glsl`), and the cut fades to the spray's mean cover
+  once a needle is narrower than a pixel. The shadow caster is the card
+  narrowed by that fill.
+- **Conifer foliage settings:** small clumps (clumpScale 0.3), twigs 7 mm
+  thick, pipeExp 1.75.
+- **Emit defaults per form.** An emit filtered to a form fills in that
+  form's defaults: needle perArea 50 with clumpSpacing 1, scale perArea
+  140 with clumpSpacing 0.8.
+- **Colours per specimen.** Each specimen's leaf and bark colour ride in
+  `specimenLooks` and tint its leaves and bark in every tier.
+- **Shrub leaf size.** A shrub's small leaves come from `Species::leafSize`
+  (boxwood 0.3, lavender 0.25, holly 0.55, hibiscus 0.8, hydrangea 1.1).
+  Its clumps carry 1/leafSize² as many leaves, so they cover as much. A
+  forest given no leaf draws its form's card at the specimens' mean leaf
+  size.
+- **Bark per species:** barkFurrow, barkScale, barkMoss, rootFlare and
+  barkColor. For example pine's red-brown plates, fir's smooth grey bark,
+  redwood's deep red fibres and big flare.
+
+### Motion
+
+The form sets how the trees move through vegPose:
+
+| Form   | Leaf flutter | Limb bob | Twig bob |
+|--------|--------------|----------|----------|
+| broad  | 1            | 0.6      | 0.8      |
+| needle | 0.15         | 1.6      | 1.0      |
+| scale  | 0.1          | 1.3      | 0.9      |
+
+A conifer's needles hardly flutter while its long boughs bob.
+`createForest` takes `flutter`, `limbBob` and `twigBob` to override these.
+
+### Tiers
+
+- Every tier poses and lights from the same records, as for the
+  broadleaves.
+- Several forest nodes share one budget: the drawer plans them all, fits
+  one detail factor and finishes each. A mixed forest drawn as a node per
+  form therefore thins as one forest.
+- **Crowns trace clumps in blocks.** A conifer has about 280 clumps
+  against about 35 for a broadleaf. A crown now traces them in blocks of
+  8 and skips any block whose bounding sphere its ray misses
+  (`ForestNode::kClumpBlock`).
+- **Earlier crown hand-over.** A needle or scale node hands its clumps
+  over to crowns at 8 .. 5 px rather than 5 .. 3, because its crown is
+  many small clumps.
+
+### Planting
+
+- **demos/forest** plants a mixed forest as four parts, each its own
+  forest node under the shared budget:
+  - broadleaf;
+  - needle conifers (fir, spruce, pine);
+  - scale-leaved (cypress);
+  - shrubs (boxwood, holly, hydrangea).
+- **How the mix is chosen.** `bro.flora.plantForest([...], {mix})` picks
+  the part for each cell: conifers by elevation and in patches. Shrubs
+  are planted at their own spacing on the glade rim and in understorey
+  patches, and are kept off the trail.
+- **demos/grove** stands fir, spruce, pine, cypress, juniper, boxwood,
+  holly and hydrangea at full size for close-up judging. It has
+  `conifers` and `shrubs` shots, and `capture.js species` renders close,
+  mid and far panes for each preset at noon and golden hour.
+
+### Numbers
+
+**Trace.** 1280x720, 4x MSAA, the whole mixed forest. Its 12 878 trees
+match step 7b's count, plus 3 222 shrubs.
+
+|        | 7b (broadleaf) | 8a mixed (first) | 8a as built | target |
+|--------|----------------|------------------|-------------|--------|
+| max    | 6.12           | 8.25             | 7.25        | 6.0    |
+| p95    | 5.45           | 6.88             | 6.10        | 5.1    |
+| median | 4.19           | 5.48             | 5.04        | 4.4    |
+
+The trace misses its targets. Where the time goes:
+
+- **Broadleaf part alone** (the other parts hidden): 4.5 / 4.1 / 3.35.
+- **Conifers** cost about 1.5 times as much per tree as the broadleaves.
+- **Shrubs** cost about 0.1 ms.
+- **By pass.** These are the needle node's draws:
+  - Canopy dive: crowns 0.9 ms, down from 1.3 with the blocks.
+  - At the trunks: leaves 1.1 to 2.2 ms, bark 0.4 to 0.6 ms.
+- **What brought it down from the first mixed run:**
+  - needle perArea 80 to 50 and clumpSpacing 0.8 to 1: median 5.48 to
+    5.14;
+  - crown blocks and the earlier crown hand-over: median 5.04.
+
+**Metrics** (`s8a_metrics.json`). Leaves against By size per band, mixed
+forest:
+
+| Shot, sky | Bands | By size against Leaves (luminance) | drgb |
+|-----------|-------|------------------------------------|------|
+| canopy, noon | all | -1 to -3 units | 2.7 to 4.6 |
+| skim, noon | near | -0.5 to +0.1 | 0.5 to 0.6 |
+| canopy, golden | all | -9 to -12 | 13.7 to 18.9 |
+
+The golden canopy gap is a regression: step 7b's broadleaf canopy had
+drgb 6 to 10 there. The needle part alone shows it:
+
+- **Golden:** By size is 10 to 13 luminance darker than Leaves.
+- **Noon:** 4 to 11 darker.
+- **Hard edges:** about half of Leaves' (3.6 against 1.4 at 20 to 40 m,
+  golden).
+- **It is not the lobes' self-shadow:** halving the far tiers' density for
+  sprays moved the gap by only 1 to 4 units.
+- **It is not the crown hand-over:** with crowns at 5 .. 3 px or forced
+  late, the gap is the same.
+
+### Captures
+
+In broworkshop `demos/forest/captures/`:
+
+- **Stills:** `s8a_<shot>.png` (noon) and `s8ag_<shot>.png` (golden) for
+  above, canopy, skim, glade and trunks. Also `mixed_<shot>.png`, the
+  first mixed forest.
+- **Hand-over strips:** `s8a_handover_{clumps,crowns}_{needle,shrub}_strip.png`
+  and `s8a_handover_clumps_strip.png`.
+- **Flight:** `s8a.webm`.
+- **Data:** `s8a_trace.json` and `s8a_metrics.json`.
+- **Experiments:** `m_pa40`, `m_cs12`, `m_b50`, `m_flod` (traces) and
+  `cs12_*`, `b50_*`, `flod_*` (stills).
+
+In `demos/grove/captures/`:
+
+- `s8a_<preset>_{noon,golden}.png` for all eight presets;
+- `species_conifers.png` and `species_shrubs.png`.
+
+### Still open
+
+- **The trace targets.**
+  - The needle leaves near the eye cost the most. A spray card is drawn
+    whole and its needles are cut per pixel, so the hidden layers of a
+    dense conifer crown are all shaded.
+  - Conifer bark is many thin twigs.
+- **Golden-hour value of conifer clumps and crowns:** 10 to 13 luminance
+  darker than their leaves (see Numbers).
+- **Conifer upper crowns are narrow and sparse.** The leader's top tiers
+  grow little foliage in the sim's profile. The fir and spruce read as
+  conifers; cypress is pale against the sky and thin at the top.
+- **No weeping broadleaf preset** (willow or birch). Drooping laterals are
+  covered by spruce and redwood only.
+- **Shrub blooms are not drawn by the forest node.**
+- **Clump ellipsoids are the same shape for every form.** A flatter clump
+  for a fir's level sprays was not tried.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
