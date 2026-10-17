@@ -1371,6 +1371,210 @@ In `demos/grove/captures/`:
 - **Clump ellipsoids are the same shape for every form.** A flatter clump
   for a fir's level sprays was not tried.
 
+## Step 8a, round 2: each species its own look, blooms, the light across the tiers
+
+Round 2 of step 8a. Every species should read as itself by default, with
+nothing baked: each tier still comes from the plant's own sim at run time.
+The round also draws the shrubs' blooms, closes the golden-hour value gap
+between the tiers, and brings the trace to its targets.
+
+Commits:
+- broflora: `802d506`, `49d4b37`, `143bb77`, `82ed063`, `ee81bee`,
+  `947ed26`;
+- bro: `b7d8235d`, `6e5ed9e9`, `cfc0c217`, `e1c7adfe`, `1149bd9f`,
+  `b4125f68` (docs);
+- broworkshop: `2348969`, `48542ab`, `7e6eb9d`.
+
+### What changed
+
+**Habits** (broflora Species, read by the sim or the clump placer):
+
+- **`clumpFlat`:** a clump's height over its width. A fir's sprays lie in
+  flat pads (about 0.4) that stack close up and down.
+- **`clumpReach`:** a clump is no wider than its bough reaches from the
+  axis, so a conifer's short top boughs carry small clumps and the crown
+  narrows to a spire.
+- **Evergreen young shoots carry foliage** (the maturity floor), so the
+  leader and the top boughs are clothed.
+- **`crownLift`:** a self-pruned trunk. Boughs leaving the leader below
+  that share of the height are shed. The leader's short shoots along the
+  bare trunk take no clumps: before, they made a fuzz up a pine's trunk.
+- **`heightMax`:** the leader stops and the upper boughs fill in under it,
+  giving a pine its flat top.
+- **`clumpInner`:** a shoot that has branched on keeps a tip's foliage in
+  half light, and the clumps pack up to 40% closer. A shrub becomes one
+  mound leaved inside and to the ground, its stems hidden. (0.25 closer
+  left gaps between the clumps in the boxwood and hydrangea panes.)
+
+**Presets.** The look target for each species, and what moved:
+
+| Preset | Look target | What changed |
+|--------|-------------|--------------|
+| fir | a regular cone | flat pads |
+| spruce | drooping tiers | flat pads |
+| pine | an open crown widest near the flat top, on a bare reddish trunk | crownSlope 0.6, heightMax 16, redder bark, crownLift |
+| redwood | a column on a clear, massive trunk | apical dominance 0.8, near-level short boughs, crownRadiusMax 1.6, crownLift 0.45, pipe exponent 1.2 |
+| juniper | a bushy cone filled to the core | leaders ahead of rising boughs, clumpInner 1 |
+| shrubs | dense mounds to the ground | clumpInner 1 |
+| lavender | a grey-green cushion | finer stems |
+
+- **Birch is new:** slender (pipe exponent 2.4) and narrow, a light open
+  crown of small bright leaves on hanging twigs, white bark.
+- **Willow was tried and dropped:** see Still open.
+
+**Blooms.**
+
+- broflora's emitForest emits each specimen's blooms (`blooms`, 8 floats
+  each: position, size, outward direction, the tube piece it sways with)
+  and their look (`specimenBlooms`).
+- Anchors that hang down, sit deep in shade, or are too small bear none.
+- bro's forest node draws them (`setForestBlooms`), each posed by its twig
+  and shaped per pixel with no textures:
+  - hibiscus: an open five-petal flower;
+  - hydrangea: a traced head of four-petal florets;
+  - lavender: a spike of tapering whorls.
+- Below 1.5 px a bloom is a dithered dot, and below 0.2 px it is not drawn.
+
+**Conifer tiers** (bro):
+
+- **An opaque core** inside each run of a spray node's clumps, drawn first:
+  the spray cards behind it fail the depth test.
+- **Thinned leaves stay sprays**, widened, instead of clusters of broad
+  leaves. Those clusters were the heaviest draw: 3 ms at the flight's
+  trunks, now 1.2.
+- **A tree whose leaves the camera draws casts no coarser than clumps.**
+- **A crown's clumps are traced in spatial groups**, in the specimen's
+  space: needle crowns cost 0.75 ms in the canopy dive, down from 1.35.
+- **The needle spray card is larger** (0.14 x 0.26), so perArea 45 covers
+  what 80 did.
+
+**Light across the tiers** (bro):
+
+- **A broadleaf crown is lit as its clumps are.**
+  - Its caster disc sits past the crown's middle, which left the crown's
+    near half unshaded, so crowns were 12 to 21 units brighter than their
+    clumps and leaves.
+  - The crown is now shaded through its own mean density toward the light
+    (`crownSigma`), with the shadow map read past its sphere.
+  - Its clumps are traced at 0.8 of their radius (`FOREST_CROWN_FILL`):
+    their lobes leave the rim open, so far crowns covered a fifth more.
+  - The clump seen is picked by its share.
+  - The leaf-count wander no longer fades with distance: far crowns were
+    nearly solid.
+  - Spray nodes keep per-clump shading and a fill of 1: both changes made
+    needle crowns dark.
+- **Clumps hand over to crowns at 7 .. 4.5 px** (was 5 .. 3), within 2
+  units of the leaves from 90 to 120 m. This made the canopy dive 0.4 ms
+  cheaper.
+- **A sprite caster stops as much sun as its leaves turn to it.** The
+  leaves lean up (the emit's upBias), so they stop less of a low sun:
+  depth x ((1 - b) + 2b |L.y|), b = 1.4 upBias (Ross's G). As one depth
+  for every sun, the far casters shaded a golden canopy 8 to 12 units
+  under its leaves.
+- **A near broadleaf leaf is its own face.** It is folded along its midrib,
+  turned its own way more than the crown's bulk (fading out from 6 to
+  25 m), and given its own lightness around its tree's. At golden hour the
+  near leaves were flat bright paper.
+
+### Numbers
+
+**Trace.** 1280x720, 4x MSAA, the mixed forest (16 100 plants).
+
+| | 8a as built | after conifer tiers (`r4d`) | shrubs fill + blooms (`r5a`) | crown light (`r5b`) | as built (`r5c`) | target |
+|---|---|---|---|---|---|---|
+| max | 7.25 | 6.15 | 8.69 | 7.60 | 6.01 | 6.0 |
+| p95 | 6.10 | 5.48 | 5.61 | 5.42 | 5.32 | 5.1 |
+| median | 5.04 | 4.64 | 4.65 | 4.50 | 4.47 | 4.4 |
+
+Notes on the trace:
+
+- The max is at its target (6.01 against 6.0).
+- p95 and the median are 0.2 and 0.07 ms over.
+- `r5a`'s max was a spike at t = 0.
+- The remaining hotspots:
+  - t = 13: broadleaf LeafCard about 1.0 ms and clumps 1.0 ms;
+  - t = 24: needle near leaves 0.88 ms;
+  - shrub leaves about 0.44 ms. This cost is clumpInner's fill: the
+    mounds are leaved inside now.
+- Tried and reverted:
+  - a second sun trace through the crown: +0.7 ms, and needle crowns too
+    dark;
+  - crown stride and grow changes;
+  - drawing a broadleaf core.
+
+**Metrics.** By size against forced Leaves per band: luminance difference
+dY, with hard edges given as Leaves / By size.
+
+| Shot, sky | Band | 8a dY | Round 2 dY (`r5c_metrics.json`) | Hard edges, round 2 |
+|-----------|------|-------|---------------------------------|---------------------|
+| canopy, noon | 20-40 | -1.9 | -0.3 | 22.6 / 18.4 |
+| canopy, noon | 40-80 | -2.6 | +0.2 | 18.2 / 13.6 |
+| canopy, noon | 80-160 | -1.1 | +3.1 | 17.6 / 20.2 |
+| canopy, golden | 20-40 | -9.0 | -1.9 | 21.3 / 16.6 |
+| canopy, golden | 40-80 | -11.9 | -4.2 | 17.5 / 13.9 |
+| canopy, golden | 80-160 | -10.8 | -6.4 | 16.7 / 18.2 |
+| glade, noon | 10-20 | -6.1 | -0.7 | 21.8 / 18.7 |
+| glade, golden | 10-20 | -6.7 | +0.9 | 16.1 / 14.0 |
+| glade, golden | 20-40 | -4.8 | +0.5 | 13.5 / 10.7 |
+
+- The golden canopy gap is down from 9 to 12 units to 2 to 6.
+- Hard edges are within a fifth of Leaves' everywhere (8a: half).
+
+**Hand-overs.** The strips are smooth for broadleaf crowns and for needle
+cards, clumps and crowns.
+
+**Flight.** The webm's frame-to-frame scene scores:
+
+- p50 0.002, p95 0.026.
+- Every 10th frame spikes: these are the codec's keyframes.
+- The one peak, 0.047 near 30 s, is the camera passing through a near
+  conifer's sprays, not a tier pop.
+
+**Tests:**
+
+- bro flora 7/7, scene 75/75, mesh 11/11, with validation;
+- broflora ctest 4/4, bromesh ctest 3/3;
+- broworkshop `validate.sh demos/forest demos/grove`: 4/4.
+
+### Captures
+
+In broworkshop `demos/forest/captures/`:
+
+- **Data:** `r5c_trace.json` and `r5c_metrics.json`. Also `r4d`, `r5a` and
+  `r5b` for the steps.
+- **Tiers:** `r5t_tiers_{broadleaf,needle}.png`, one tree alone at each
+  distance, forced Leaves / By size / Clumps / Crowns.
+- **Hand-over strips:** `r5_handover_crowns_strip.png` and
+  `r5_handover_{cards,clumps,crowns}_needle_strip.png`.
+- **Stills:** `r5g_skim.png` and `r5g_skim_golden_compare.png`.
+- **Flight:** `r5.webm`.
+
+In `demos/grove/captures/`:
+
+- `r6_<preset>_{noon,golden,sil}.png` for all thirteen presets: 5 / 20 /
+  60 / 150 m, shrubs 2.5 / 6 / 20 / 60;
+- `r5f_{hydrangea,boxwood}_golden.png`: the near leaf fold;
+- `r5s_*`: the clump spacing test.
+
+### Still open
+
+- **The trace:** p95 is 0.2 ms over and the median 0.07 over. The rest is
+  in the broadleaf cards and clumps at the flight's t = 13 and the needle
+  near leaves.
+- **The golden far canopy (80-160 m)** is still 6 units under its leaves.
+- **Pine reads close to a broadleaf at 20 to 60 m.** Its clumps are round
+  tufts. A pine's crown is open clusters of upturned tufts at bough tips,
+  which the clump placer does not shape.
+- **No willow.** The growth model gives no weeping habit: negative
+  lateralElevation droops the boughs, but the long hanging twigs that make
+  a willow are not grown.
+- **Birch twigs are drawn in its white bark colour.** A birch's fine twigs
+  are dark.
+- **Hibiscus flowers are small at mid range** (bloomSize 0.14 m, true to
+  life).
+- **Blooms cast no shadow.**
+- **Shrub cost:** about 0.44 ms of leaves with the filled mounds.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
