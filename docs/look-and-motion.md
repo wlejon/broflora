@@ -3576,6 +3576,117 @@ time; nothing is baked.
 - The p95 margin is 0.1-0.2 ms. The near leaves (needle leaves and cards
   at t ≈ 26-28 s) are the next place to look.
 
+## Step 14: near wood as curves, the cascade hand-over
+
+Bro 05dadd4f, 1f0e2469; broflora d1d3699; broworkshop df790b9, eccc38a,
+37b5e6d. Everything is still derived at run time.
+
+### Near twigs and wood (bro 05dadd4f)
+
+- **Curves through the joints.** `forestHermite` (scene_forest.glsl, pull
+  0.8 of the chord; 0.6 still kinked, 1.0 hooked) carries the bark tubes
+  and the shoot model. A bark segment of a tree's thickest wood (radius
+  6 px or more, the `Bark20Curved` / `Bark10Curved` prefix) draws 3 or 2
+  rows on the curve through its ends along the bark's way there; the rest
+  stays one straight row. A twig clump of radius 120 px or more draws its
+  pieces in 3 rows (`TwigsFine`).
+- **Leaving the parent.** A side branch, and a shoot off its axis, leaves
+  along the bisector of the parent's way and its own (broflora
+  `forest.cpp` `tangentFrom`, sway.js the same). A shoot's base is a collar
+  0.5 of its width over 3 radii. The zigzag is capped at 0.12 of a piece:
+  wider, it put kinks back.
+- **Ends.** A tip's end radius is stored negative (`ForestNode::gpuData`),
+  and the tube closes to a rounded point (`sqrt(1 - f^4)`). Twig chains end
+  at 0.25 of their radius. Thick tips now read a little "pencil"-like at
+  1 m.
+- **Stipple at 3-10 m.** The cause was the twig's two-faced ribbon normal,
+  which lit and darkened single pixels along it. A twig's normal is now
+  round toward the eye at every width. A drawn-width floor and bark cover
+  had no measured effect and cost fragments, so they were dropped. Static
+  breeze subject flicker (p90 / flickering blocks): 5 m 2.70 / 1671 →
+  2.00 / 608, 10 m 3.09 / 1833 → 2.37 / 1224.
+- **Twigs oracle** (grove `motion.js twigs`, now modelling 3 drawn rows):
+
+  | wind | p95 / max mm | over the petiole p95 / max |
+  |---|---|---|
+  | gusty | 12.70 / 24.11 → 2.56 / 3.08 | 0.294 / 0.670 → 0.074 / 0.108 |
+  | breeze | 6.50 / 12.45 → 2.41 / 2.51 | 0.150 / 0.343 → 0.071 / 0.095 |
+
+  At rest the median is 1.2 mm (the rows' chords off the curve).
+- **Cost.**
+  - Trunks shot: 18.3 → 23.5 M vertices. Curving every segment was 52 M,
+    over the test's 30 M.
+  - Quiet-GPU flight, interleaved against HEAD: median 4.07 → 4.24 ms,
+    p95 5.16 → 5.24. Fine twigs +0.13, curved bark +0.09.
+  - Draw groups keep their old order ranks, so clumps and crowns still
+    draw before static.
+- **Grove gusty plant run, HEAD → this** (flicker p90, pops):
+  - top: 2.13 → 2.05, 50 → 51 pops;
+  - middle: 2.80 → 2.82, 148 → 202 pops;
+  - bottom: 2.97 → 2.87, 170 → 147 pops.
+
+  The middle's extra pops are the fine twigs (174 without them). Ablating
+  the tip, the zigzag, the bark and the Hermite did not account for the
+  rest.
+- **Captures.** `demos/forest/captures/after15_{broadleaf,shrub}_{noon,golden}_{inside,1m,3m,5m,8m}.png`.
+  These were taken before the 3-row / 120 px settings; recapture for a
+  final set.
+
+### The shadow cascade (bro 1f0e2469)
+
+- **No end at 190 m.** With 3 cascades, λ 0.75 and far 2000, the splits
+  are at 169 and 388 m. The last cascade reaches past 800 m, so shadows do
+  not end in any view. A coverage-coded shader showed no uncovered pixels
+  at a 3°, 8° or 45° sun, or at noon.
+- **The real step.** Moving the split (`lambda=0.6`) isolates what the
+  cascade does. Far crowns take more of each other's shade from finer
+  texels: across the meadow at noon they were about 2 levels darker just
+  inside 169 m than just past it, a step made within the old 25 m (15%)
+  blend. Elsewhere the two hand-overs differ by at most 0.3 levels (noon,
+  golden, 8°).
+- **The change.** A cascade hands over across the last 45% of its depth
+  on a smoothstep, where the next tile's window covers the point. Meadow
+  noon crown darkening at 124/132/140/148 m went from 3.28/4.06/3.11/3.45
+  to 1.87/2.44/2.01/2.29, running smoothly on to 2.33 at 156 m. That
+  matches a single cascade drawing the whole range.
+- **Cost.** Flight median +0.04 ms, p95 unchanged.
+- **Tooling.**
+  - `capture.js shadowbands [shots] [label] [skies] img=1`: darkening by
+    distance, crowns and ground apart, plus a darkening image.
+  - `sun=<deg>`, `lambda=` and `sunshadow=0` work on any command.
+  - Captures: `{c0,b45}_*_shadow.jpg`, `{c0,g0,c0L6,g0L6,b45}_shadowbands.json`,
+    and overviews `casc_{c1,n2}_{noon,golden,sun8}_{meadow,canopy,above}.png`.
+
+### Still open
+
+- **Hand-overs at 28.6 m (card) and 264 m (crowns).**
+  - Dolly 12-420 m, still: card step -0.50 (x2.6), crowns -0.54 (x3.0),
+    and widening > 1.05 at 18.8 m -0.63 (x2.7). These are near the
+    measure's noise.
+  - The crowns step is a value mismatch ramped over the blend: at 260 m
+    `tiers` gives clumps 134.5 and crowns 128.9. Matching the crowns' value
+    to the clumps' is the fix, not a wider band.
+- **A real pop.** `motion.js dolly shots=` showed that the near-to-card
+  switches at 30-31 m are a whole nearby crown going to cards in one
+  frame. The forest's `detail` jumped 2.35 → 2.83 → 3.29 in two frames.
+  - Cause: `settleDetail` caps its change per call (6% up, 2% down), and a
+    headless frame calls it about 6 times, so the cap was 20% a frame.
+    Every tree within the ±6% card band switched at once.
+  - Fix: tie the rate to the scene clock (`windTime`, 6% / 2% a 30th of a
+    second; a paused clock with a moving eye at 60 Hz).
+  - That change is in bro's working tree, **uncommitted and unverified**
+    (`scene_mesh_drawer.h` `ForestDetail::time`, `settleDetail`). With it,
+    the full dolly's 31 m pop is gone and one appears at 59 m (z 10.7, in
+    the leaves-to-clumps band). It still needs a trace and the validate
+    run.
+- **Canopy By size against Leaves at 80-160 m (+3.1).** Not worked this
+  step. The shadows are not the cause: the hand-over moved crown
+  darkening by about 1 level at 120-150 m, and only in the meadow view.
+- **Perf headroom.** p95 is 5.2-5.3 ms after this step (+0.07 for the
+  twigs). The slowest baseline frames are `leafNear:needle` at about
+  1.4 ms under the canopy at t ≈ 26-28 s. `forestPose` spikes of
+  2.4-2.9 ms appear in both base and new.
+
 ## Step 15: herbs and shrubs reviewed, their motion, near blades physical
 
 Every herb preset (bracken, lady fern, daisy, poppy, foxglove, bluebell,
