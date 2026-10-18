@@ -90,6 +90,11 @@ The grove commands:
 - `mover [through=grass,bracken,shrub]`: a walker capsule at 1.4 m/s. It
   is a grass mover, undrawn unless `body=shown`.
 - `truth`: the grove trees' parts tracked by the port.
+- `floor=contrast` on any command draws the ground one flat pale sand
+  (grove.js `contrastFloor`, a capture option, not the look), so a grass
+  or herb run's blocks and slit-scans see blades rather than turf; its
+  reports carry `_contrast`. `capture.js grassfloor` takes the grass stills
+  on it (0.3 to 20 m, side and 45° down, noon and golden).
 
 The forest commands:
 
@@ -2483,6 +2488,206 @@ In `demos/grove/captures/`:
 - **The skim view's 80-160 m band at noon** is −5.5, down from −4.7.
 - **Yarrow's heads** are still a little uniform from plant to plant.
 - **The near turf at 0.5 m** still shows faint soil blotches.
+
+## Step 9: motion
+
+Every still frame looked right; between frames the motion often did not.
+This step fixes the motion's continuity and its response, each claim
+against the motion oracle, the same reports before and after (the
+"before" reports are kept in `captures/motion_before/` of each demo).
+
+### What changed
+
+- **A clock for oscillators** (bro `scene_camera.glsl`, `wind_field.h`,
+  `scene_renderer.h`). The wind time is a double on the CPU, and the camera
+  block carries it reduced modulo 256 s (`windParams.w`). Every oscillator
+  takes its phase from `sceneWindCycles(hz)`: its frequency quantised to
+  1/256 Hz, so its phase is exact and wraps without a seam. No sinusoid
+  multiplies a wrapped phase, and no varying frequency multiplies the
+  clock.
+- **Leaf flutter** (`vegLeafTurn`). Each leaf flutters at its own fixed
+  frequency, 2 to 4.5 Hz (`VEG_LEAF_FLUTTER_HZ`), its amplitude following
+  the drag where its limb is, in bursts at a leaf's own 0.45-0.75 Hz. The
+  old flutter's frequency followed the gusts times the absolute clock, so
+  its instantaneous frequency grew with play time and aliased into noise.
+  Grass blades, herb leaves and conifer sprays take the same clock.
+- **A smooth gust field.** The gust noise fades quintically
+  (`sceneWindNoise5`) and its threshold is a hyperbola, not `max(g - 0.45,
+  0)` (`sceneWindSoftRamp`), so the drag is C2 in time; a level's kick is
+  a smooth |change| (`vegSmoothAbs`). Both had put jerk spikes at every
+  gust edge and wherever two delayed gust samples crossed.
+- **Each level feels the wind where it is, when it does** (`vegPose`).
+  - The trunk reads the drag at its root a quarter of its period back; a
+    limb and its twigs read it at the limb's own rest point a quarter of
+    the limb's period back. A gust now sweeps through a crown from its
+    upwind side.
+  - Limbs and twigs ring with the crown's turbulence (about 40% of the
+    drag, `VEG_CROWN_TURBULENCE`: a canopy's turbulence intensity is 30-50%
+    of its wind, of its drag about twice that), the trunk and herbs with
+    the open's 15%. At 30%, three quarters of every part's motion was still
+    the one bend the whole crown shares; at 50% the lockstep fell further
+    (correlation at lag 0, median 0.58 against 0.66) but a crown 20 m off,
+    its leaves under a pixel, flickered 3.07 levels (p90) against 2.56,
+    and the grove tree's pops rose by a third.
+  - The ring is a narrow band, two sinusoids at f(1 - ζ) and f(1 + ζ), and
+    a third across the wind, so no two parts keep step.
+- **Stiffness** (broflora `sway.h`). `kSwayTwigGain` 1 → 4: a leafy spray's
+  base gives in its fork as a limb's does; as a rigid footing it rang at 6
+  to 8 Hz. `kSwayLimbGain` 4 → 2.5: a limb rang well under its trunk, one
+  slow sway with it. A limb rings at most 0.8 of its sprays' frequency
+  (`sway.cpp`): a shrub's short stiff stems are held at their forks by
+  their sprays as much as by their wood, and rang at 4.6 Hz (boxwood) to
+  6.5 Hz under 5.4 Hz sprays, which together read as an 8 Hz buzz. Only
+  the frequency moves; the bend stays the stiffness's, so the conifers'
+  heavy low boughs stay as still. Boxwood, holly, hydrangea limbs now 3.0
+  to 3.3 Hz under 4.3 Hz sprays; conifers' 0.5-1.6 Hz under 3.1 Hz.
+- **Movers part shrubs and low foliage** (bro `plant_movers.h`,
+  `vegMoverPush`). A grass node's movers also push the plants: each keeps a
+  trail sampled every 0.1 s on the wind clock (20 samples, in the camera
+  block), and a plant part is pushed away from the body through a damped
+  spring's impulse response (1 Hz, ζ 0.4) to each sample, up to the
+  mover's `height` (addMover's new option, 1.8 m by default). It parts as
+  the body arrives and swings back once after.
+- **Grass springs back** (bro `scene_grass.glsl`, `grass_node`). A bend
+  releases as a damped spring (0.9 Hz, ζ 0.3), a trample critically damped
+  over 0.7 s, with 6% of it relaxing over 4 s. The old release was an
+  exponential, so nothing swung back and half of a trample stayed after 8
+  s.
+- **Herbs compose their bends as angles** (`herbTangent`). The rest droop
+  and the wind's tilt add as tilts from upright, the wind's saturating near
+  level. As one vector sum, normalised, a nodding head pushed against its
+  droop passed through nothing and turned over in a frame (the poppies'
+  pops as the walker passed). A leaf's card is square to its own outward
+  way, not to the vertical, so a frond pushed through upright no longer
+  flips face. The cup's inside/outside is blended across its rim. A
+  flower's outward way (its face's turn out from the plant, a raceme's
+  side) is its stem's at rest, not its tip's from the root, which a stem
+  pushed over its root swung half a turn in a frame or two.
+- **The eye passing through a crown** (`VEG_NEAR_SHRINK`). A colour leaf,
+  forest or scattered, shrinks to its middle within a metre of the eye and
+  is gone by 0.25 m, rather than filling the view for a frame.
+- **The forest's handovers** (bro `scene_mesh_drawer_forest.cpp`,
+  `forest_node`).
+  - Near leaves hand over to cards (clusters) through ±6% of
+    `cardWidening`, the two splitting the kept run (a shuffled prefix, so
+    each a random share of the crown; `TreeLod::cardShare`); the switch
+    was whole. (Both forms over the whole run, dithered apart, doubled the
+    leaves' vertex work through the band: 8 ms flight frames.)
+  - Shadow casters draw every tier at its share: the leaves keep that share
+    of their casters, a sprite stops that share of the light
+    (`shadow_forest.frag`). A caster drew only its heaviest tier, so the
+    shadow switched whole where two shares crossed a half. The camera's
+    leaves hand the caster's crowns to clumps over a band, not at a half.
+  - The budget's detail factor moves only so fast (`settleDetail`): a
+    coarser fit 6% a frame, a finer one 2% a frame once it is 4% finer, a
+    jump of the eye taking it whole. Each frame's fit, quantised and moving
+    with the camera, re-thinned the crowns a little every frame.
+  - Bark thinner than the entry's cut thins to nothing over 1.6 times it
+    (`scene_forest_tube.glsl`, the entry's `widening` slot carrying the
+    cut radius), so a twig fades out as the eye backs off rather than
+    blinking out.
+- **The oracle.** `sway_check.js` runs on `sway.js`. The truth names
+  lockstep (correlation at lag 0, peak lags, the root drag's share, the
+  upwind → downwind twig), attributes each jerk spike to a gust edge or a
+  kick crossing, and only counts a spike that stands over its neighbours.
+  The contrast floor (above) for grass and herb runs. A demo's grove test
+  checks each spray against its own tree's trunk (half again its
+  frequency), not the slowest spray against the quickest trunk.
+
+### Numbers
+
+Before is `captures/motion_before/`, now `captures/motion/` of each demo
+(1280x720; the grove from broworkshop's `motion.js` commands as named).
+
+Truth (`truth`, sway.js, the grove's broadleaf, gusty, 20 s):
+
+| | before | now |
+|---|---|---|
+| jerk spikes, trunk top / limb middle | 4 / 32 | 0 / 0 |
+| correlation at lag 0, 27 part pairs, median | (0.86-0.90 a pair) | 0.66 |
+| share that is the one bend at the root | 76-81% | 56-82%, median 72% |
+| upwind → downwind twig | | corr 0.58, 30 frames on |
+| trunk / limb dominant Hz | 0.62 / 0.49 | 0.32 / 0.67 |
+| twig high rms / p-p / max cm a frame | 17.1 / 72 / 3.4 | 18.9 / 102 / 8.5 |
+| flutter aliasing, clock 0 to 3600 s | 45-100% | 0% (4.2 Hz) |
+
+`sway_check.js`: ok at every level (twig rms 2.47 against the
+oscillator's 3.18, speed 31.3 / 33.8 cm/s).
+
+Plants (flicker p90 levels, pops; top / middle / bottom):
+
+| run | before | now |
+|---|---|---|
+| tree 12 m | 6.84 / 2.60 / 2.69; 577 / 86 / 100 | 2.50 / 2.40 / 2.61; 78 / 61 / 65 |
+| tree, clock 600 | 8.18 / 4.01 / 3.89; 482 / 291 / 337; LOCKSTEP all three (0.92-0.98) | 4.34 / 3.84 / 3.97; 286 / 273 / 270; LOCKSTEP top (0.93 at lag 1) |
+| tree, clock 3600 | | 2.29 / 2.32 / 2.30; 72 / 67 / 79 |
+| tree 7 m (in the crown) | 3.21 / 2.52 / 1.80; 332 / 238 / 61; NOISE all three, wiggle 6.2-7.5 Hz | 2.27 / 1.90 / 1.32; 175 / 118 / 25; NOISE bottom, wiggle 4.0-6.3 Hz |
+| fir 8 m | 0.71 / 0.72 / 0.73; 0 / 0 / 1; LOCKSTEP bottom (0.90) | 0.89 / 0.63 / 0.72; 15 / 11 / 0 |
+| boxwood | wiggle 7.1 / 7.3 / 7.9 Hz | wiggle 6.1 / 5.0 / 7.5 Hz; NOISE bottom (7 of 38 blocks) |
+| bracken (far / mid / near) | 1.79 / 1.52 / 2.40; 70 / 208 / 220 | 1.69 / 1.54 / 2.98; 52 / 125 / 144 |
+| meadow | 0.43 / 0.62 / 0.72; 0 / 8 / 0 | 0.37 / 0.49 / 0.63; 13 / 0 / 0 |
+
+Movers (still air; change from rest at 0-0.3 m from the path):
+
+| through | before | now |
+|---|---|---|
+| bracken | 50% back by 5.60 s, 40% left at 8 s | 3.37 s, 19% left |
+| grass | 50% back by 7.27 s, 47% left; 84 pops | 5.10 s, 44% left; 99 pops |
+| grass, contrast floor | | 4.23 s, 36% left; 66 pops |
+| boxwood (walker inside its crown 2 s) | its speed x9.3 while inside, change 0.97 levels | x85.5, 9.18 levels; 1 s after 1.80, at the end 0.44 |
+
+Forest (flicker p90, pops):
+
+| run | before | now |
+|---|---|---|
+| broadleaf 5 m | 4.01; 1155 pops, 122 kicks | 2.81; 598 pops, 10 kicks |
+| 20 m (subject / view) | 1.94 / 2.58; 111 / 113 | 2.52 / 3.45; 158 / 151 |
+| 60 m | 0.90 / 0.94; 0 / 0 | 1.08 / 1.15; 0 / 0 |
+| 150 m | 0.80 / 0.77 | 0.83 / 0.86 |
+| trunks (upper / middle / ground) | 1.25 / 0.81 / 0.78; 8 / 0 / 0 | 1.56 / 0.99 / 1.03; 10 / 1 / 1 |
+| flight, gusty (upper / middle / lower) | 8.37 / 4.93 / 5.05 | 9.13 / 4.99 / 5.17 (still air the same: the view's own) |
+
+Dolly hand-overs (mean-luma step, times the usual): card at 28.6 m
+-0.57 (x3.4) → -0.60 (x3.6); leaves → clumps at 67 m -0.69 (x5.3) →
+-0.39 (x3.0); clumps → crowns at 264 m -0.61 (x2.8) → -0.65 (x3.3).
+
+Still frames: `capture.js metrics` (s9) against g6, |Leaves - By size| Y
+grows by at most 1.7 levels in any band (trunks golden 10-20 m), and
+falls by 2.0 at skim noon 80-160 m. Flight (`trace`, five runs): p95
+4.85-4.91 ms, median 4.09-4.12 (HEAD: 4.61 / 3.91); max 7.2-7.9 ms in
+one second near t = 26-28 s under the canopy (HEAD 6.02-6.26).
+
+### Captures
+
+- Motion reports: `broworkshop/demos/grove/captures/motion/`,
+  `broworkshop/demos/forest/captures/motion/` (before:
+  `captures/motion_before/`).
+- The grass on the contrast floor (`capture.js grassfloor`):
+  `broworkshop/demos/grove/captures/grassfloor_{noon,golden}_{side,down}_{0.3,1,3,8,20}m.png`.
+- Forest still metrics: `broworkshop/demos/forest/captures/s9_metrics.json`.
+
+### Still open
+
+- The flight's max frame: 7.2-7.9 ms for a second under the canopy
+  (p95 and median within 5.1 / 4.4). Casters drawn at every tier's share
+  add 2 M shadow vertices (3.4 → 5.4 M); with only the heaviest tier, or
+  with no card band, a run still reached 7.4-8.0 ms, so neither alone is
+  it.
+- A crown 20 m off flickers more (2.52 against 1.94): its limbs and
+  twigs ring more (the turbulence that broke the lockstep), its leaves
+  under a pixel. The clock-600 tree keeps a LOCKSTEP flag at its top.
+- The boxwood's image still wiggles at 5-7.5 Hz (NOISE on 7 of 38 bottom
+  blocks), though its limbs ring at 3.3 Hz and sprays at 4.3 Hz now; the
+  bottom third holds grass, and the flag's blocks move under a pixel.
+  Lavender's flower stalks still ring at 6.5 Hz (bare, light, 1% sway).
+- Movers: the grass keeps 36-44% of the change at 0-0.3 m 8 s on, and
+  a slow drift (2-3 levels over the run, starting before the walker)
+  shows 1-2.5 m off the path on the meadow's ground but not on the
+  contrast floor. The boxwood run has 72 pops as it parts.
+- The card hand-over at 28.6 m (x3.6) and crowns at 264 m (x3.3) still
+  step; the dolly's mean luma steps near 190 m where the last shadow
+  cascade ends without a fade. Bark's sides switch 5 ↔ 10 at once.
+- Item 8 (the bracken pinnae at 2.5 m) was not separately measured.
 
 ## Order
 
