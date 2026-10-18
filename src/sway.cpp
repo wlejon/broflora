@@ -218,11 +218,13 @@ void computePlantSway(const Plant& plant,
             const int k = stack.back();
             stack.pop_back();
             if (segs[k].radius > 0.0f) tipR = std::min(tipR, segs[k].radius);
-            bool leafEnd = true;
             for (int ch : children[k]) {
-                if (!trunk[ch]) { stack.push_back(ch); leafEnd = false; }
+                if (!trunk[ch]) stack.push_back(ch);
             }
-            if (leafEnd && len[k] > 1e-6f) {
+            // A tip: nothing of any length beyond it (a shoot's newest
+            // module can be a zero-length bud, which is no tip of its own
+            // and leaves the shoot under it one; a lavender's every shoot).
+            if (rest[k] <= 1e-6f && len[k] > 1e-6f) {
                 tipLen += len[k];
                 ++tips;
             }
