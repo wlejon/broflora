@@ -3005,6 +3005,125 @@ time (bro `scene_forest_shoot.glsl`); nothing is baked per plant.
 - Twigs cast no shadow, and the casters' leaves carry no spray or shoot
   bend.
 
+## Step 11c: twigs at their size, matte leaves, far tiers from the shell
+
+After 11b, inside a crown the twigs faded away within 0.9 m of the eye, so
+the leaves near the eye hung from nothing; the near leaves shrank away
+over the last metre, small ones floating among full-size ones; the broad
+leaves carried a white salt of single pixels and a glare; the big grove
+broadleaf clumps still showed long straight twigs at 1 m; and the far
+tiers were 4 units brighter than the leaves at noon 40-80 m. All of it is
+still derived per clump at run time; nothing is baked.
+
+### What changed
+
+- **Twigs at their true size.** The twig fade (`FOREST_TWIG_NEAR`,
+  mesh_forest_tube.vert) is now 0.03-0.1 m, was 0.2-0.9 m: a twig a few
+  mm thick stays that thick at any distance and only gives way when the
+  eye all but touches it. The ribbon is across the curve's tangent at
+  each joint, which both pieces share, so the joints are seamless. Twigs
+  take half the leaves' crown occlusion (all of it left the wood inside a
+  crown near black), and young pale-bark twigs are red-brown
+  (0.15, 0.095, 0.065), not near-black.
+- **No floating leaves.** A forest leaf shrinks to its middle only within
+  0.1-0.4 m of the eye (`FOREST_NEAR_SHRINK`, was scene_vegetation's
+  0.25-1 m).
+- **Matte leaves, no salt.** mesh_forest_leaf.vert packs teeth plus depth
+  and petiole (64ths) plus gloss into one float each. Interpolated across
+  a triangle, a whole number came back a hair under itself and `floor()`
+  read it one less with a fraction near 1: deep spines tilting the normal
+  and full gloss on single pixels. `forestUnpack` nudges by 0.004 before
+  the floor (bro a49ac610). Per band unchanged.
+- **Shorter, more crooked limbs.** A limb and a spray's twig to it take 5
+  pieces each (was 3) and a limb carries 2 sprays (was 3), so the twig
+  from a limb to a spray is short and a large lobe's limbs bend every
+  third of a metre or less. A clump draws 12 + 15·limbs + 9·NB + 4·S
+  pieces (`ForestNode::twigPieces`, broworkshop `lib/kit/sway.js`).
+- **Leaf casters bend with their sprays.** shadow_forest_leaf.vert poses
+  a broad leaf as scene_forest_leaf_pose.glsl does, its spray's and
+  shoot's bending (`forestLeafShootSway`) included, so a leaf's shadow on
+  the leaves under it stays with it in a gust. Twigs cast no shadow: a
+  few mm across, they are under a shadow texel at every tile (2 cm at the
+  nearest), and drawn there they would alias into crawling lines.
+- **Far tiers from the shell.** A broad lobe's leaves lie in its shell
+  (shoots at 1 - shell·(0.2..0.8) of its radius), not through its ball.
+  A clump caster's disc (shadow_forest_sprite.vert) now stands at the
+  lobe's centre, not half a radius past it, since everything but the lit
+  cap lies behind the near shell's leaves; its cover is the chord through
+  the shell (shadow_forest.frag), as many leaves. A cluster's light
+  through its lobe crosses the hollow free (`forestShellPath`,
+  scene_forest_mass.glsl; `inLobeHollow` from mesh_forest_leaf.vert).
+  Before, the sides of the shell and the inner face of its far half went
+  unshaded by the clump casters that By size uses from about 25 m.
+
+### Numbers
+
+Baseline `s13base2`: bro 8da81a6c shaders with 11c's piece counts (the
+binary's), run with the current forest `capture.js`. (Its framing changed
+since step 11b's runs: compare runs of the same day only.)
+
+- One broadleaf, noon, `tiers` Leaves vs By size: 30 m 126.2 / 131.3 →
+  127.4 (with the disc at the centre), 50 m 125.8 / 130.2 → 126.8, 70 m
+  125.3 / 129.6 → 127.1 (clusters, density through the shell). Without
+  shadows both read 134.3: the gap was the casters.
+- Leaves / By size per band, before → after (`s13base2` → `s13w`):
+
+| shot, sky | band | before | after |
+| --- | --- | --- | --- |
+| canopy, noon | 20-40 | 112.2/110.5 (-1.7) | 112.2/108.8 (-3.4) |
+| canopy, noon | 40-80 | 115.5/118.4 (+2.9) | 115.6/117.4 (+1.8) |
+| canopy, noon | 80-160 | 109.3/114.3 (+5.0) | 109.4/114.1 (+4.7) |
+| skim, noon | 10-20 | 123.8/129.0 (+5.3) | 124.6/128.1 (+3.4) |
+| skim, noon | 20-40 | 145.9/149.6 (+3.7) | 146.3/149.2 (+2.9) |
+| glade, noon | 20-40 | 97.6/101.3 (+3.7) | 97.6/100.5 (+2.9) |
+| glade, noon | 40-80 | 122.8/121.6 (-1.2) | 122.8/121.2 (-1.6) |
+| trunks, noon | 10-20 | 70.0/77.8 (+7.8) | 70.5/77.5 (+7.0) |
+| canopy, golden | 20-40 | 82.2/79.4 (-2.8) | 82.3/78.6 (-3.8) |
+| canopy, golden | 40-80 | 87.8/87.4 (-0.4) | 87.8/86.7 (-1.2) |
+| canopy, golden | 80-160 | 89.5/87.5 (-2.0) | 89.5/87.3 (-2.3) |
+| skim, golden | 10-20 | 106.0/107.3 (+1.3) | 106.7/106.7 (0.0) |
+| trunks, golden | 10-20 | 58.2/70.8 (+12.6) | 58.8/70.0 (+11.2) |
+
+  The other bands are within 0.5. Canopy 20-40 m is the one band further
+  apart: there By size keeps most leaves but casts partly as clumps, and
+  the centred disc shades them as the shell's back. Run to run the
+  Leaves column moves up to 0.7 (golden canopy 20-40).
+  A disc a quarter radius on (`s13I`) gave canopy noon 20-40 -2.9 and
+  40-80 +2.2; clusters at the lobe's full density through the shell
+  (`s13b`) gave 40-80 +0.8 but 20-40 -5.6.
+- Twig oracle (`motion.js twigs`): unchanged, gusty p95 6.65 mm, max
+  11.63 (0.15 / 0.34 of the petiole); breeze p95 3.37, max 5.71.
+- Gusty plant run (grove `plant tree wind=gusty`), before → after: top
+  flicker 225 → 178 blocks, events 37.2 → 36.2/s; middle 349 → 285,
+  73.2 → 41.0/s; bottom 290 → 271, 49.8 → 41.6/s (the casters' leaves now
+  move with the leaves they shade).
+- Flight (1280x720), back to back, base → mine, twice; another
+  bro-headless ran throughout (not a quiet GPU): p95 6.57 → 5.66, 10.90 →
+  5.98 ms; median 4.59 → 4.59, 4.80 → 4.70; max 13.0 → 11.6, 14.1 →
+  10.0. Mine is no slower than the baseline in either pair.
+- `validate.sh demos/forest demos/grove`, bro `tests/flora`, broflora's
+  tests pass.
+
+### Captures
+
+- Before (8da81a6c shaders) and after, full frame, inside, 1 m and 3 m,
+  noon and golden:
+  `broworkshop/demos/forest/captures/{before13,after13}_{broadleaf,shrub}_{noon,golden}_{inside,1m,3m}.png`,
+  `broworkshop/demos/grove/captures/{before13,after13}_{broadleaf,birch,hydrangea,holly}_{noon,golden}_{inside,1m,3m}.png`.
+- Motion: `broworkshop/demos/grove/captures/motion/s13{base2,work}_twigs_{gusty,breeze}.txt`,
+  `s13{base2,work}_plant_tree_gusty_motion*`.
+- Metrics: `broworkshop/demos/forest/captures/{s13base2,s13w}_metrics.json`;
+  traces `{s13fb,s13fw,s13fb2,s13fw2}_trace.json`.
+
+### Still open
+
+- Inside a crown the twigs a few centimetres from the eye are as thick
+  as they are, so they cross the view as dark rods against the sky; their
+  polylines read as straight pieces with kinks at that range.
+- One long limb still crosses the grove broadleaf's 1 m view.
+- Canopy noon 80-160 m is +4.7 (crowns, not clumps), canopy 20-40 m -3.4.
+- The flight on a quiet GPU.
+
 ## Step 12: far meadow
 
 From about 30 m to the horizon the meadow was pale yellow-green, washed
