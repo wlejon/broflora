@@ -3005,6 +3005,164 @@ time (bro `scene_forest_shoot.glsl`); nothing is baked per plant.
 - Twigs cast no shadow, and the casters' leaves carry no spray or shoot
   bend.
 
+## Step 12: far meadow
+
+From about 30 m to the horizon the meadow was pale yellow-green, washed
+out and leafy (clover-like), with dark soil-like mottles, and its flowers
+thinned to dots and vanished past the herb plants (72 m). Now it keeps the
+near look's tone out to 150 m, its far leaves read as grass, the wind's
+sheen and gusts travel across it, and the flowers go on to the horizon as
+specks of their colour, patch by patch. Everything is derived at run time
+from the herb records and shared noise (bro `scene_grass.glsl`,
+`scene_grass_surface.glsl`, `scene_ground.glsl`, `scene_herb_mix.glsl`).
+
+### What changed
+
+- **Lit as a sward.** Far off (2 to 14 m in) a blade's shading normal
+  becomes the sward's mean face: the way to the eye from its root bent up
+  toward the ground (`grassCanopyNormal`). The turf takes the same normal
+  where it stands for the blades. Lit as level ground, a far meadow under
+  a high sun was a quarter brighter than its blades' faces.
+- **As dark as the near blades on average.** A far blade takes the mean
+  of its root-to-tip shade (`grassMeanShade`), not full brightness, and
+  the turf's sward colour takes the same. Far blades keep a quarter of a
+  near blade's glow (`b.far` 0.25), and the turf as many (0.3 x cover), so
+  golden light is not lost with distance. Far blades are rough
+  (0.9 past 40 m), so the eye-facing normal does not mirror a sun behind
+  the eye.
+- **Fans, not broad leaves.** A non-tufted live leaf in the outer rings is
+  a fan card cut per pixel into four tapering strands
+  (`grassFanSurface`, box-filtered), so 20-150 m reads as fine grass,
+  not clover. Ring 3 has more cover than its 9 x 10 cm: 5 blades in a
+  0.7 m cell, x50 wide (10 x 20 cm). The 55 m step is now under 1%; it
+  was -3 to -7% once the gaps read right.
+- **The gaps are grass.** Between drawn blades past the near ground the
+  turf is the sward seen deeper in (0.75 of its tops, `GRASS_TURF_DEPTH`),
+  mottled at 0.35 and not sun-bleached. It was soil and pale patches, which
+  is what read as dark mottles and as a sun-dried ground. Far thin clumps
+  fill in (`cover` toward density x 1.4).
+- **Wind at distance.** A comb (streaks along the wind, tens of metres by
+  a few) and each travelling gust tip the far blades' and the turf's
+  normal downwind (`grassCombLean`; 0.3 and 0.6). A gust also lifts the
+  turf's sheen as it does a blade's. Both are scaled by the steady wind
+  (`grassGustStir`: none in still air, full from half the reference
+  speed).
+- **Flowers past the herb ring.**
+  - `herbBloomLocal` weighs each blooming species by its colonies at the
+    point (the same noise `herbPick` uses for the plants) against its mean
+    over them. A stretch of poppies reads red, one of daisies white, and
+    over the land the mix is `herbMixMean`'s.
+  - Past the plants, a far fan stands for a herb as often as the herbs'
+    cover seen from there has them: as a bloom of the species picked by
+    hash among the local weights, or as the leaves' mean. The turf between
+    and past the fans does the same.
+  - Most herb leaves sit below the grass top, and some blooms do, so only
+    0.1 of the leaves and 0.5 of the blooms show (`GRASS_HERB_LEAF_SEEN`,
+    `GRASS_HERB_BLOOM_SEEN`). These are set so the stand-ins match what the
+    drawn plants show at the 72 m hand-over.
+  - `GrassNode::computeHerbMean` counts a species' side silhouette only as
+    far as its leaf top and bloom height rise over the grass (0.7 x
+    height).
+- **Seed-head haze.** Once a head's spikelets are under a pixel it takes
+  their mean with the anthers. Seen across (`graze`, from the view's
+  elevation) it shifts toward a pale pinkish-buff (`grassHeadFarColor`).
+  The turf's flowering does the same. With `flowering` set, a meadow seen
+  across has a buff haze in its flowering patches.
+- broworkshop `demos/forest/meadow.js` holds the measures `meadow`,
+  `meadowbands` and `meadowtone`; `motion.js meadow` holds the far-meadow
+  motion run with its travel measure.
+
+### Numbers
+
+**Tone by distance, fixed 8° view, herbs off (`meadowtone`).** Luma against
+3 m at 10/30/60/100/150 m:
+
+| Sky | Before luma | After luma | Before sat | After sat |
+|---|---|---|---|---|
+| Noon | +11/+17/+20/+21/+22% | +5.5/+2.1/+0.5/+2.0/+5.2% | -9 to -23% | -8.6/+0.9/+5.8/-1.2/-11.6% |
+| Golden | +6 to +2% | +4.6/+1.5/-1.9/-2.3/+1.3% | about -20% | +1.4 to +7.3, -6.8 at 150 m |
+
+**Standing eye at 1.7 m, herbs on (`meadowbands`).** Against 2-4 m, for the
+32-64, 64-100 and 100-150 m bands:
+
+| Sky | Measure | Before | After |
+|---|---|---|---|
+| Noon | Luma | +16/+24/+27% | +4.5/-1.3/+1.8% |
+| Noon | Sat | +8/-3/-5% | +28/+36/+33% |
+| Golden | Luma | +28/+36/+39% | +38/+42/+45% |
+
+At noon the luma now matches. The saturation rises because, seen across, the
+grass hides the soil. The golden luma is worse; see Still open.
+
+**Ring and hand-over steps (luma / sat), with range x1.3 over the same
+ground:**
+
+| Edge | Noon before | Noon after | Golden before | Golden after |
+|---|---|---|---|---|
+| 7 m | -0.5/+0.5 | -0.4/+0.4 | +0.1/-0.1 | +0.5/-0.1 |
+| 20 m | -0.2/+0.9 | -0.6/+1.4 | -0.2/+0.3 | -0.7/+0.7 |
+| 55 m | +1.0/-2.7, contrast -20% | -0.2/-0.9, contrast about -10% | +0.1/-1.6 | -0.5/-0.9 |
+| 72 m (herbs) | +4.8/-5.6, contrast -40% | +0.9/-1.9, contrast -15% | +1.6/-6.5, contrast -33% | +1.1/-1.1, contrast -11% |
+| 150 m | +0.6/-9.5 | +4.1/-8.6 | +0.8/-6.5 | -0.2/-5.3 |
+
+**Motion, gusty far meadow (`motion.js meadow`).** The eye is 8 m up, looking
+across the wind. Change in time and travel along each slit:
+
+| Slit | Change before (levels rms) | Change after (levels rms) | Travel before | Travel after |
+|---|---|---|---|---|
+| 30 m | 6.70 | 9.08 | -9.7 m/s | -9.7 m/s |
+| 60 m | 5.75 | 8.59 | -9.1 m/s | -6.5 m/s |
+| 100 m | 3.56 | 8.89 | -6.5 m/s | -6.5 m/s |
+| 150 m | 1.11 | 2.82 | 0 (nothing travelled) | -3.2 m/s |
+
+- Gusts now travel as waves out to 150 m.
+- Best-match correlation 0.80 to 0.91.
+- Flicker p90 at most 0.37 levels.
+- No noise-like, jittery or flickering blocks.
+- Two single-block flashes in the near region.
+
+**Flight trace (1280x720, no other bro-headless running, interleaved runs).**
+On this machine HEAD (bro 35b32359, shaders and ring spec) runs median 4.43
+and 4.42 ms, p95 5.26 and 5.22. That is over the step 11 budget; the
+machine is about 0.25 ms slower than when step 11 measured 4.19 / 5.01.
+With step 12 it runs median 4.51 and 4.54, p95 5.40 and 5.42:
+
+- median +0.10 ms;
+- p95 +0.17 ms;
+- ring 3's extra cover is most of the added cost.
+
+**Tests.** `validate.sh demos/forest demos/grove`, bro `tests/run_tests.sh
+grass` and `flora`, and `bro_vulkan_scene_test` pass.
+
+### Captures
+
+All under `broworkshop/demos/forest/captures/`:
+
+- Before: `s12a_meadow_{noon,golden}_{0.5m,3m,30m,60m,150m}.jpg`,
+  `s12a_{noon,golden}_{3,10,30,60,100,150}m.jpg` (the tone views),
+  `s12a_meadowbands.json`, `s12a_h_meadowbands.json`,
+  `s12a_meadowtone.json`.
+- After: `s12b_meadow_{noon,golden}_{0.5m,3m,30m,60m,150m,skim60,skim150}.jpg`,
+  `s12b_{noon,golden}_*m.jpg`, `s12b_meadowtone.json`,
+  `s12c_meadowbands.json`. The haze is in
+  `s12b_flowering_meadow_golden_*.jpg` (flowering 0.3).
+- Motion: `motion/s12_before/forest_meadow_gusty_motion*` and
+  `motion/forest_meadow_gusty_motion*`.
+
+### Still open
+
+- **Golden from a standing eye.** The ground brightens with distance (+38 to
+  +45% over the dark 2-4 m band, against +28 to +39% before). At a fixed
+  angle it matches, so this is the view angle: the far glow and grazing
+  faces. It wants a grazing-angle reference rather than a lower glow.
+- **The 150 m edge.** The turf past the last ring is 4% brighter and 9% less
+  saturated at noon than the fans there. Darkening the turf's tops moved it
+  little, so haze and lighting dominate there, not the turf's colour.
+- **White blooms far off.** They show as short dashes (a fan strand's
+  shape), not dots.
+- **The flight budget.** Step 12 adds 0.1 ms median. The budget numbers need
+  a re-baseline on this machine, or ring 3 needs a cheaper path.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
