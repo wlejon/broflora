@@ -2689,6 +2689,126 @@ one second near t = 26-28 s under the canopy (HEAD 6.02-6.26).
   cascade ends without a fade. Bark's sides switch 5 ↔ 10 at once.
 - Item 8 (the bracken pinnae at 2.5 m) was not separately measured.
 
+## Step 10: grass
+
+The grass node's blades (bro scene_grass.glsl), judged on the grove's
+contrast floor and its own ground. Everything is still derived per blade
+from its cell's hash, the field and shared noise: nothing is stored per
+plant or per place.
+
+### What changed
+
+- **A blade's form.** A blade is a sum of tilt vectors (its lean at the
+  root, its rest curvature, the wind and the movers' bend), saturated at
+  2.3 rad and integrated along it with Simpson's rule, so it arches and
+  droops without a flip whatever the ways combine. Leaves taper to a fine
+  point (blunter once about a pixel wide, so the tip does not flicker),
+  fold along the midrib near the eye (a shallow V in the shading normal to
+  12 m) and twist a little along their length. Older leaves are broader.
+- **Posture.** Age (a hash) sets each leaf's length (0.45-1.3 x the tuft),
+  lean (0.1-0.75 rad out) and droop (more with length, more where the
+  field is dry: sun-dried leaves splay and flop). 4% lie lodged. Dead
+  leaves are short, lie out at 0.75-1.3 rad and are straw to dun.
+- **Tufts.** Tillers rise from a small crown and lean out from it; cells
+  gather toward tussocks (one a 0.42 m square, anywhere in it, each
+  gathering its own share), the bunching set by `tufts` (default 0.35) about
+  a shared noise of a few metres: a sward in places, bunch grass in others.
+- **Flowering culms** (`flowering`, default 0.08; the grove's meadow 0.25):
+  a bare stem 1.35-1.75 x the tuft carrying a head in its top quarter, a
+  loose panicle (branches rising to one side, spikelets along their outer
+  part) or a dense spike, by a noise of tens of metres; fresh green flushed
+  purple with pale anthers, ripening to straw where dry. The card is cut
+  per pixel (scene_grass_surface.glsl, under 4x MSAA its share of the
+  samples); the spikelets fade to their mean once a row is under about two
+  pixels, and a card widened to a pixel covers only its true width. Culms
+  are the same share of the blades in every ring, so a far culm stands for
+  as many culms as its leaves do leaves. Their stems give 0.45 as much to a
+  push and are flattened half as much.
+- **Light.** Grass draws with its own build of mesh.frag (SCENE_GRASS), so
+  the forest's leaves pay nothing for it. The light through a blade follows
+  its own face toward the eye (SceneSurface::thinNormal), not the ground
+  normal it is shaded by, so blades glow against a low sun; live leaves
+  have a cuticle sheen near (roughness 0.42 to 6 m), dead leaves and heads
+  are matt.
+- **Ring 2's cover.** Rings 0 and 1 cover 5.6 and 5.0 m of blade width a
+  square metre; ring 2 (20-55 m) had 2.2, so more turf showed and it drew
+  4-7% darker. It now has 6 blades at 19 x the width (5.0): luma steps at
+  20 m are gone. A ring's blade tone spreads by its coarseness^0.12.
+- **The movers.** A trample rises critically damped over 0.35 s (was 0.6)
+  with 1% over 2 s (was 2% over 2.5 s); a bend and a trample build up over
+  about a quarter second rather than in a frame or two; under the mover's
+  body the bend lies along its path (at the disc's edge out to the side),
+  so a flattened blade or herb no longer swings across as it passes over.
+- **Yarrow** (item 7): the umbel's florets sit in staggered rows with
+  jittered size and fade to their mean by a quarter of a cell a pixel: the
+  grey gridded balls at 8 m are white floret domes.
+- **The turf** (scene_ground.glsl) mixes in the dead leaves' and heads'
+  colours by the same shares, so the far meadow keeps the near one's cast.
+- Measures: `capture.js grassfloor ... floor=normal` (the same stills over
+  the grove's ground) and `capture.js grassbands` (below).
+
+### Numbers
+
+**Ring hand-overs** (`grassbands`: knee and eye height, four ways, each
+view drawn at the node's range and at 1.3 x it; between an edge and 1.3 x
+it the two differ only in the ring, so the terrain's patches drop out;
+control: the band inside, both the same ring):
+
+| Edge | HEAD noon / golden luma | Now noon / golden luma | Now local contrast | Control |
+|---|---|---|---|---|
+| 7 m | -1.3% / +1.3% | +0.2% / +3.6% | -10% / -7% | +0.3 / +1.6% |
+| 20 m | -4.0% / -6.6% | -0.8% / -1.0% | -15% / -16% | +0.1 / +0.4% |
+| 55 m | -0.9% / -1.1% | +0.2% / +0.3% | -4% / +0.4% | -0.4 / -0.7% |
+
+**Motion oracle** (`motion.js`, before = bro 989babdb):
+
+| Run | Before | After |
+|---|---|---|
+| mover grass, contrast: 0-0.3 m to 50% / left at +8 s | 4.50 s / 39% | 1.67 s / 10% |
+| mover grass, contrast: 0.3-0.6 m | 2.73 s / 25% | 1.60 s / 5% |
+| mover grass, ground: 0-0.3 m | 5.20 s / 44% | 1.90 s / 12% |
+| mover grass, ground: 0.3-0.6 m | 2.77 s / 28% | 1.60 s / 6% |
+| mover grass pops, contrast / ground | 74 / 95 | 52 / 92 |
+| meadow gusty, ground: events; near coherence | 49; INCOHERENT (0.13) | 43; no flag |
+| meadow gusty, ground: wiggle median far / mid / near | 3.7 / 3.5 / 3.6 Hz | 3.1 / 3.1 / 3.2 Hz |
+| meadow gusty, contrast: events | 57 | 76 (flashes near 24 -> 28, middle 2 -> 12) |
+
+**Cost** (RTX 4090, 1280x720, 4x MSAA): grass in the grove's `perf` shots,
+HEAD's shaders against these on one binary, three runs each (+-0.3 ms):
+meadow 1.18 / 1.15, ground 1.40 / 0.89, grove 0.93 / 1.10 ms. Forest flight
+on bro da708766 + this: p95 5.05-5.09, median 4.13-4.17 ms (HEAD's grass
+shaders the same binary: 5.01-5.15 / 4.21-4.23; without the grass 4.48 /
+3.78).
+
+### Captures
+
+demos/grove/captures/: `s10k_{noon,golden}_{side,down}_{0.3,1,3,8,20}m.png`
+(contrast floor), `s10k_normal_...` (the grove's ground),
+`s10j_{noon,golden}_{knee,eye}0.0.png` (the band views), motion reports
+in `motion/` and the before set in `motion_s10_before/`.
+demos/forest/captures/: `s10_meadow_{noon,golden}_{0.5,3,30,60,150}m.jpg`,
+`s10_understory_{noon,golden}.jpg`.
+
+### Still open
+
+- The outer rings' local contrast falls 10-16% at 7 and 20 m (fewer, wider
+  blades are a smoother grain); luma no longer steps. Golden light at 7 m
+  is +3.6%.
+- Pops in the mover runs are mostly the herbs (poppy heads) parting and
+  swinging in a gust front; the meadow's contrast-floor run has more flashes
+  than before (the near sheen or the culms' heads; not split out).
+- The near sward still shows floor between tufts on the contrast floor
+  (about 1400 blades a square metre near the eye); over the turf it reads
+  closed.
+- Gust waves: the sheen of the blades a gust bends is as before; whether a
+  wave reads travelling across a field was not measured separately.
+- Boxwood (5-7.5 Hz) and lavender (6.5 Hz) wiggles and the meadow drift
+  1-2.5 m from the path were not worked on: baseline numbers are in
+  `motion_s10_before/` (boxwood bottom NOISE 8/26 blocks at 9.1 Hz;
+  lavender FLICKER 6/22 middle).
+- The forest's meadow at 30-150 m was judged by eye (it keeps its colour
+  and grain); the band measure only reaches 70 m in the grove.
+
 ## Step 11: leaves on twigs
 
 Better motion showed what stills had hidden: a broadleaf's leaves were
