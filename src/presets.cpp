@@ -184,6 +184,31 @@ std::optional<PresetDef> presetDef(std::string_view name) {
         }
         return d;
     }
+    // Weeping willow: a short stout trunk, a few big limbs rising and
+    // arching over, and from them long thin shoots that hang to near the
+    // ground under their leaves' weight (Species::sag), clothed along their
+    // length in narrow, finely toothed, yellow-green leaves on short stalks.
+    if (name == "willow") {
+        d.habit = "broadleaf";
+        d.species = broadleafBase();
+        d.root = trunkModule(2.4f, 4);
+        d.leader = monopodialLeaderModule(3, 0.7f);
+        Species& s = d.species;
+        s.growthScale = 2.6f; s.orthotropy = 0.6f; s.tropismG2 = 0.08f; s.apicalControl = 0.4f;
+        s.apicalDominance = 0.35f;
+        s.pipeExp = 2.3f;
+        s.leafDiameter = 0.01f;   // thin, whippy shoots
+        s.sag = 30.0f;
+        s.clumpFill = 1.0f;
+        s.clumpInner = 0.6f;
+        s.leafSize = 0.8f;
+        s.leafColor = rgb(0.11f, 0.17f, 0.04f);
+        s.leafWidth = 0.2f; s.leafTeeth = 14.0f; s.leafToothDepth = 0.03f; s.leafGloss = 0.3f;
+        s.petiole = 0.08f;
+        bark(s, 0.55f, 1.3f, 0.3f, 0.6f);   // deep, criss-crossing furrows
+        s.barkColor = rgb(0.25f, 0.22f, 0.18f);
+        return d;
+    }
     // --- conifers ---------------------------------------------------------
     if (name == "pine" || name == "spruce" || name == "fir" || name == "cedar" || name == "redwood" ||
         name == "cypress" || name == "juniper") {
@@ -416,7 +441,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
 
 const std::vector<std::string>& speciesPresetNames() {
     static const std::vector<std::string> names = {
-        "oak", "elm", "beech", "birch",
+        "oak", "elm", "beech", "birch", "willow",
         "pine", "spruce", "fir", "cedar", "redwood", "cypress", "juniper",
         "boxwood", "holly", "hydrangea", "hibiscus", "lavender",
     };

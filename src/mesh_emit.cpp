@@ -1,5 +1,6 @@
 #include "broflora/mesh_emit.h"
 
+#include "bromath/quat.h"
 #include "bromath/scalar.h"
 #include "bromath/vec.h"
 #include "bromesh/manipulation/normals.h"
@@ -478,6 +479,105 @@ namespace {
 // segment that terminates at the module's attach terminal (i.e. the
 // segment a child module's root edge should set as its parent). Returns
 // the number of segments appended.
+// The skeleton's sag under its own load (Species::sag), on segments
+// [start, end) of `out` (parents before children, indices absolute). Each
+// joint (a segment's start) turns the segment and everything beyond it
+// toward hanging by M / k times `sag`, small-deflection beam statics: M the
+// load beyond it times its lever across (wood at kSagWood N/m^3, and
+// kSagLeaves N/m on the shoots under kSagLeafRadii leaf radii, where the
+// leaves are) about the joint, k the segment's stiffness E I / L (I = pi
+// r^4 / 4, E green wood's), never past straight down. Worked root first:
+// each segment turned with every joint below it, then by its own.
+void sagSegments(const Species& sp, float leafR, std::vector<bromesh::BranchSegment>& out, size_t start) {
+    constexpr float kSagWood = 700.0f * 9.81f;   // green wood's weight, N/m^3
+    constexpr float kSagLeaves = 2.0f;           // a leafy shoot's leaves, N/m
+    constexpr float kSagLeafRadii = 3.0f;
+    constexpr float kSagE = 1.0e10f;             // green wood's modulus, Pa
+    const size_t n = out.size() - start;
+    if (n == 0 || !(sp.sag > 0.0f)) return;
+    const auto parentOf = [&](size_t i) -> int64_t {
+        const int64_t p = out[start + i].parent;
+        return p >= static_cast<int64_t>(start) && p < static_cast<int64_t>(start + i) ? p - static_cast<int64_t>(start)
+                                                                                       : -1;
+    };
+    // Each segment's weight and its middle, and the moment about each
+    // joint of everything beyond it (its own included): a segment adds its
+    // weight times its lever across to every joint below it.
+    std::vector<float> moment(n, 0.0f);
+    // How far each segment's end is from its furthest tip (children after
+    // parents, so tips first from the back), and the plant's height.
+    std::vector<float> reach(n, 0.0f);
+    float lo = std::numeric_limits<float>::infinity(), hi = -lo;
+    for (size_t j = n; j-- > 0;) {
+        const auto& s = out[start + j];
+        lo = std::min({lo, s.from.y, s.to.y});
+        hi = std::max({hi, s.from.y, s.to.y});
+        const int64_t p = parentOf(j);
+        if (p >= 0)
+            reach[static_cast<size_t>(p)] =
+                std::max(reach[static_cast<size_t>(p)], reach[j] + bromath::vlen(s.to - s.from));
+    }
+    const float whip = 0.15f * std::max(hi - lo, 0.1f);
+    // The leader, the way from the root to the highest tip, stands.
+    std::vector<char> leader(n, 0);
+    size_t top = 0;
+    for (size_t j = 1; j < n; ++j)
+        if (out[start + j].to.y > out[start + top].to.y) top = j;
+    for (int64_t i = static_cast<int64_t>(top); i >= 0; i = parentOf(static_cast<size_t>(i)))
+        leader[static_cast<size_t>(i)] = 1;
+    for (size_t j = 0; j < n; ++j) {
+        const auto& s = out[start + j];
+        const float L = bromath::vlen(s.to - s.from);
+        const float w = kSagWood * bromath::PI * s.radius * s.radius * L +
+                        (s.radius < kSagLeafRadii * leafR ? kSagLeaves * L : 0.0f);
+        const Vec3 mid = (s.from + s.to) * 0.5f;
+        for (int64_t i = static_cast<int64_t>(j); i >= 0; i = parentOf(static_cast<size_t>(i))) {
+            const Vec3 d = mid - out[start + static_cast<size_t>(i)].from;
+            moment[static_cast<size_t>(i)] += w * std::hypot(d.x, d.z);
+        }
+    }
+    // Root first: a segment's start follows its parent's end, its way turns
+    // with its parent's (the rotation carried), then by its own joint's.
+    const Vec3 down{0.0f, -1.0f, 0.0f};
+    std::vector<bromath::Quat> turn(n, bromath::qidentity());
+    std::vector<Vec3> oldTo(n);
+    for (size_t i = 0; i < n; ++i) oldTo[i] = out[start + i].to;
+    for (size_t i = 0; i < n; ++i) {
+        auto& s = out[start + i];
+        const int64_t p = parentOf(i);
+        const bromath::Quat q = p >= 0 ? turn[static_cast<size_t>(p)] : bromath::qidentity();
+        const Vec3 off = s.to - s.from;
+        const float L = bromath::vlen(off);
+        Vec3 from = s.from;
+        if (p >= 0) {
+            const auto& ps = out[start + static_cast<size_t>(p)];
+            from = ps.to + bromath::qrotate(q, s.from - oldTo[static_cast<size_t>(p)]);
+        }
+        Vec3 dir = L > 1e-9f ? bromath::qrotate(q, off * (1.0f / L)) : down;
+        bromath::Quat t = q;
+        const float r = std::max(s.radius, 1e-4f);
+        const float k = kSagE * bromath::PI * r * r * r * r * 0.25f / std::max(L, 1e-3f);
+        // Only the young shoots, within `whip` of their furthest tip (fading
+        // out by twice it): the pipe model's are far thicker than a willow's
+        // whips (so `sag` is large), and the limbs carrying them stand, as
+        // does the leader.
+        const float young =
+            leader[i] ? 0.0f : 1.0f - std::clamp((reach[i] + L - whip) / whip, 0.0f, 1.0f);
+        const float theta = sp.sag * young * moment[i] / k;
+        const Vec3 axis = bromath::vcross(dir, down);
+        const float al = bromath::vlen(axis);
+        if (theta > 0.0f && al > 1e-5f) {
+            const float toDown = std::acos(std::clamp(bromath::vdot(dir, down), -1.0f, 1.0f));
+            const bromath::Quat j = bromath::qaxisAngle(axis * (1.0f / al), std::min(theta, toDown));
+            dir = bromath::qrotate(j, dir);
+            t = bromath::qmul(j, q);
+        }
+        turn[i] = t;
+        s.from = from;
+        s.to = from + dir * L;
+    }
+}
+
 size_t emitPlantSegmentsInto(const Plant& plant,
                              std::vector<bromesh::BranchSegment>& out) {
     const size_t startSize = out.size();
@@ -703,6 +803,7 @@ size_t emitPlantSegmentsInto(const Plant& plant,
         }
     }
 
+    sagSegments(plant.species, leafR, out, startSize);
     return out.size() - startSize;
 }
 

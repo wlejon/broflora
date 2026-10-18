@@ -3927,7 +3927,7 @@ softer side view), their outline ramp moved out (+2.6..6.7 cover, side
 view 20-40 m hard 7.2 -> 6.3), a stratified leaf order by clump (no
 change), a wider cell search (+0.7..2.5).
 
-New species, first try: a weeping willow (not committed). Its narrow
+New species, first try: a weeping willow. Its narrow
 toothed leaves read well close up. Its form did not: a lateral aimed
 below the horizon (lateralElevation -1.35) fights the spawn's collision
 term and the shoots coil into loops (more so with weepingModule as the
@@ -3941,6 +3941,22 @@ terms sway.cpp already has), from the tip inward, so the whips hang
 straight from limbs that rise and arch. The same pass would hang a
 birch's twigs and a spruce's boughs' tips by physics instead of set
 points.
+
+The sag pass and the willow preset. `Species::sag` (0, off, for every
+other preset) turns each joint of the emitted skeleton toward hanging by
+M / k times `sag`: M the moment about it of the wood (700 kg/m^3) and
+leaves (2 N/m on shoots under three leaf radii) beyond it, k its
+segment's E I / L (E 10 GPa), never past straight down, root first so
+each segment carries every turn below it. Two gates make it a willow,
+not a heap. The leader (the way to the highest tip) stands: without it
+the top fell over and the tree stood 3.4 m, not 6.6. Only shoots within
+0.15 of the plant's height of their furthest tip sag, fading out by
+twice that: at 0.4 the limbs fell too and the tree was a leaf ball on a
+bare whip over a tangle of cords; a radius gate hung the thick limbs as
+well. The willow (trunk 2.4 m, pipe exponent 2.3, leaf diameter 0.01,
+sag 30) stands 6.6 m, a dome of hanging shoots to the ground at 20 m
+and a rounded clump at 60 m. Not yet: the far tiers draw it as a round
+crown, not a curtain; its hanging foliage is thin close up.
 
 Still open:
 

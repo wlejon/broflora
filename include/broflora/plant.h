@@ -248,6 +248,13 @@ struct Species {
     float leafGloss          = 0.0f;
     uint32_t phyllotaxis     = 0;
     float petiole            = 0.2f;
+    // How far the skeleton sags under its own load when emitted
+    // (emitPlantSegments; the simulation never reads it): each joint turns
+    // its shoot toward hanging by the load beyond it (wood, and leaves on
+    // the thin shoots) times its lever over the shoot's stiffness (E I / L,
+    // I from its radius), times this. 0: none (the default); 1: green wood's
+    // own; a willow's whips, wetter and heavier with leaves, several times.
+    float sag                = 0.0f;
     // A needle or scale-leaf spray's set in its clump (leafForm Needle or
     // Scale):
     //   sprayBrush  0: the sprays lie round the clump, facing out (a fir's,
