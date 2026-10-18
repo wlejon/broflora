@@ -293,14 +293,14 @@ std::optional<PresetDef> presetDef(std::string_view name) {
         Species& s = d.species;
         s.growthScale = 2.6f; s.orthotropy = 0.0f; s.tropismG2 = 0.0f; s.apicalControl = 0.4f;
         s.pipeExp = 1.3f;
-        s.leafDiameter = 0.04f;   // a frond's stalk, tapering to a third
-        s.sag = 100.0f;
+        s.leafDiameter = 0.03f;   // a frond's stalk, tapering to a third
+        s.sag = 10.0f;
         s.clumpFill = 1.0f;
         s.clumpInner = 1.0f;
         s.leafSize = 1.6f;
         s.leafColor = rgb(0.10f, 0.16f, 0.05f);
         s.leafWidth = 0.08f; s.leafGloss = 0.5f;
-        s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Alternate);
+        s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Pinnate);
         s.petiole = 0.0f;
         bark(s, 0.2f, 0.5f, 0.0f, 0.4f);
         s.barkColor = rgb(0.30f, 0.26f, 0.21f);

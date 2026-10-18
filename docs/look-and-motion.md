@@ -3970,6 +3970,17 @@ column at 20 m. Not yet: the fronds carry the broad-leaf clumps (bunches
 of narrow leaves), not leaflets in two ranks along the rachis, so they
 do not read as feathers; that is the shoot shader's to draw.
 
+Pinnate leaves (Phyllotaxis::Pinnate, 3; bro's forestPinnateLeaf): a
+clump's leaves line the wood it grows on, a clump's radius either way of
+its base, in two ranks either side, leaning 0.45 rad toward the tip and
+drooping (a frond's V), facing up; no twigs (ForestNode counts none for
+a pinnate specimen's clumps) and no spray or shoot bend, riding the
+wood's pose. The palm takes them, and less sag (10, was 100: with
+leaflets the fronds' outer halves hung straight down): at 5 m feathered
+fronds, at 20 m a radiating crown of them. Not yet: the leaflets favour
+each frond's outer half (the clump placer's), and past 60 m the clump
+and crown tiers draw the fronds as wisps, then a round blob.
+
 A cactus (a saguaro), from the same parts and one new bark. Its root
 module is a column with three arms leaving its upper part level and
 turning up at an elbow; the leader and arms lengthen only (maxBranchOrder

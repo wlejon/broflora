@@ -244,7 +244,9 @@ struct Species {
     //   phyllotaxis Phyllotaxis: its leaves alternate in two ranks (beech,
     //               birch, holly), stand in opposite pairs each a quarter
     //               turn from the last (hydrangea, boxwood: decussate), or
-    //               spiral round the shoot at 2/5 (hibiscus)
+    //               spiral round the shoot at 2/5 (hibiscus), or are
+    //               leaflets lining the wood itself in two ranks, no twigs
+    //               (pinnate: a palm's fronds)
     //   petiole     its leaf stalk's length over the blade's (0 sessile; a
     //               birch's ~0.3, a holly's short 0.1)
     float leafWidth          = 0.0f;
@@ -297,8 +299,10 @@ enum class Phyllotaxis : uint32_t {
     Alternate = 0,   // one a node, alternating in two ranks: a flat spray
     Opposite = 1,    // two a node, each pair a quarter turn from the last
     Spiral = 2,      // one a node, 2/5 of a turn apart
+    Pinnate = 3,     // leaflets in two ranks along the wood itself, no
+                     // twigs: a palm frond's, on its rachis
 };
-inline constexpr uint32_t kPhyllotaxisCount = 3;
+inline constexpr uint32_t kPhyllotaxisCount = 4;
 
 // What a plant's leaves are drawn as (Species::leafForm).
 enum class LeafForm : uint32_t {
