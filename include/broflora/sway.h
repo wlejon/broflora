@@ -95,7 +95,48 @@ struct Cantilever {
     float freq = 0.0f;     // Hz
     float sway = 0.0f;     // tip deflection / length at kSwayReferenceWind; 0: does not bend
     float length = 0.0f;
+    // The trunk's bent shape as h^shape over its height (swayStem); 0: the
+    // uniform beam's end-loaded bend, s^2 (3 - s) / 2 (limbs and twigs).
+    float shape = 0.0f;
 };
+
+// The trunk as its stem bends (swayStem). A stem grows to the load the wind
+// puts on it, so its wood is strained about alike along its length (the
+// constant-stress design of tree stems); at the reference wind that strain
+// is kSwayStemStrain, so its curvature at each height is 2 strain / d, d
+// the leader's diameter there. The slim top, thinnest, bends most, and the
+// whole upper stem curves downwind with the pads on it; a slender stem
+// (tall for its base) leans further than a stout one.
+//
+//   - its root plate turns as well, kSwayRootShare of the stem's own bend at
+//     the top (in tree-pulling tests the anchorage gives about as much as
+//     the stem);
+//   - the curve's tip over the height is its sway, the curve's area its
+//     shape (h^p);
+//   - its frequency is Rayleigh's over that curve: the energy the curve
+//     stores (E I kappa^2 along the stem, E the green-wood modulus over
+//     kSwayStemGain for what a living stem's knots and bark take off it,
+//     and the root plate's moment through its turn) over the mass every
+//     piece of the plant moves with it.
+//
+// So at 10 m/s a fir's or a spruce's top holds a lean of about 3.5% of its
+// height and rings at 0.85-1 Hz, a pine's 2% at 0.34 Hz, a birch's 3% at
+// 0.26 Hz, an oak's 1.8% at 0.74 Hz, a boxwood's 0.7% at 1.5 Hz
+// (preset_report REPORT_SWAY).
+inline constexpr float kSwayStemStrain = 0.00025f;
+inline constexpr float kSwayStemGain = 5.0f;
+inline constexpr float kSwayRootShare = 0.5f;
+// The leader runs on through a fork while its child is this much thicker
+// than the next child (or keeps 80% of its parent).
+inline constexpr float kSwayLeaderDominance = 1.3f;
+inline constexpr float kSwayShapeRange[2] = {1.0f, 4.0f};
+// The stem's thinnest, against its base diameter.
+inline constexpr float kSwayStemTopFloor = 0.06f;
+struct SwayStemWood { float z0 = 0.0f, z1 = 0.0f, radius = 0.0f; };   // a leader segment's heights and radius
+struct SwayStemLoad { float z = 0.0f, force = 0.0f, mass = 0.0f; };   // a piece's height, drag (N) and mass (kg)
+// The stem `wood` (root to top) under `load` at kSwayReferenceWind, the
+// plant `height` tall. Zero frequency when there is no stem or no drag.
+Cantilever swayStem(const std::vector<SwayStemWood>& wood, const std::vector<SwayStemLoad>& load, float height);
 
 // What a cantilever's first mode carries: every piece's mass times phi(s)^2
 // and the leaf face it shows the wind times phi(s), s its place along the
@@ -156,9 +197,10 @@ Cantilever swayCantilever(float d, float L, const CantileverLoad& load, float ga
 //
 // The trunk is the leader chain from the thickest root segment: the
 // thickest child at each fork while it keeps at least 80% of its parent's
-// radius and 10% of the base radius: a conifer's leader runs on to its top,
-// so its upper boughs are light limbs of their own rather than one heavy
-// limb the whole upper crown hangs from.
+// radius or is kSwayLeaderDominance times the next child: a conifer's
+// leader runs on through its whorls to its top, so its upper boughs are
+// light limbs of their own and its top is the stem's own slim end (not a
+// limb of its own, ringing apart from the stem under it).
 struct SegmentSway {
     bromath::Vec3 root{};
     float height = 1.0f;
@@ -194,7 +236,8 @@ std::vector<SegmentSway> emitWorldSway(const WorldState& world);
 //          plus one (packSwayAxis); 0 on wood, which does not flutter
 //   twig   phase (6 bits), twig freq, sway, length (6 bits each)
 //   limb   limb freq, sway, length (8 bits each)
-//   trunk  trunk freq, sway (12 bits each)
+//   trunk  trunk freq, sway (9 bits each), shape (6 bits: 0 unset, else
+//          linear over kSwayShapeRange)
 //
 // Each number is quantised on a log scale over its range below (code 0 is
 // zero); unpackSway* invert them, as the shader does.

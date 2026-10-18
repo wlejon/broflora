@@ -60,24 +60,31 @@ void computePlantSway(const Plant& plant,
     auto mass = [&](size_t i) { return i < fol.size() ? std::max(fol[i].mass, 0.0f) : 0.0f; };
 
     // The trunk: the leader chain from the thickest root segment, taking the
-    // thickest child at each fork while it stays dominant (>= 80% of its
-    // parent; a fork into equal limbs ends the trunk) and >= 10% of the base.
+    // thickest child at each fork while it stays the leader: >= 80% of its
+    // parent, or kSwayLeaderDominance times the next thickest child (a
+    // conifer's leader through a whorl that takes much of its wood). A fork
+    // into near-equal limbs ends it (a broadleaf's decurrent crown).
     std::vector<char> trunk(n, 0);
     int cur = -1;
     for (size_t i = 0; i < n; ++i) {
         if (parentOf(i) < 0 && (cur < 0 || segs[i].radius > segs[cur].radius)) cur = static_cast<int>(i);
     }
     const int trunkBase = cur;
-    const float baseR = cur >= 0 ? segs[cur].radius : 0.0f;
     while (cur >= 0) {
         trunk[cur] = 1;
         int next = -1;
+        float second = 0.0f;
         for (int c : children[cur]) {
-            if (next < 0 || segs[c].radius > segs[next].radius) next = c;
+            if (next < 0 || segs[c].radius > segs[next].radius) {
+                if (next >= 0) second = std::max(second, segs[next].radius);
+                next = c;
+            } else {
+                second = std::max(second, segs[c].radius);
+            }
         }
         if (next < 0) break;
         const float r = segs[next].radius;
-        if (r < 0.1f * baseR || r < 0.8f * segs[cur].radius) break;
+        if (!(r > 0.0f) || (r < 0.8f * segs[cur].radius && r < kSwayLeaderDominance * second)) break;
         cur = next;
     }
 
@@ -137,17 +144,40 @@ void computePlantSway(const Plant& plant,
         return kSwayWoodDensity * 3.14159265f * r * r * len[i] + kSwayLeafMass * area(i);
     };
 
-    // The trunk as one cantilever: its base diameter, the plant's height,
-    // everything on the plant placed by its height.
-    CantileverLoad trunkLoad;
-    for (size_t i = 0; i < n; ++i) {
-        const float y = 0.5f * (segs[i].from.y + segs[i].to.y) - plant.origin.y;
-        const float phi = swayModeShape(y / common.height);
-        trunkLoad.mass += pieceMass(i) * phi * phi;
-        trunkLoad.area += drag(i) * phi;
+    // The trunk: its stem bent by the drag on everything it carries, each
+    // piece pushing at its own height (swayStem).
+    {
+        // The stem that bends: the leader, on through its thickest child at
+        // every fork to the top (past a broadleaf's fork into equal limbs too:
+        // what stands on the fork leans with the wood under it).
+        std::vector<SwayStemWood> stemWood;
+        std::vector<SwayStemLoad> load;
+        for (int k = trunkBase; k >= 0;) {
+            stemWood.push_back({segs[k].from.y - plant.origin.y, segs[k].to.y - plant.origin.y, segs[k].radius});
+            int next = -1;
+            for (int ch : children[k]) {
+                if (next < 0 || segs[ch].radius > segs[next].radius) next = ch;
+            }
+            k = next;
+        }
+        load.reserve(n);
+        const float q = 0.5f * kSwayAirDensity * kSwayDrag * kSwayReferenceWind * kSwayReferenceWind;
+        for (size_t i = 0; i < n; ++i) {
+            load.push_back({0.5f * (segs[i].from.y + segs[i].to.y) - plant.origin.y, q * drag(i), pieceMass(i)});
+        }
+        common.trunk = swayStem(stemWood, load, common.height);
+        if (!(common.trunk.freq > 0.0f)) {
+            // No stem to speak of: the uniform beam of the base diameter.
+            CantileverLoad trunkLoad;
+            for (size_t i = 0; i < n; ++i) {
+                const float phi = swayModeShape(load[i].z / common.height);
+                trunkLoad.mass += pieceMass(i) * phi * phi;
+                trunkLoad.area += drag(i) * phi;
+            }
+            const float trunkD = 2.0f * (trunkBase >= 0 ? segs[trunkBase].radius : 0.0f);
+            common.trunk = swayCantilever(trunkD, common.height, trunkLoad, kSwayTrunkGain);
+        }
     }
-    const float trunkD = 2.0f * (trunkBase >= 0 ? segs[trunkBase].radius : 0.0f);
-    common.trunk = swayCantilever(trunkD, common.height, trunkLoad, kSwayTrunkGain);
 
     // Each limb's load: every segment of it placed by how far along the
     // limb it sits (the way from where the limb leaves the trunk). Emit
@@ -313,6 +343,83 @@ Cantilever swayCantilever(float d, float L, const CantileverLoad& load, float ga
     return c;
 }
 
+Cantilever swayStem(const std::vector<SwayStemWood>& wood, const std::vector<SwayStemLoad>& load, float height) {
+    Cantilever c;
+    const float H = height;
+    if (wood.empty() || !(H > 0.0f)) return c;
+    const float pi = 3.14159265f;
+    float zTop = 0.0f;
+    for (const auto& w : wood) zTop = std::max({zTop, w.z0, w.z1});
+    zTop = std::min(zTop, H);
+    const float d0 = 2.0f * wood.front().radius;
+    if (!(d0 > 0.0f) || zTop < 0.05f * H) return c;
+
+    // The stem's diameter at height z: the first piece of the chain (root
+    // up) that reaches it; above the chain's top, its last piece's. The
+    // leader's last shoots are stiffened by the side shoots and needles
+    // round them, so no thinner than kSwayStemTopFloor of the base.
+    auto diam = [&](float z) {
+        const float floor = kSwayStemTopFloor * d0;
+        for (const auto& w : wood) {
+            if (std::max(w.z0, w.z1) >= z) return std::max(2.0f * w.radius, floor);
+        }
+        return std::max(2.0f * wood.back().radius, floor);
+    };
+    double drag = 0.0;
+    for (const auto& l : load) drag += l.force;
+    if (!(drag > 0.0)) return c;
+
+    // The bend: a stem grown to its load is strained alike along its length,
+    // so its curvature is 2 strain / d, most where it is thinnest; above the
+    // leader's wood (a broadleaf past its last fork) it is straight.
+    constexpr int N = 96;
+    const float dz = H / N;
+    std::vector<float> kap(N + 1, 0.0f), th(N + 1, 0.0f), y(N + 1, 0.0f);
+    for (int k = 0; k <= N; ++k) kap[k] = k * dz > zTop ? 0.0f : 2.0f * kSwayStemStrain / diam(k * dz);
+    for (int k = 1; k <= N; ++k) {
+        th[k] = th[k - 1] + 0.5f * (kap[k - 1] + kap[k]) * dz;
+        y[k] = y[k - 1] + 0.5f * (th[k - 1] + th[k]) * dz;
+    }
+    // The root plate's turn: kSwayRootShare of the stem's own bend at the top.
+    const float root = kSwayRootShare * y[N] / H;
+    for (int k = 0; k <= N; ++k) y[k] += root * k * dz;
+    const float top = y[N];
+    if (!(top > 0.0f)) return c;
+    c.length = H;
+    c.sway = std::clamp(top / H, 0.0f, 0.5f);
+    // The shape as h^p, matched on its area over the height (a uniform
+    // beam's end-loaded bend is p 1.67, a tapered stem's more, the root's
+    // turn alone 1).
+    double area = 0.0;
+    for (int k = 1; k <= N; ++k) area += 0.5 * (y[k - 1] + y[k]) / top / N;
+    c.shape = std::clamp(static_cast<float>(1.0 / std::max(area, 1e-3) - 1.0), kSwayShapeRange[0], kSwayShapeRange[1]);
+
+    // The frequency, Rayleigh's over that bend: the energy it stores (the
+    // stem's E I kappa^2, its modulus softened by kSwayStemGain, and the
+    // root plate's moment through its turn) over the mass it moves.
+    const float E = kSwayWoodModulus / kSwayStemGain;
+    double energy = 0.0;
+    for (int k = 0; k <= N; ++k) {
+        const float d = diam(k * dz);
+        const double EI = E * pi * std::pow(static_cast<double>(d), 4.0) / 64.0;
+        energy += (k == 0 || k == N ? 0.5 : 1.0) * EI * kap[k] * kap[k] * dz;
+    }
+    energy += E * pi * std::pow(static_cast<double>(d0), 4.0) / 64.0 * kap[0] * root;
+    double mass = 0.0;
+    for (const auto& l : load) {
+        float s = l.z >= H ? (top + (th[N] + root) * (l.z - H)) / top : 0.0f;
+        if (l.z < H) {
+            const float u = std::max(l.z, 0.0f) / dz;
+            const int k = std::min(static_cast<int>(u), N - 1);
+            s = (y[k] + (y[k + 1] - y[k]) * (u - k)) / top;
+        }
+        mass += static_cast<double>(l.mass) * s * s;
+    }
+    const double stiff = energy / (static_cast<double>(top) * top);
+    c.freq = mass > 0.0 ? std::clamp(static_cast<float>(std::sqrt(stiff / mass) / (2.0 * pi)), 0.08f, 12.0f) : 12.0f;
+    return c;
+}
+
 float packSwayAxis(const Vec3& axis) {
     float x = axis.x, y = axis.y, z = axis.z;
     const float l1 = std::fabs(x) + std::fabs(y) + std::fabs(z);
@@ -367,13 +474,25 @@ Cantilever unpackSwayLimb(float word) {
             logValue(w & 255u, kSwayLengthRange, 8)};
 }
 
+// The trunk's shape exponent in 6 bits: code 0 unset (the uniform beam's
+// bend), 1 .. 63 linear over kSwayShapeRange.
+static uint32_t shapeCode(float p) {
+    if (!(p > 0.0f)) return 0;
+    const float t = (p - kSwayShapeRange[0]) / (kSwayShapeRange[1] - kSwayShapeRange[0]);
+    return 1u + static_cast<uint32_t>(std::lround(std::clamp(t, 0.0f, 1.0f) * 62.0f));
+}
+
 float packSwayTrunk(const Cantilever& t) {
-    return static_cast<float>((logCode(t.freq, kSwayFreqRange, 12) << 12) | logCode(t.sway, kSwaySwayRange, 12));
+    return static_cast<float>((logCode(t.freq, kSwayFreqRange, 9) << 15) | (logCode(t.sway, kSwaySwayRange, 9) << 6) |
+                              shapeCode(t.shape));
 }
 
 Cantilever unpackSwayTrunk(float word) {
     const uint32_t w = wordOf(word);
-    return {logValue(w >> 12, kSwayFreqRange, 12), logValue(w & 4095u, kSwaySwayRange, 12), 0.0f};
+    Cantilever c{logValue(w >> 15, kSwayFreqRange, 9), logValue((w >> 6) & 511u, kSwaySwayRange, 9), 0.0f};
+    const uint32_t s = w & 63u;
+    c.shape = s == 0 ? 0.0f : kSwayShapeRange[0] + (kSwayShapeRange[1] - kSwayShapeRange[0]) * static_cast<float>(s - 1u) / 62.0f;
+    return c;
 }
 
 void writeVegetation(float* o, const SegmentSway& s, const Vec3& anchor,

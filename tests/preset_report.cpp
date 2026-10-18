@@ -129,7 +129,9 @@ int main(int argc, char** argv) {
                 const auto& s = sw[i];
                 const float y = segs[i].to.y - p.origin.y;
                 const int b = std::clamp(static_cast<int>(y / std::max(top, 1e-3f) * kBands), 0, kBands - 1);
-                trunkTip[b] = std::max(trunkTip[b], s.trunk.sway * s.trunk.length * bend(std::clamp(y / s.height, 0.0f, 1.3f)));
+                const float h = std::clamp(y / s.height, 0.0f, 1.0f);
+                trunkTip[b] = std::max(trunkTip[b], s.trunk.sway * s.trunk.length *
+                                                        (s.trunk.shape > 0.0f ? std::pow(h, s.trunk.shape) : bend(h)));
                 const bool limbStart = s.limb.sway > 0.0f && s.weightFrom == 0.0f;
                 if (!limbStart) continue;
                 const float yb = segs[i].from.y - p.origin.y;
@@ -143,8 +145,8 @@ int main(int argc, char** argv) {
                     limbF[bb] = s.limb.freq;
                 }
             }
-            std::printf("           trunk %.2f Hz sway %.4f\n", sw.empty() ? 0.0f : sw[0].trunk.freq,
-                        sw.empty() ? 0.0f : sw[0].trunk.sway);
+            std::printf("           trunk %.2f Hz sway %.4f shape h^%.2f\n", sw.empty() ? 0.0f : sw[0].trunk.freq,
+                        sw.empty() ? 0.0f : sw[0].trunk.sway, sw.empty() ? 0.0f : sw[0].trunk.shape);
             for (int b = 0; b < kBands; ++b) {
                 std::printf("           band %d: trunk %.3f m  limb tip %.3f m (d %.3f L %.2f f %.2f Hz)  twig %.3f m\n", b,
                             trunkTip[b], limbTip[b], limbD[b], limbL[b], limbF[b], twigTip[b]);

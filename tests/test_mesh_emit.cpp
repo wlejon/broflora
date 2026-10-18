@@ -1113,6 +1113,31 @@ TEST(sway_trunk_limbs_and_twigs) {
     }
 }
 
+// The trunk as its stem bends: strained alike along its length, so the
+// slim top bends most, a slender stem leans further than a stout one, and
+// a heavier crown rings slower.
+TEST(sway_stem_terms) {
+    // A 10 m stem tapering from `d0` to `d1`, its crown's drag and mass at 8 m.
+    auto stem = [](float d0, float d1, float crownMass) {
+        std::vector<SwayStemWood> wood;
+        for (int k = 0; k < 20; ++k) {
+            const float a = k / 20.0f, b = (k + 1) / 20.0f;
+            wood.push_back({10.0f * a, 10.0f * b, 0.5f * (d0 + (d1 - d0) * a)});
+        }
+        std::vector<SwayStemLoad> load{{8.0f, 200.0f, crownMass}, {4.0f, 0.0f, 100.0f}};
+        return swayStem(wood, load, 10.0f);
+    };
+    const Cantilever cone = stem(0.3f, 0.03f, 300.0f), column = stem(0.3f, 0.3f, 300.0f);
+    ASSERT(cone.freq > 0.1f && cone.freq < 2.0f && cone.length == 10.0f, "a 10 m stem sways below 2 Hz");
+    ASSERT(cone.sway > column.sway && cone.shape > column.shape, "a tapered top bends more, and nearer the top");
+    ASSERT(column.shape > kSwayShapeRange[0] && cone.shape <= kSwayShapeRange[1], "the shape stays in its range");
+    const Cantilever slender = stem(0.15f, 0.015f, 300.0f);
+    ASSERT(std::fabs(slender.sway / cone.sway - 2.0f) < 0.05f, "half as thick leans twice as far (2 strain / d)");
+    ASSERT(stem(0.3f, 0.03f, 1200.0f).freq < 0.6f * cone.freq, "a heavier crown rings slower");
+    std::vector<SwayStemWood> wood{{0.0f, 10.0f, 0.15f}};
+    ASSERT(swayStem(wood, {{8.0f, 0.0f, 300.0f}}, 10.0f).freq == 0.0f, "no drag: no lean (the caller's bare beam)");
+}
+
 // The stiffness terms: a cantilever's first mode by Rayleigh, f = sqrt(k / m)
 // / 2 pi with k = 3 E I / L^3, and its tip deflection under drag F / k.
 TEST(sway_cantilever_terms) {
@@ -1180,9 +1205,12 @@ TEST(sway_cantilever_terms) {
     const Cantilever back = unpackSwayLimb(packSwayLimb(base));
     ASSERT(std::fabs(back.freq / base.freq - 1.0f) < 0.03f && std::fabs(back.sway / base.sway - 1.0f) < 0.03f &&
            std::fabs(back.length / base.length - 1.0f) < 0.03f, "limb word round-trips");
-    const Cantilever tback = unpackSwayTrunk(packSwayTrunk(trunk));
-    ASSERT(std::fabs(tback.freq / trunk.freq - 1.0f) < 0.003f && std::fabs(tback.sway / trunk.sway - 1.0f) < 0.003f,
-           "trunk word round-trips");
+    Cantilever shaped = trunk;
+    shaped.shape = 2.3f;
+    const Cantilever tback = unpackSwayTrunk(packSwayTrunk(shaped));
+    ASSERT(std::fabs(tback.freq / trunk.freq - 1.0f) < 0.012f && std::fabs(tback.sway / trunk.sway - 1.0f) < 0.012f &&
+           std::fabs(tback.shape - 2.3f) < 0.05f, "trunk word round-trips");
+    ASSERT(unpackSwayTrunk(packSwayTrunk(trunk)).shape == 0.0f, "an unset shape stays unset");
     float phase = 0.0f;
     const Cantilever wback = unpackSwayTwig(packSwayTwig(0.53f, spray), &phase);
     ASSERT(std::fabs(phase - 0.53f) <= 1.0f / 64.0f && std::fabs(wback.freq / spray.freq - 1.0f) < 0.12f,
