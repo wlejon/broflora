@@ -3984,6 +3984,16 @@ elbowed at 5 m, a saguaro's outline at 20 to 150 m. Not yet: its arms
 and top end in a point (the forest drawer narrows every bark tip to 0.3
 of itself), not a blunt dome.
 
+A succulent (an agave), the palm's parts at ground level: a stem 6 cm
+tall topped by a rosette of 22 leaves, each a module that never branches
+and so tapers to its point, the inner near upright, the outer spreading;
+pipe exponent 3 (at 1 the 22 leaves summed to a stem a metre across).
+Its leaves are its wood, blue-green and smooth, so it carries no clumps:
+`clumpScale` 0 now means leafless (it fell back to 1; nothing set it),
+since its leaves' tips are thin enough that the placer hung broad leaves
+on them. A blue-green rosette 0.8 m tall at 2.5 to 20 m; past that it is
+under the bark's cut.
+
 Still open:
 
 - Pine and spruce seen from above in By size (canopy shot): grey-green

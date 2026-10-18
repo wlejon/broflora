@@ -196,7 +196,8 @@ struct Species {
     //   leafForm    LeafForm: broad leaves, needles, or scale-leaf sprays
     //   leafColor   the leaves' mean albedo (linear; 0,0,0: the renderer's own)
     //   barkColor   the bark's (0,0,0: the renderer's own)
-    //   clumpScale  the crown clumps' size, x what the emit's options give
+    //   clumpScale  the crown clumps' size, x what the emit's options give;
+    //               0 none: leafless (a succulent's leaves drawn as its wood)
     //   leafSize    a leaf's size, x the renderer's card (a boxwood's small
     //               leaves 0.3); its clumps carry 1/leafSize^2 the leaves,
     //               so they cover as much

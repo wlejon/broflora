@@ -306,6 +306,28 @@ std::optional<PresetDef> presetDef(std::string_view name) {
         s.barkColor = rgb(0.30f, 0.26f, 0.21f);
         return d;
     }
+    // Succulent (an agave): a stemless rosette of thick, fleshy, pointed
+    // leaves, the inner near upright and the outer spreading, each drawn as
+    // its own wood (a module that never branches, tapering to its point);
+    // no clumps (every leaf past the clumps' limit).
+    if (name == "succulent") {
+        d.habit = "shrub";
+        d.species = shrubBase();
+        d.root = palmTrunkModule(0.06f, 22, "succulent:root");
+        d.leader = frondModule(0.55f, "succulent:leader");
+        Species& s = d.species;
+        s.growthScale = 1.6f; s.orthotropy = 0.0f; s.tropismG2 = 0.0f; s.kink = 0.0f;
+        s.pipeExp = 3.0f;
+        s.leafDiameter = 0.08f;
+        s.sag = 2.0f;
+        s.clumpScale = 0.0f;   // leafless: its leaves are its wood
+        s.clumpFill = 0.0f; s.clumpInner = 0.0f;
+        bark(s, 0.0f, 1.0f, 0.0f, 0.0f);
+        s.barkMoss = 0.0f;
+        s.branchCollar = 0.0f;
+        s.barkColor = rgb(0.20f, 0.30f, 0.24f);
+        return d;
+    }
     // Cactus (a saguaro): a thick, ribbed green column whose few arms leave
     // it level and turn straight up; no leaves (its stems are all thicker
     // than any shoot that carries them).
@@ -561,7 +583,7 @@ const std::vector<std::string>& speciesPresetNames() {
     static const std::vector<std::string> names = {
         "oak", "elm", "beech", "birch", "willow", "palm", "cactus",
         "pine", "spruce", "fir", "cedar", "redwood", "cypress", "juniper",
-        "boxwood", "holly", "hydrangea", "hibiscus", "lavender",
+        "boxwood", "holly", "hydrangea", "hibiscus", "lavender", "succulent",
     };
     return names;
 }

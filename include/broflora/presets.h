@@ -18,7 +18,9 @@
 //              (plagiotropic) and drooping, level, rising or turning up
 //              (columnar) as the species carries them
 //   shrub      boxwood, holly, hydrangea, hibiscus, lavender: a clump of
-//              stems from the ground, small dense modules over them
+//              stems from the ground, small dense modules over them;
+//              succulent (an agave: a stemless rosette of thick pointed
+//              leaves drawn as its wood, leafless otherwise)
 //
 // What a renderer draws the foliage as (Species::leafForm), its colour and
 // the bark's ride in the Species too; bro.flora's JS layer pairs each leaf
