@@ -78,11 +78,16 @@ struct Species {
     //   barkScale     the ridges' spacing, x the default (which already
     //                 widens with the girth)
     //   barkMoss      moss and lichen, 0 none .. 1 lush
+    //   barkRibs      0 bark of plates parted by furrows; 1 ribbed: unbroken
+    //                 ridges running the length of the stem, the same number
+    //                 round it however thick (a cactus's), more the smaller
+    //                 barkScale, as deep as barkFurrow
     //   rootFlare     the trunk's swell where it meets the ground, x its radius
     //   branchCollar  a side branch's swell where it leaves its parent, x its radius
     float barkFurrow   = 0.55f;
     float barkScale    = 1.0f;
     float barkMoss     = 0.5f;
+    float barkRibs     = 0.0f;
     float rootFlare    = 0.6f;
     float branchCollar = 0.5f;
 

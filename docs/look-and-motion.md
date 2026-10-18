@@ -3970,6 +3970,20 @@ column at 20 m. Not yet: the fronds carry the broad-leaf clumps (bunches
 of narrow leaves), not leaflets in two ranks along the rachis, so they
 do not read as feathers; that is the shoot shader's to draw.
 
+A cactus (a saguaro), from the same parts and one new bark. Its root
+module is a column with three arms leaving its upper part level and
+turning up at an elbow; the leader and arms lengthen only (maxBranchOrder
+1, heightMax 5 m), and a leaf diameter of 0.3 m keeps every stem past
+the clumps' 5 cm limit, so it carries none. Plated bark, at any scale,
+read as snakeskin or speckle; `Species::barkRibs` (world format 12, the
+bark word's top bit, its moss now 7 bits) draws ribbed bark instead: 48
+/ barkScale ridges round the stem whatever its girth, unbroken along it,
+rounded with sharp valleys, a third of their spacing deep times the
+furrow, a row of pale areoles on each crest. It stands 6.2 m, ribbed and
+elbowed at 5 m, a saguaro's outline at 20 to 150 m. Not yet: its arms
+and top end in a point (the forest drawer narrows every bark tip to 0.3
+of itself), not a blunt dome.
+
 Still open:
 
 - Pine and spruce seen from above in By size (canopy shot): grey-green

@@ -572,6 +572,7 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readFloatField(spec, "barkFurrow",                  s.barkFurrow);
     readFloatField(spec, "barkScale",                   s.barkScale);
     readFloatField(spec, "barkMoss",                    s.barkMoss);
+    readFloatField(spec, "barkRibs",                    s.barkRibs);
     readFloatField(spec, "rootFlare",                   s.rootFlare);
     readFloatField(spec, "branchCollar",                s.branchCollar);
     readFloatField(spec, "terrainAnchorWeight",         s.terrainAnchorWeight);
@@ -685,6 +686,7 @@ inline Value speciesObject(const broflora::Species& s) {
     num("barkFurrow", s.barkFurrow);
     num("barkScale", s.barkScale);
     num("barkMoss", s.barkMoss);
+    num("barkRibs", s.barkRibs);
     num("rootFlare", s.rootFlare);
     num("branchCollar", s.branchCollar);
     num("terrainAnchorWeight", s.terrainAnchorWeight);

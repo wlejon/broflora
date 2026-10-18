@@ -268,6 +268,11 @@ TEST(forest_bark_records_carry_the_path_and_the_bark_word) {
     unpackBarkWord(f.segmentVegetation[b.segStart * 16 + 11], furrow, scale, moss);
     ASSERT(std::fabs(furrow - 0.9f) < 0.005f && std::fabs(scale - 2.0f) < 0.05f && std::fabs(moss - 0.1f) < 0.005f,
            "the species' bark in every record");
+    bool ribs = true;
+    unpackBarkWord(f.segmentVegetation[b.segStart * 16 + 11], furrow, scale, moss, ribs);
+    ASSERT(!ribs, "plated bark unless the species is ribbed");
+    unpackBarkWord(packBarkWord(1.0f, 4.0f, 1.0f, true), furrow, scale, moss, ribs);
+    ASSERT(ribs && furrow == 1.0f && std::fabs(scale - 4.0f) < 0.05f && moss == 1.0f, "ribbed, every field at its top");
     unpackBarkWord(0.0f, furrow, scale, moss);
     const Species dflt;
     ASSERT(furrow == dflt.barkFurrow && scale == dflt.barkScale && moss == dflt.barkMoss, "an unset word: the defaults");

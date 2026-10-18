@@ -190,6 +190,35 @@ BranchModulePrototype frondModule(float length, const char* name) {
     return p;
 }
 
+// A columnar cactus's stem: a column `height` tall, its top the leader
+// (terminal 0), with `arms` arms leaving its upper half level and turning
+// straight up, each arm's end a terminal facing up.
+BranchModulePrototype cactusTrunkModule(float height, uint32_t arms, const char* name) {
+    BranchModulePrototype p;
+    p.name = name;
+    constexpr uint32_t n = 8;
+    for (uint32_t i = 0; i <= n; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(n);
+        p.nodes.push_back({{0.0f, height * t, 0.0f}, 0.03f * i, 1.0f, 1.0f});
+        if (i) p.edges.push_back({i - 1, i});
+    }
+    p.rootNode = 0;
+    p.terminalNodes.push_back(n);
+    for (uint32_t k = 0; k < arms; ++k) {
+        const uint32_t at = 5 + (k * 3 % 3);   // nodes 5..7: the column's upper part
+        const float a = static_cast<float>(k) * 2.39996f + 0.7f;
+        const Vec3 out{std::cos(a), 0.0f, std::sin(a)};
+        const Vec3 base = p.nodes[at].position;
+        const float age = p.nodes[at].ageAtBirth + 0.1f;
+        p.nodes.push_back({base + out * 0.6f + Vec3{0.0f, 0.05f, 0.0f}, age, 1.0f, 1.0f});
+        p.edges.push_back({at, static_cast<uint32_t>(p.nodes.size() - 1)});
+        p.nodes.push_back({base + out * 0.8f + Vec3{0.0f, 0.3f, 0.0f}, age + 0.05f, 1.0f, 1.0f});
+        p.edges.push_back({static_cast<uint32_t>(p.nodes.size() - 2), static_cast<uint32_t>(p.nodes.size() - 1)});
+        p.terminalNodes.push_back(static_cast<uint32_t>(p.nodes.size() - 1));
+    }
+    return p;
+}
+
 void bark(Species& s, float furrow, float scale, float moss, float flare) {
     s.barkFurrow = furrow;
     s.barkScale = scale;
@@ -275,6 +304,27 @@ std::optional<PresetDef> presetDef(std::string_view name) {
         s.petiole = 0.0f;
         bark(s, 0.2f, 0.5f, 0.0f, 0.4f);
         s.barkColor = rgb(0.30f, 0.26f, 0.21f);
+        return d;
+    }
+    // Cactus (a saguaro): a thick, ribbed green column whose few arms leave
+    // it level and turn straight up; no leaves (its stems are all thicker
+    // than any shoot that carries them).
+    if (name == "cactus") {
+        d.habit = "broadleaf";
+        d.species = broadleafBase();
+        d.root = cactusTrunkModule(2.2f, 3, "cactus:root");
+        d.leader = straightModule();
+        Species& s = d.species;
+        s.growthScale = 1.6f; s.orthotropy = 1.0f; s.tropismG2 = 0.0f; s.apicalControl = 0.5f;
+        s.apicalDominance = 1.0f;
+        s.maxBranchOrder = 1.0f;   // the arms only lengthen
+        s.heightMax = 5.0f;
+        s.kink = 0.0f;
+        s.pipeExp = 3.0f;
+        s.leafDiameter = 0.3f;     // an arm's tip: no shoot thin enough to leaf
+        bark(s, 0.9f, 2.6f, 0.0f, 0.0f);
+        s.barkRibs = 1.0f;   // 18 deep ribs
+        s.barkColor = rgb(0.16f, 0.24f, 0.10f);
         return d;
     }
     // --- conifers ---------------------------------------------------------
@@ -509,7 +559,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
 
 const std::vector<std::string>& speciesPresetNames() {
     static const std::vector<std::string> names = {
-        "oak", "elm", "beech", "birch", "willow", "palm",
+        "oak", "elm", "beech", "birch", "willow", "palm", "cactus",
         "pine", "spruce", "fir", "cedar", "redwood", "cypress", "juniper",
         "boxwood", "holly", "hydrangea", "hibiscus", "lavender",
     };

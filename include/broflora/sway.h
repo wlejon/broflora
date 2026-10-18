@@ -297,13 +297,15 @@ void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s);
 void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s, float along0, float along1,
                              float length);
 
-// The bark word: Species::barkFurrow, barkScale and barkMoss as three 8-bit
-// codes in one float (an integer below 2^24, exact). Code 0 of a field means
-// "unset" (the renderer's default); furrow and moss are linear over 0..1,
-// scale logarithmic over kBarkScaleRange.
+// The bark word: Species::barkFurrow, barkScale and barkMoss as 8-, 8- and
+// 7-bit codes in one float (an integer below 2^24, exact), and the top bit
+// Species::barkRibs (set: ribbed). Code 0 of a field means "unset" (the
+// renderer's default); furrow and moss are linear over 0..1, scale
+// logarithmic over kBarkScaleRange.
 inline constexpr float kBarkScaleRange[2] = {0.25f, 4.0f};
-float packBarkWord(float furrow, float scale, float moss);
+float packBarkWord(float furrow, float scale, float moss, bool ribs = false);
 void unpackBarkWord(float word, float& furrow, float& scale, float& moss);
+void unpackBarkWord(float word, float& furrow, float& scale, float& moss, bool& ribs);
 
 // Bark-mesh vegetation for `mesh` as bromesh::meshBranches laid it out over
 // `segs` with `sides` sides (emitPlantMesh / emitWorldMesh).

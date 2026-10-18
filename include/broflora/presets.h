@@ -9,7 +9,9 @@
 //   broadleaf  oak (spreading), elm (vase), beech (tall), birch (slender, white bark): a clear trunk
 //              topped by scaffold limbs, then monopodial modules; willow
 //              (its young shoots hung by Species::sag); palm (a clear column
-//              topped by a rosette of unbranched fronds, sagging into arches)
+//              topped by a rosette of unbranched fronds, sagging into arches);
+//              cactus (a saguaro: a ribbed green column, arms turning up, no
+//              leaves)
 //   conifer    pine, spruce, fir, cedar, redwood (needles), cypress,
 //              juniper (scale leaves): a monopodial leader that tops each
 //              internode with a whorl of boughs, the boughs branching flat
