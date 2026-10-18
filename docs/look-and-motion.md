@@ -3282,6 +3282,177 @@ All under `broworkshop/demos/forest/captures/`:
 - **The flight budget.** Step 12 adds 0.1 ms median. The budget numbers need
   a re-baseline on this machine, or ring 3 needs a cheaper path.
 
+## Step 12b: the far meadow lit as a sward
+
+Past 30 m the meadow read as a flat yellow-green carpet, speckled pixel by
+pixel, and at golden hour it went acid-yellow and brightened with distance
+(+38 to +45% from a standing eye). The cause was the grazing-angle
+response: a far blade and the turf were lit as one face turned to the eye,
+which a low sun lights fully, plus a near blade's art translucency (about
+four times a blade's front reflection). Now the far sward takes the light
+as its blades do on average (bro `scene_lighting.glsl` `sceneSwardLight`,
+`scene_grass.glsl`, `scene_ground.glsl`, `scene_grass_surface.glsl`,
+`mesh.frag`), all derived at run time.
+
+### What changed
+
+- **The sun on a sward is its blades' mean** (`sceneSwardLight`,
+  `SceneSurface::sward`: the way the blades stand and the weight of this
+  lighting). A blade takes it from 2 to 12 m, the turf where it stands for
+  blades, and a herb's leaves and stems from 8 to 30 m (its blooms keep
+  their own light).
+  - Eight blades, at two tilts (0.35 and 1.0 rad from upright) and four
+    ways round each, weighted by how much of each the eye sees.
+  - A face turned to the light reflects by Lambert. A face turned away lets
+    through the light on its other side: a thin leaf transmits about as
+    much as it reflects in the green (PROSPECT's R ~ T), less blue
+    (`SWARD_TRANSMIT` 0.95/1.0/0.45).
+  - Times the share of the seen blades the light reaches: a turbid canopy
+    (G 0.6) along both lines, with Kuusk's hot spot (width 0.12). Seen
+    across, the eye meets blade sides lit at a slant and the undersides of
+    those leaning away, so a far meadow under a high sun is darker than
+    level ground; under a low sun behind the eye it sees lit faces, looking
+    toward the sun shaded sides with a glow through them.
+  - Plus each blade's cuticle sheen (Blinn 40, Schlick's Fresnel).
+  - The sky's light reaches the sward through its opening: irradiance
+    about the blades' way, not the eye-facing facet (which faced the
+    bright horizon and lit the far golden meadow by itself).
+- **The wind combs the sward one way.** The lay is only downwind (0.5 to
+  1.5 of `GRASS_COMB` 0.6 along the streaks, plus `GRASS_GUST_LEAN` 2.4
+  times the gust) and gathers the blades' leans that way (`SWARD_COMB`
+  0.7), so a gust running across the view turns the faces the eye sees
+  between those lit and those in shade. It starts where the sward's light
+  takes over (2-12 m), not at 10-40 m.
+- **Tussocks, not pixels.** Once a blade is under a few pixels wide its own
+  tone and hue fade into its tussock's (0.42 m cells): many blades share a
+  pixel and their own values average out.
+- **Blooms as dots.** A far herb's bloom is a round head over its fan's top
+  (`grassFanBloom`, at least about a pixel across, cut per pixel), its
+  colour packed in one varying (`grassPackColor`), on proportionally more
+  fans (`GRASS_FAN_BLOOM_AREA` 0.8). The turf's blooms are 0.6 of before to
+  match.
+- **The turf matches the far fans.** Its sward colour takes the blades'
+  mean hue spread and sheaths (`GRASS_BLADE_MEAN_TINT` 1.03/1.025/0.88) and
+  its tops 0.85 (`GRASS_TURF_TOPS`).
+- **Ring 3** is 4 blades a 0.7 m cell at 62 x the width (was 5 at 50): the
+  same cover, a fifth fewer vertices.
+- **Test.** bro `tests/scene/test_grass_floor_turf.js` lights its scene at
+  8 (it sat at 6-10 of 255) and lets the litter be up to 1.6 x the sward
+  seen from above, which now shows its blades' shaded depths.
+
+### Numbers
+
+**Standing eye at 1.7 m, herbs on (`meadowbands`).** Against 2-4 m, for the
+32-64, 64-100 and 100-150 m bands:
+
+| Sky | Measure | Before (step 12) | After |
+|---|---|---|---|
+| Noon | Luma | +4.5/-1.3/+1.8% | -3.5/-1.1/+0.6% |
+| Noon | Sat | +28/+36/+33% | +39/+40/+36% |
+| Golden | Luma | +38/+42/+45% | +16/+13/+15% |
+| Golden | Sun behind | +44/+44/+43% | +26/+24/+24% |
+| Golden | Sun ahead | +30/+38/+44% | +2/+8/+10% |
+
+The 4-32 m bands at golden sit at +12 to +18% (the 2-4 m band looks down
+into the sward), so past 32 m the golden meadow is within a few percent of
+the nearer ground. With the sun behind the eye it is brighter, which is
+the hot spot.
+
+**Ring and hand-over steps (luma / sat), range x1.3 over the same ground:**
+
+| Edge | Noon before | Noon after | Golden before | Golden after |
+|---|---|---|---|---|
+| 55 m | -0.2/-0.9 | +0.6/-0.2 | -0.5/-0.9 | +0.2/+0.1 |
+| 72 m (herbs) | +0.9/-1.9 | +2.1/-1.9 | +1.1/-1.1 | +0.3/-0.7 |
+| 150 m | +4.1/-8.6 | +1.0/-6.1 | -0.2/-5.3 | +1.3/-4.7 |
+
+**Tone by distance, fixed 8° view, herbs on (`meadowtone`).** Luma against
+3 m at 10/30/60/100/150 m:
+
+| Sky | Before | After |
+|---|---|---|
+| Noon | +4.0/+0.6/+1.9/+5.1/+9.1% | -1.9/-8.5/-7.0/-4.7/-1.8% |
+| Golden | +3.9/+0.9/-0.2/+1.0/+6.4% | -9.2/-19.2/-18.4/-16.2/-10.4% |
+
+At one angle the far sward is now darker than the near blades. The near
+blades (step 10) keep their art translucency, about four times a blade's
+front reflection; the far ones take the physical mean. The standing eye
+shows no step (the hand-over runs from 2 to 12 m), but see Still open.
+
+**Motion, gusty far meadow (`motion.js meadow`).** Change in time (levels
+rms), travel and best-match correlation per slit:
+
+| Slit | Before | After |
+|---|---|---|
+| 30 m | 9.08, -9.7 m/s, 0.86 | 6.07, -1.3 m/s, 0.69 |
+| 60 m | 8.59, -6.5 m/s, 0.80 | 7.23, -3.9 m/s, 0.72 |
+| 100 m | 8.89, -6.5 m/s, 0.91 | 6.22, -4.3 m/s, 0.85 |
+| 150 m | 2.82, -3.2 m/s, 0.84 | 2.86, -3.2 m/s, 0.78 |
+
+Waves still travel at every slit (the slit image shows diagonal bands at
+30-100 m), but the waves are weaker, and at 30 m travel is borderline
+(between -0.6 and -7 m/s from run to run as the comb was tuned). No
+noise-like, jittery or flickering blocks; flicker p90 0.27 levels; no
+flashes.
+
+**Flight trace (1280x720, no other bro-headless, base and new back to
+back).** HEAD is now bro 5957cbc6 (with step 11c). It runs median 4.48 to
+4.67 ms, p95 5.37 to 5.50, max 6.1 to 8.5. That is over the budget
+(median 4.4, p95 5.1, max 6.0) before any grass change. Per pass, median
+frame:
+
+| | Grass | Ground | Forest | Shadow |
+|---|---|---|---|---|
+| Base | 0.37 | 0.15 | 3.33 | 0.45 |
+| New | 0.33 | 0.19 | 3.14 (noise) | 0.45 |
+
+Ring 3 at 4 blades saves 0.04 ms. The turf's sward light costs 0.04 ms.
+Grass plus ground is unchanged at 0.52 ms. With the earlier 5-blade ring 3
+the whole flight ran +0.02 to +0.15 ms median.
+
+**The max frame** (7.5-8.5 ms at t≈26-28 s, under the canopy) is not
+grass. Grass is under 0.2 ms of it. It is the forest's near leaves:
+`forest:leafNear:needle` 1.7 ms, `forest:leafCard:needle` 1.3 ms,
+`forest:leafNear:broad` 0.5 ms, clumps 0.7 ms (`BRO_SCENE_GPU_PASSES=6`).
+
+**Tests.** `validate.sh demos/forest demos/grove`, bro `tests/run_tests.sh
+grass` and `bro_vulkan_scene_test` pass. In `flora`, `test_forest.js`
+("close up: every leaf, full bark") fails on HEAD 5957cbc6 with HEAD's
+shaders as well; it is not this step.
+
+### Captures
+
+All under `broworkshop/demos/forest/captures/`:
+
+- Before: `s12b_meadow_{noon,golden}_{0.5m,3m,30m,60m,150m,skim60,skim150}.jpg`,
+  `s12b_understory_*.jpg`, `s12e0_{noon,golden}_*.jpg` (tone views and
+  standing views), `s12e0_meadowbands.json`, `s12e0_meadowtone.json`.
+- After: `s12f_meadow_{noon,golden}_{0.5m,3m,30m,60m,150m,skim60,skim150}.jpg`,
+  `s12f_understory_{noon,golden}.jpg`, `s12f_{noon,golden}_view{0,2}.jpg`
+  (standing eye, the woods' edge), `s12f_meadowbands.json`,
+  `s12f_meadowtone.json`. The golden s12f stills and the after motion run
+  were drawn with HEAD's ring 3 (5 blades), the rest with 4.
+- Motion: `motion/s12e_before/` and `motion/s12f_after/`
+  (`forest_meadow_gusty_motion*`, the slit image shows the waves).
+
+### Still open
+
+- **Near against far at one angle.** At a fixed 8° the far sward is 7-9%
+  darker at noon and 16-19% at golden than the 3 m blades. The near
+  blades' translucency is an art value about four times physical. Bring
+  the near blades onto the same light (sward weight below 1 with their own
+  normals) and recalibrate the near look against it.
+- **Gust waves at 30 m.** They are weaker than step 12's facet tilt gave.
+  The sward's mean barely changes when blades tilt across the view under a
+  high sun; the comb's gathering carries most of it. A stronger cue may be
+  the blades' paler undersides as they bend.
+- **The 150 m edge.** The turf past the last ring is still 5-6% less
+  saturated, with +3 to +4 levels of blue. The turf's colour tint barely
+  moves it, so it is in the turf's sky light or roots.
+- **Golden, sun behind.** It is +24% past 32 m, the hot spot. Real fields
+  do this, but its width (0.12) is a guess.
+- **The budget** needs the forest's near leaves, not grass.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
