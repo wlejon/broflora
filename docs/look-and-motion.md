@@ -3453,6 +3453,129 @@ All under `broworkshop/demos/forest/captures/`:
   do this, but its width (0.12) is a guess.
 - **The budget** needs the forest's near leaves, not grass.
 
+## Step 13: flight in budget, round near wood, foxglove bells
+
+After 11c the flight at 1280x720 (4x MSAA) on a quiet GPU missed its
+budget (max ≤ 6.0, p95 ≤ 5.1, median ≤ 4.4 ms): max 7.3-8.4, p95
+5.3-5.5, median 4.4-4.5. Inside a crown the branches within 1-2 m showed
+faceted sides, flat-shaded bands and offsets at their joints, and twigs a
+few centimetres from the eye crossed the sky as thick dark rods. The
+foxglove's bells were plain pink cones. All of it is still derived at run
+time; nothing is baked.
+
+### What changed
+
+- **Wood drawn indexed.** Bark and twig draws are `vkCmdDrawIndexed` over
+  a fixed index pattern per side count (`woodIndices`,
+  scene_mesh_drawer_forest.cpp; ForestTube in scene_mesh_drawer.cpp). A
+  bark segment shades its two rings' 2(N+1) points, was 6N, and a twig
+  piece its 4 corners, was 6 (`forestTubeVertexMorph`,
+  mesh_forest_tube.vert decode the indexed numbering).
+- **Round near bark, seamless joints.** A tree whose trunk is wider than
+  `barkFineSides` (2.5, a new Lod field) times `barkSidesPixels` draws
+  20 sides (`forest:bark20` groups), else 10 or 5 as before. Each ring
+  geomorphs by its own width on screen: 5 → 10 over 1-2 x
+  barkSidesPixels, 10 → 20 over 2.5-5 x, a point on the coarser level's
+  chord (`forestTubeMorph`, scene_forest_tube.glsl). So a ring of a given
+  width has one outline whichever side count its tree draws, and neither
+  the tree's switch nor the narrowing toward the twigs shows a step.
+  `barkSurface` renormalises its ring coordinates, so the bark pattern is
+  round, not banded per facet.
+- **Branch ends narrow.** ForestNode's segment records end each segment
+  at the thickest radius going on from its end, or 0.3 x itself at a tip
+  (`kTipTaper`), so a limb steps down into its children rather than
+  ending in a flat cut wider than what leaves it.
+- **Twigs as small cylinders.** The twig ribbon sends only its normal's
+  sideways part; mesh.frag rounds it out toward the eye into a cylinder's
+  normal once the twig is a few pixels wide. Thinner, it keeps the
+  ribbon's two faces: lit toward the eye, a twig of a pixel or two stood
+  out against the leaves and the gusty plant run's middle region flickered
+  more (295 blocks against 280). The bark coordinates run on along a chain
+  of pieces (`alongM`, an angle per clump), so the bark does not jump at a
+  joint. Within 5-18 cm of the eye a twig slims to 0.45 of its radius
+  (`FOREST_TWIG_SLIM_AT`), and it gives way within 3-8 cm
+  (`FOREST_TWIG_NEAR`, was 3-10). The rod a few centimetres from the eye
+  is now a thin round twig.
+- **Foxglove bells** (`herbFoxgloveBell`, scene_herb_surface.glsl), cut per
+  pixel on the raceme card:
+  - Each bell is a lipped tube that flares to a longer lower lip, round
+    shaded from above with faint ridges and green sepals at its base.
+  - The throat is a paler cream with dark spots ringed white, under a dark
+    hollow beneath the upper lip.
+  - Most bells hang to one side (14% to the other), opening down and out
+    and foreshortened as they turn.
+  - They grade smaller up the spike into paler, then green, buds.
+  - The raceme card is wider for a foxglove (4.2 x the bell, shifted 0.15,
+    scene_herb.glsl).
+  - The bluebell (secund) path is unchanged.
+
+### Numbers
+
+- Flight, quiet GPU (no other bro-headless at any point), back to back,
+  base (`binbase`, 5957cbc6 shaders, `barkFineSides` 0) against step 13:
+
+  | run | max | p95 | median |
+  | --- | --- | --- | --- |
+  | base `qb5` | 7.31 | 5.32 | 4.44 |
+  | step 13 `qm5` | 5.96 | 5.00 | 3.98 |
+  | base `qb6` | 8.40 | 5.45 | 4.51 |
+  | step 13 `qm6` | 5.86 | 4.92 | 3.98 |
+
+  The step 13 runs predate one change: limiting the twigs' rounding to
+  twigs a few pixels wide, a fragment-only change. All three are within
+  budget in both runs. Base's slow frames are the
+  0.3-0.7 s runs at t ≈ 26-29 s (eye 2-6 m among the leaves). In the
+  step 13 runs these stay under 6.0 ms. Before this, two runs with
+  another agent's bro-headless running read p95 11.8 and max 17.7 ms: an
+  unquiet GPU's numbers are not the flight's.
+- Per band (`capture.js metrics`, `s14base` → `s14w`): every band within
+  0.2 (for example, canopy noon 20-40 m 112.2/111.0 → 112.1/111.0).
+- Handover strips, base against step 13, PSNR: leaves 43.5, cards 42.4,
+  clumps 54.8, crowns 76.6 dB. The steps at 28.6 m and 264 m are as
+  they were.
+- Twig oracle (`motion.js twigs`): unchanged, gusty p95 6.65 mm, max
+  11.63; breeze p95 3.37, max 5.71.
+- Gusty plant run (grove `plant tree wind=gusty`), flickering blocks and
+  events (pop + flash + kick) per region, top / middle / bottom:
+
+  | run | flickering blocks | events |
+  | --- | --- | --- |
+  | base (two runs) | 171-177 / 280-284 / 256-257 | 167-169 / 187-188 / 207-218 |
+  | step 13 | 172 / 276 / 266 | 161 / 183 / 180 |
+
+  Events are down in every region and flicker p90 levels are within 0.06.
+  With the twigs rounded at every width the middle region read 295-299.
+- `validate.sh demos/forest demos/grove` and bro `tests/flora` pass
+  (test_forest expects 20 sides close up and checks that the sides step
+  20, 10, 5 by width).
+
+### Captures
+
+- Before (5957cbc6 shaders, the 11c binary) and after, full frame, inside,
+  1 m and 3 m, noon and golden:
+  `broworkshop/demos/forest/captures/{before14,after14}_{broadleaf,shrub}_{noon,golden}_{inside,1m,3m}.png`,
+  `broworkshop/demos/grove/captures/{before14,after14}_{broadleaf,hydrangea}_{noon,golden}_{inside,1m,3m}.png`.
+- Foxglove close-up (0.6 / 1.5 / 4 m):
+  `broworkshop/demos/grove/captures/{before14,after14}_foxglove_{noon,golden}.jpg`.
+- Metrics: `broworkshop/demos/forest/captures/{s14base,s14w}_metrics.json`.
+  Handover strips: `{s14base,s14w}_handover_{leaves,cards,clumps,crowns}_strip.png`.
+  Traces: `{qb5,qm5,qb6,qm6}_trace.json`.
+- Motion: `broworkshop/demos/grove/captures/motion/{s14base,s14base2,s14w,s14var7}_plant_tree_gusty_motion*`,
+  `{s14base,s14w}_twigs_{gusty,breeze}.txt`.
+
+### Still open
+
+- Twig joints still read as polyline kinks at about 1 m: the wood is now
+  round, but the path is straight between nodes.
+- Thin twigs at 3-10 m have a stipple of single pixels along them, from
+  bark detail under a pixel across.
+- Canopy By size against Leaves: 20-40 m -1.1 (noon), 80-160 m +3.1.
+- The shadow cascade's end at about 190 m has no fade. That is
+  scene_lighting.glsl, which step 12b was editing; it is left for a pass
+  of its own.
+- The p95 margin is 0.1-0.2 ms. The near leaves (needle leaves and cards
+  at t ≈ 26-28 s) are the next place to look.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
