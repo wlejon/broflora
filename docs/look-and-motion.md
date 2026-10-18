@@ -4029,7 +4029,10 @@ Still open:
   pads with none of the pine's orange limbs; needle-only skim at golden
   10-18 levels less red than the leaves. (The 80 m brightness is fixed,
   above; the limbs are the same sub-pixel bark cut.)
-- Shrubs: clumps 7-14 levels darker than their leaves at noon; the
+- Shrubs: clumps 7-14 levels darker than their leaves at noon (bro
+  a6143926 capped a lobe's self-shade at 0.75 optical depth: 10 / 20 m
+  -8.2 / -8.1 -> -6.7 / -6.6; the rest is neither the cast shade, which
+  shadow=0 leaves at -7.6 / -10, nor the lobe's shell path); the
   darkest species still darker and more speckled than their leaves in the
   canopy view; crowns tier pinholes (cover 71% against 87% at 10 m).
 - Broadleaf crowns in By size read paler and cottony up close (canopy
