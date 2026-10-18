@@ -65,7 +65,11 @@ std::vector<TubeSegment> tubeSegments(const std::vector<bromesh::BranchSegment>&
         if (hasParent && segs[p].radius > 0.0f)
             t.rFrom = continues ? segs[p].radius : std::min(segs[p].radius, 1.5f * s.radius);
         const Vec3 di = dirOf(i);
-        t.tangentFrom = continues ? bisect(dirOf(static_cast<size_t>(p)), di) : di;
+        // A side branch leaves its parent half along it, so the curve through
+        // its ends (bro's forestHermite) sweeps out of the parent's wood
+        // rather than leaving it at an elbow, and its first ring lies tilted
+        // into the parent, not across it.
+        t.tangentFrom = hasParent ? bisect(dirOf(static_cast<size_t>(p)), di) : di;
         t.tangentTo = mainChild[i] >= 0 ? bisect(di, dirOf(static_cast<size_t>(mainChild[i]))) : di;
         t.segment = static_cast<int32_t>(i);
 
