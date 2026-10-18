@@ -3879,7 +3879,43 @@ Before -> after (top; `s16base_young.txt`, `s16now.txt` in
   demos/grove` 4/4.
 
 Still open: the flight trace on this step; a strip of the tall conifer
-holding its lean in steady strong wind for the user to judge.
+holding its lean in steady strong wind for the user to judge (sent as a
+strong-wind grove video; the held lean is 4% of a young fir's height at
+10 m/s, which may read as too little).
+
+## Step 17: the far tiers against the leaves, part by part
+
+Each part looked at alone (`compare ... hide=<other parts>`), so a tier's
+fault is not lost in the forest's mean, and measured with `tiers` (a shrub
+from above: `pitch=-0.6`, from the side its panes were the grass).
+
+- Leaf clusters' shadow where the light leaves their lobe: one tap, not
+  four (bro 332e4912). The taps were 1.4 of forest:leafCard:broad's 2.0 ms
+  in the slowest flight frame and left the mid range smoother than the
+  leaves it stands for. Flight p95 5.47 -> 5.36 ms.
+- A spray node's clump closes its gaps within a spray's length of its
+  surface (bro 767d77af). Its pads were a pale veil the ground showed
+  through (forestLobeCore finds no core for a pine). Pine, forced clumps
+  against forced leaves at noon, 15/25/40/60 m: +10.7/+8.7/+3.6/+0.8 ->
+  +3.0/+1.3/-3.6/-9.1 levels; golden +6.9/+4.4/+2.6/+2.1 after.
+- A broadleaf crown's self-shade is capped at 0.75 of its leaves' optical
+  depth (bro 70a30c3e). A dense shrub's crown was near black from afar.
+  Shrub noon 10/20/35 m -33/-26/-23 -> -11/-13/-10; broadleaf golden
+  40/60/100 m -15/-14/-3 -> +2.0/+2.8/+5.6.
+
+Still open:
+
+- Pine and spruce seen from above in By size (canopy shot): grey-green
+  pads with none of the pine's orange limbs; needle-only skim at golden
+  10-18 levels less red than the leaves.
+- Shrubs: clumps 7-14 levels darker than their leaves at noon; the
+  darkest species still darker and more speckled than their leaves in the
+  canopy view; crowns tier pinholes (cover 71% against 87% at 10 m).
+- Broadleaf crowns in By size read paler and cottony up close (canopy
+  20-40 m).
+- On the Mac (MoltenVK) two renders of one still frame differ in ~40
+  scattered foliage pixels (R and G by ~5 levels): grove/forest calm-still
+  tests fail there. Not on Windows or halo.
 
 ## Order
 
