@@ -3902,12 +3902,33 @@ from above: `pitch=-0.6`, from the side its panes were the grass).
   depth (bro 70a30c3e). A dense shrub's crown was near black from afar.
   Shrub noon 10/20/35 m -33/-26/-23 -> -11/-13/-10; broadleaf golden
   40/60/100 m -15/-14/-3 -> +2.0/+2.8/+5.6.
+- A tree the camera draws as clumps casts clumps, not its crown (bro
+  a7ca946a): crown casters shade only the far half. Pine from above at
+  80 m, By size against Leaves: noon +6.7 -> -4.0, golden +11.2 -> -2.2.
+  Shadow vertices 5.7 -> 8.5 M on the flight, the shadow passes' GPU time
+  unchanged.
+
+Found, not fixed: a broadleaf seen from above at 50-90 m in By size
+covers less than its leaves (tiers `diff`, the mean change from bare
+ground: 29.7 against 39.9 at 65 m). The far tiers drop bark under 0.7 px
+(Lod::barkPixels) and thin it to nothing up to 1.6 times that, and from
+above an open crown's fine branches are a grey haze over much of it: with
+no cut, pure clusters match the leaves (39.0 against 39.3 at 90 m).
+barkPixels 0.35 costs nothing on the flight, but the budget pays for it
+in leaves (detail 1.07 -> 1.16) and the side view's 40-80 m hard edges
+drop 5.7 -> 5.0. The fix is sub-pixel bark drawn by its cover (a ribbon a
+pixel wide covering its width, as the clump twigs are), not more of the
+round bark. Rejected along the way: clusters' leaves 15% larger (+2 cover,
+softer side view), their outline ramp moved out (+2.6..6.7 cover, side
+view 20-40 m hard 7.2 -> 6.3), a stratified leaf order by clump (no
+change), a wider cell search (+0.7..2.5).
 
 Still open:
 
 - Pine and spruce seen from above in By size (canopy shot): grey-green
   pads with none of the pine's orange limbs; needle-only skim at golden
-  10-18 levels less red than the leaves.
+  10-18 levels less red than the leaves. (The 80 m brightness is fixed,
+  above; the limbs are the same sub-pixel bark cut.)
 - Shrubs: clumps 7-14 levels darker than their leaves at noon; the
   darkest species still darker and more speckled than their leaves in the
   canopy view; crowns tier pinholes (cover 71% against 87% at 10 m).
