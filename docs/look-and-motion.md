@@ -2689,6 +2689,121 @@ one second near t = 26-28 s under the canopy (HEAD 6.02-6.26).
   cascade ends without a fade. Bark's sides switch 5 ↔ 10 at once.
 - Item 8 (the bracken pinnae at 2.5 m) was not separately measured.
 
+## Step 11: leaves on twigs
+
+Better motion showed what stills had hidden: a broadleaf's leaves were
+scattered through their clumps' lobes (clumpLeafFrame), each turned its
+own way, so they floated rather than grew. Now every broad leaf hangs from
+a node of a shoot, the shoots from sprays and the sprays from stems, all of
+it derived per clump at run time; near trees draw the twigs.
+
+### What changed
+
+- **The shoot model** (bro `scene_forest_shoot.glsl`, the forest node's
+  leaf form 0; conifers and the scatter node's clump mode are unchanged).
+  A clump of n leaves carries S = max(1, (n+4)/8) shoots on
+  NB = max(3, (S+2)/5) sprays (S < 3: one each). Leaf j (its key less the
+  clump's key base) is node j/S of shoot j%S; shoot s is on spray s%NB
+  (s/NB = 0 its terminal shoot, then laterals left and right at 1 rad).
+  Sprays sit on a Fibonacci lattice over each of the clump's three lobes,
+  their axes and shoots along great circles a little under the lobe's
+  surface (the shell), flattened as the clump is: the foliage lies in
+  layers on the outer shell. Each lobe has a stem from the clump's base
+  out past its centre (a quadratic curve); each spray's twig leaves it
+  along its length. Spacing in leaf lengths: 0.6 between a shoot's nodes
+  (closer toward the tip), 1.1 between a spray's shoots.
+- **The leaf at its node.** Its azimuth by phyllotaxis: alternate (two
+  ranks), opposite (decussate pairs) or a 2/5 spiral, ±0.25 rad. The blade
+  leaves the shoot at 0.95 ± 0.17 rad, is turned 60% into the spray's
+  plane (facing out of the crown and up by the scatter's up bias), droops
+  0.12, keeps the scatter's tilt jitter; larger toward the shoot's middle
+  (0.8 → 1.15, 1.03 at the tip). The node lies on the twig as drawn (the
+  chord of its third of the shoot), not the arc 3-8 mm off it.
+- **The petiole.** broflora `Species::phyllotaxis` (0/1/2) and `petiole`
+  (of the blade's length, 0..0.6; default alternate, 0.2) go through
+  `ForestSpecimen` to `specimenLeaves` [6], [7] and the specimen record
+  8.yz. The cut card keeps its stalk row at the node and moves the blade's
+  rows out by the petiole; `forestLeafCut` draws the stalk box-filtered,
+  0.03 of the card wide. It shrinks away as the leaf falls from 16 to 8 px
+  (with it the far tiers' cover rose, a contrast regression in every
+  band). Presets: birch 0.3; boxwood opposite 0.05; holly spiral 0.1;
+  hydrangea opposite 0.25; hibiscus spiral 0.35; oak, elm, beech
+  alternate 0.2. World format 10.
+- **Twigs** (`mesh_forest_tube.vert`'s twig build, the drawer's Twigs
+  group). A clump has 6 + 5NB + 3S pieces (two a lobe stem, five a spray,
+  three a shoot), 64 an entry, 6 vertices a piece: camera-facing ribbons
+  at least a pixel wide, cover their width under it, crown-shaded,
+  shoots tinted green. Stems and sprays draw while 2·0.045·leaf length is
+  0.15 px or more, shoots while 2·0.014·leaf length is; they fade over a
+  widening of `cardWidening` x 0.95 → 1.3 (the natural widening, so a
+  forced Leaves tier draws the same twigs as By size). A piece is culled
+  whole by its radius at the clump's distance (culling a vertex at a
+  time made streaks). They count toward the vertex budget and cast no
+  shadow.
+- **Motion follows the hierarchy.** Each end of a twig and each leaf's
+  node take the wood's pose of their clump (vegPose) and then the same
+  spray and shoot bending: a spray's axis bends by 0.08·sqrt(drag) at
+  1.4-2.2 Hz, a shoot by 0.12·sqrt(drag) at 2.2-3.2 Hz (quadratic along
+  each, `sceneWindCycles`); the leaf's pose adds that offset and turn, and
+  its flutter turns it about its node.
+- **The key base.** Each clump's record carries its first placement key
+  (r2.z, `ForestNode::gpuData`), so a leaf finds its index in the clump
+  with no table.
+- **broworkshop.** `lib/kit/sway.js` ports the shoot model step for step;
+  grove's default path is now the forest node (`gpu`, the scatter node,
+  is kept for comparisons and for `truth`'s bark-only render check);
+  `motion.js twigs` measures the leaves against their twigs; both
+  `capture.js foliage` commands take the views below.
+
+### Numbers
+
+- Twig oracle (`motion.js twigs`, the grove broadleaf, 62 leaves over
+  36 clumps, leaf 18 cm, petiole median 37 mm): node to drawn twig at
+  rest median 0, max 5.2 mm. Gusty, the largest over 10 s: median 7.4 mm,
+  p95 21.3 mm, max 24.4 mm, p95 0.63 and max 0.77 of the petiole. Breeze:
+  p95 10.4 mm, max 0.38 of the petiole. The tip moves about its node by
+  7.6 cm (median; 15.7 max) gusty, 4.8 cm breeze.
+- Forest flight (1280x720): before p95 5.37, median 4.29 ms; with the
+  twigs, on a quiet GPU, p95 5.01, median 4.19 ms. Later runs shared the
+  GPU with another bro-headless (p95 5.17-5.48, median 4.18-4.26; one
+  13.6 / 8.2). The twig pass in frames over 4.6 ms: median 0.07,
+  p95 0.19 ms. The budget's detail factor rose with them (skim 1.96 →
+  2.71, trunks 2.09 → 2.54, canopy 1.00 → 1.06).
+- Leaves vs By size per band (mean Y, L/B), before → after: canopy noon
+  20-40 112.7/113.2 → 113.2/114.6, 40-80 119.2/120.5 → 118.3/122.2,
+  80-160 111.1/113.6 → 110.7/113.8; skim noon 10-20 126.7/129.6 →
+  125.8/130.6, 20-40 148.9/150.7 → 146.8/150.2; glade noon 20-40
+  98.7/102.0 → 98.7/102.9. Golden canopy 82.0/79.2, 87.9/86.3, 90.1/84.7
+  → 82.5/80.0, 88.2/87.1, 89.8/84.8: the same or closer.
+- Handover dollies (forest `handover leaves|cards`): no step at the twig
+  fade or the petiole's.
+
+### Captures
+
+- Grove (forest path), 1, 3 and 8 m and inside, noon and golden:
+  `broworkshop/demos/grove/captures/{before,after}_{broadleaf,birch,hydrangea,holly}_{noon,golden}_{inside,1m,3m,8m}.png`.
+- Forest glade edge:
+  `broworkshop/demos/forest/captures/{before,after}_{broadleaf,shrub}_{noon,golden}_{inside,1m,3m,8m}.png`.
+- Motion: `broworkshop/demos/grove/captures/motion/twigs_{gusty,breeze}.txt`,
+  `plant_{tree,birch,hydrangea,holly}_gusty_motion*`; handovers
+  `broworkshop/demos/forest/captures/forest_handover_{leaves,cards}_strip.png`.
+- Metrics: `broworkshop/demos/forest/captures/forest_metrics.json`.
+
+### Still open
+
+- Canopy noon 40-80 m: Leaves vs By size 3.9 levels apart (1.3 before),
+  the one band past ~2; By size brightened 1.7 there.
+- At 1 m the spray twigs and lobe stems read as long straight rods
+  through a crown's front: they should be shorter and more crooked, and
+  darker inside.
+- The holly flags 15 single-block pops in its top third (gusty): its
+  glossy leaves' glints at the silhouette. There is no before run to
+  compare.
+- bromesh has no CPU twin of the shoot model (sway.js is the only port),
+  and the scatter node's clump mode (grove's `gpu` path) still scatters.
+- The twigs cast no shadow; the caster's leaves carry no shoot bend.
+- The flight numbers need a quiet GPU to confirm.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
