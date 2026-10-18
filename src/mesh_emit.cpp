@@ -488,6 +488,35 @@ namespace {
 // leaves are) about the joint, k the segment's stiffness E I / L (I = pi
 // r^4 / 4, E green wood's), never past straight down. Worked root first:
 // each segment turned with every joint below it, then by its own.
+// A succulent's stems (ribbed bark, Species::barkRibs) end blunt: each tip
+// segment of [start, end) gives its last 0.8 of a radius to a cap segment
+// of its own, so the bark's close over a tip's last segment (bro's
+// scene_forest_tube.glsl) is a dome that short, not a cone the length of
+// the segment.
+void bluntTips(std::vector<bromesh::BranchSegment>& out, size_t start) {
+    const size_t end = out.size();
+    std::vector<char> parent(end - start, 0);
+    for (size_t i = start; i < end; ++i) {
+        const int64_t p = out[i].parent;
+        if (p >= static_cast<int64_t>(start) && p < static_cast<int64_t>(end)) parent[static_cast<size_t>(p) - start] = 1;
+    }
+    for (size_t i = start; i < end; ++i) {
+        if (parent[i - start]) continue;
+        bromesh::BranchSegment& s = out[i];
+        const Vec3 d = s.to - s.from;
+        const float L = bromath::vlen(d);
+        const float cap = 0.8f * s.radius;
+        if (!(L > 2.0f * cap)) continue;
+        bromesh::BranchSegment c = s;
+        const Vec3 at = s.to - d * (cap / L);
+        s.to = at;
+        c.from = at;
+        c.parent = static_cast<int32_t>(i);
+        c.depth = s.depth + 1;
+        out.push_back(c);
+    }
+}
+
 void sagSegments(const Species& sp, float leafR, std::vector<bromesh::BranchSegment>& out, size_t start) {
     constexpr float kSagWood = 700.0f * 9.81f;   // green wood's weight, N/m^3
     constexpr float kSagLeaves = 2.0f;           // a leafy shoot's leaves, N/m
@@ -812,6 +841,7 @@ size_t emitPlantSegmentsInto(const Plant& plant,
     }
 
     sagSegments(plant.species, leafR, out, startSize);
+    if (plant.species.barkRibs > 0.5f) bluntTips(out, startSize);
     return out.size() - startSize;
 }
 

@@ -4005,9 +4005,13 @@ bark word's top bit, its moss now 7 bits) draws ribbed bark instead: 48
 / barkScale ridges round the stem whatever its girth, unbroken along it,
 rounded with sharp valleys, a third of their spacing deep times the
 furrow, a row of pale areoles on each crest. It stands 6.2 m, ribbed and
-elbowed at 5 m, a saguaro's outline at 20 to 150 m. Not yet: its arms
-and top end in a point (the forest drawer narrows every bark tip to 0.3
-of itself), not a blunt dome.
+elbowed at 5 m, a saguaro's outline at 20 to 150 m. Its arms and top
+ended in points: the radius held (0.15 m to the top), but a far tree's
+bark is one row of rings a segment, and the bark closes over a tip's
+whole last segment (a metre here), so a cone. Now a ribbed plant's tips
+are split (bluntTips: the last 0.8 of a radius its own cap segment) and
+bro keeps a ribbed tip's girth to its end (not 0.3 of it): blunt domes
+at every distance.
 
 A succulent (an agave), the palm's parts at ground level: a stem 6 cm
 tall topped by a rosette of 22 leaves, each a module that never branches
