@@ -50,11 +50,13 @@ const FloatField kFloats[] = {
     {"shadeRange", &broflora::HerbSpecies::shadeRange}, {"abundance", &broflora::HerbSpecies::abundance},
     {"patch", &broflora::HerbSpecies::patch},         {"patchCover", &broflora::HerbSpecies::patchCover},
     {"spacing", &broflora::HerbSpecies::spacing},     {"hairs", &broflora::HerbSpecies::hairs},
+    {"stemLeafSize", &broflora::HerbSpecies::stemLeafSize},
 };
 const CountField kCounts[] = {
     {"leaves", &broflora::HerbSpecies::leaves},   {"stems", &broflora::HerbSpecies::stems},
     {"teeth", &broflora::HerbSpecies::teeth},     {"pinnae", &broflora::HerbSpecies::pinnae},
     {"bloomCount", &broflora::HerbSpecies::bloomCount}, {"petals", &broflora::HerbSpecies::petals},
+    {"stemLeaves", &broflora::HerbSpecies::stemLeaves},
 };
 const ColorField kColors[] = {
     {"leafColor", &broflora::HerbSpecies::leafColor},   {"stemColor", &broflora::HerbSpecies::stemColor},

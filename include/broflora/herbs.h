@@ -34,7 +34,7 @@ namespace broflora {
 // Where a herb's leaves stand (HerbSpecies::habit).
 enum class HerbHabit : uint32_t {
     Rosette = 0,   // leaves or fronds round the root; leafless scapes (flower stalks) from the middle
-    Leafy = 1,     // leafy stems from the root, the leaves up them in pairs or turns
+    Leafy = 1,     // leafy stems from the root, the leaves up them in opposite pairs (a card a pair)
     Carpet = 2,    // ground cover: small leaves on stalks strewn over the plant's patch
 };
 inline constexpr uint32_t kHerbHabitCount = 3;
@@ -74,6 +74,11 @@ struct HerbSpecies {
     float spread = 0.25f;       // m: how far its leaves reach out from the root (a carpet's patch radius)
     uint32_t leaves = 6;        // leaves (fronds) a plant
     uint32_t stems = 0;         // stems (scapes) a plant; each bears one bloom (or raceme) at its tip
+    // A rosette's flowering stem can carry leaves of its own besides the
+    // rosette (a foxglove's): this many up each stem's lower part, alternate,
+    // stalkless, the lowest `stemLeafSize` of `leafLength`, smaller upward.
+    uint32_t stemLeaves = 0;
+    float stemLeafSize = 0.5f;
     // Its leaves.
     HerbLeaf leafShape = HerbLeaf::Simple;
     float leafLength = 0.12f;   // m, stalk included
@@ -162,7 +167,8 @@ float herbLeafTop(const HerbSpecies& h);
 ///   40 patchCover, bloomShare, cover, hairs
 ///   44 stem freq, stem sway, leaf freq, leaf sway
 ///   48 spacing (worked out when 0), side cover, its blooms' share, leaf top
-inline constexpr size_t kHerbRecordFloats = 52;
+///   52 stemLeaves, stemLeafSize, 0, 0
+inline constexpr size_t kHerbRecordFloats = 56;
 void herbRecord(const HerbSpecies& h, float* out);
 /// The records of several, end to end.
 std::vector<float> herbRecords(const std::vector<HerbSpecies>& hs);

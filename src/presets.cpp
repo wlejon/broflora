@@ -395,9 +395,13 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.orthotropy = 0.75f;
             // Fine soft shoots from a short woody base, not gnarled stems.
             s.leafDiameter = 0.006f; s.pipeExp = 2.6f;
-            s.leafColor = rgb(0.20f, 0.24f, 0.16f);
+            s.leafColor = rgb(0.17f, 0.2f, 0.15f);
             s.clumpScale = 0.7f;
             s.leafSize = 0.25f;
+            // Narrow, linear grey leaves, matt and felted, in stalkless
+            // opposite pairs up the shoots (not a broadleaf's blade).
+            s.leafWidth = 0.14f; s.leafTip = 0.35f; s.leafGloss = 0.0f;
+            s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Opposite); s.petiole = 0.0f;
             // Purple spikes held above the cushion.
             s.bloomForm = static_cast<uint32_t>(BloomForm::Spike);
             s.bloomColor = rgb(0.3f, 0.16f, 0.55f);

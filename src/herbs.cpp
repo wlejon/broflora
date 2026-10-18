@@ -66,6 +66,16 @@ float leafFace(const HerbSpecies& h) {
     return h.leafLength * h.leafLength * h.leafWidth * (1.0f - h.stalk) * leafFill(h.leafShape);
 }
 
+// The plant's leaves counted in its rosette leaves' face: the rosette's (or
+// the stems') and a rosette's stem leaves, stalkless, the lowest
+// stemLeafSize of a rosette leaf and shrinking to about a third up the stem
+// (their faces' mean about 0.45 of the lowest's).
+float leafCount(const HerbSpecies& h) {
+    const float stemLeaves = static_cast<float>(h.stems * h.stemLeaves) * h.stemLeafSize * h.stemLeafSize * 0.45f /
+                             std::max(1.0f - h.stalk, 0.1f);
+    return static_cast<float>(h.leaves) + (h.habit == HerbHabit::Rosette ? stemLeaves : 0.0f);
+}
+
 // A cantilever of base diameter `d`, length `L`, carrying `mass` kg of what
 // it holds (in its mode: as phi^2 weighs it) and `area` m^2 of face (as phi
 // weighs it) at the wind's share `wind` of the reference; `sideways` a
@@ -235,6 +245,10 @@ std::vector<HerbSpecies> makePresets() {
         h.spread = 0.3f;
         h.leaves = 8;
         h.stems = 1;
+        // Its flowering stem leafy up its lower part, the leaves shrinking to
+        // bracts under the raceme.
+        h.stemLeaves = 4;
+        h.stemLeafSize = 0.7f;
         h.leafShape = HerbLeaf::Simple;
         h.leafLength = 0.3f;
         h.leafWidth = 0.3f;
@@ -302,6 +316,9 @@ std::vector<HerbSpecies> makePresets() {
         h.spread = 0.12f;
         h.leaves = 6;
         h.stems = 2;
+        // Its stems leafy too, the feathery leaves smaller up them.
+        h.stemLeaves = 2;
+        h.stemLeafSize = 0.8f;
         // Two or three times pinnate: a narrow frond of many pairs of
         // leaflets, each cut into fine segments (feathery, the "thousand
         // leaves" of its name).
@@ -338,20 +355,25 @@ std::vector<HerbSpecies> makePresets() {
         h.habit = HerbHabit::Leafy;
         h.height = 0.9f;
         h.spread = 0.15f;
-        h.leaves = 13;   // pairs all the way up its one stem (a patch is many plants)
-        h.stems = 1;
+        // A clump of shoots from its creeping roots (a stand is tens of
+        // shoots a square metre, one plant a cell of the herbs' grid), the
+        // leaves in pairs up each.
+        h.leaves = 24;
+        h.stems = 2;
         h.leafShape = HerbLeaf::Simple;
-        h.leafLength = 0.13f;
+        h.leafLength = 0.14f;
         h.leafWidth = 0.55f;
         h.leafTip = 0.0f;
         h.teeth = 9;
         h.toothDepth = 0.2f;
-        h.stalk = 0.2f;
-        h.rise = 1.0f;
-        h.arch = 0.5f;
+        h.stalk = 0.22f;
+        // Held out and drooping from their stalks.
+        h.rise = 1.05f;
+        h.arch = 0.85f;
         h.leafColor = rgb(0.035f, 0.075f, 0.02f);
         h.stemColor = rgb(0.06f, 0.08f, 0.03f);
         h.stemDiameter = 0.006f;
+        h.hairs = 0.35f;   // stinging hairs
         h.shade = 0.3f;
         h.shadeRange = 0.3f;
         h.abundance = 0.6f;
@@ -505,7 +527,7 @@ Vec3 herbMeanColor(const HerbSpecies& h, float* bloomShare, float* cover) {
     const float foot = kPi * std::max(h.spread, 0.03f) * std::max(h.spread, 0.03f);
     const float lean = 0.35f + 0.65f * std::sin(std::clamp(h.rise + 0.5f * h.arch, 0.0f, 1.5708f));
     const float perCard = h.habit == HerbHabit::Carpet ? static_cast<float>(kHerbCarpetCluster) : 1.0f;
-    const float leaf = static_cast<float>(h.leaves) * perCard * leafFace(h) * lean;
+    const float leaf = leafCount(h) * perCard * leafFace(h) * lean;
     const float bloom = static_cast<float>(h.stems) * bloomFace(h);
     const float bs = bloom > 0.0f ? bloom / (bloom + leaf) : 0.0f;
     if (bloomShare) *bloomShare = bs;
@@ -528,7 +550,7 @@ float herbSideCover(const HerbSpecies& h, float* bloomShare) {
     const float perCard = h.habit == HerbHabit::Carpet ? static_cast<float>(kHerbCarpetCluster) : 1.0f;
     const float tilt = std::clamp(h.rise + 0.5f * h.arch, 0.0f, 1.5708f);
     const float stand = h.habit == HerbHabit::Carpet ? 0.15f : std::max(std::cos(tilt), 0.2f);
-    const float leaf = static_cast<float>(h.leaves) * perCard * leafFace(h) * 0.64f * stand;
+    const float leaf = leafCount(h) * perCard * leafFace(h) * 0.64f * stand;
     const float stems = static_cast<float>(h.stems) * h.height * h.stemDiameter;
     float bloomSide = 0.0f;
     switch (h.bloomForm) {
@@ -563,6 +585,7 @@ void herbRecord(const HerbSpecies& h, float* o) {
         h.patchCover, bs, cover, h.hairs,
         h.stemSway.freq, h.stemSway.sway, h.leafSway.freq, h.leafSway.sway,
         spacing, side, sideBloom, herbLeafTop(h),
+        static_cast<float>(h.stems > 0 ? h.stemLeaves : 0u), h.stemLeafSize, 0.0f, 0.0f,
     };
     std::copy(std::begin(v), std::end(v), o);
 }
