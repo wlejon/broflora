@@ -64,6 +64,108 @@ What a look change costs, and how to keep it cheap (broworkshop
   nursery and prints ms per phase and a checksum of the grown world, so a
   faster step can be shown to grow the same plants.
 
+## Motion oracle
+
+A reviewer who reads text and stills cannot watch a video. The motion
+oracle turns a run's motion into sheets and a short text that point at
+the faults. It lives in broworkshop: `lib/kit/motion.js` (the image half,
+for any demo) and `lib/kit/sway.js` (the ground truth: the wind field and
+`vegPose` / `vegLeafTurn` ported to JS, evaluated as the GPU does). The
+scenarios are `demos/grove/motion.js` and `demos/forest/motion.js`. Run
+them from broworkshop:
+
+```
+bro-headless --width 1280 --height 720 demos/grove demos/grove/motion.js -- calibrate + truth + plant fir + mover
+bro-headless --width 1280 --height 720 demos/forest demos/forest/motion.js -- static + interior + dolly + flight
+```
+
+The grove commands:
+
+- `calibrate`: synthetic balls (smooth, pops, flicker, jitter, lockstep,
+  travelling). It prints PASS/FAIL for each injected fault, and the
+  thresholds (`THRESHOLDS` in motion.js) are set so that it all passes.
+- `plant <name>`: a preset, `tree`, an herb preset or `meadow`, alone and
+  across the wind. It takes `wind=`, `dist=`, `seconds=`, and `clock=`
+  (start the wind clock there).
+- `mover [through=grass,bracken,shrub]`: a walker capsule at 1.4 m/s. It
+  is a grass mover, undrawn unless `body=shown`.
+- `truth`: the grove trees' parts tracked by the port.
+
+The forest commands:
+
+- `static [dists=5,20,60,150]`: the handover subject, across the wind.
+- `interior [shot=trunks]`.
+- `flight`: the camera moves, so read the events and flicker.
+- `dolly`: a log dolly out through every handover in still air.
+
+Every image run writes `captures/motion/<name>_motion.txt` and `.json`,
+plus `<name>_motion.jpg` (sheets with events also get `_events.jpg` and
+`_slits.jpg`). The image half tracks 16 px blocks frame to frame. For each
+block:
+
+- **V**: its motion.
+- **P**: its brightness change along that motion.
+- **D**: what neither its own motion, a neighbour's nor stillness
+  explains.
+
+Read the text summary per region:
+
+| Field | Meaning |
+|---|---|
+| motion | rms px/frame |
+| wiggle | Effective frequency: 1-2 Hz is sway, 3-7 Hz flutter, above 7 Hz noise |
+| jitter | Positional noise in px: rms of the second difference of V over sqrt 20 |
+| flicker | Brightness noise in levels, the same way, on P |
+| coherence | Correlation of block pairs by distance band. Lag is the travel time of a gust across the view. |
+
+The flags are:
+
+- `NOISE` / `JITTER`: the blocks shake.
+- `FLICKER`: the shading flickers.
+- `EVENTS`: pops (D spikes), flashes (P kicks) and kicks (jumps in V). Each
+  is ranked with its frame, wind clock and pixel box.
+- `LOCKSTEP`: far blocks move as one.
+- `INCOHERENT`: near blocks do not move together.
+
+On the sheet:
+
+- Top left: the events map, with flicker in magenta.
+- Top right: motion by wiggle (green sway, cyan, amber flutter, red
+  noise).
+- Bottom left: the timelines.
+- Bottom right: slit-scans through the worst events. Time runs down; a
+  pop is a horizontal tear, flicker is striping.
+- `_events.jpg`: each top event as frames t-1, t, t+1.
+
+Truth (`truth_<wind>.txt`, `_tracks.jpg`) gives the following for each
+part (trunk top, limb, twigs, a leaf):
+
+- Its rms, dominant Hz, largest step and jerk spikes, each attributed to a
+  gust band edge or a kick kink.
+- The share of its variance that is the drag's mean bend.
+- Its coherence with the other parts.
+- The leaf flutter's instantaneous frequency over a long wind clock.
+- The stand's trunk tops: correlation and lag against the gust's travel.
+- A check of the port against the rendered wood.
+
+Mover (`mover_<through>_<wind>_response.txt` / `.jpg`) gives the
+following, by distance from the path and aligned on the walker's passage:
+
+- Change from rest: onset, peak, time to 50% and 10%, what is left at
+  the end.
+- The tracked speed and displacement, with overshoot.
+- For the shrub: when the walker is inside the crown, and how much the
+  shrub moved then.
+
+Dolly (`forest_dolly_<part>_<wind>_pops.txt` / `.jpg`) gives each handover
+distance, the pops in the subject's picture beyond the dolly's own change,
+and the mean-luma step at each handover.
+
+With a moving camera (the flight, the dolly) every block is "lost": the
+view's own motion is not plant motion. Read only the events there. Only
+large ones count (D over about 30, tens of blocks); their crops show what
+jumped.
+
 ## Step 1 as built: the vegetation records
 
 broflora computes one `SegmentSway` per segment (`emitPlantSway` /
