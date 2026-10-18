@@ -2252,6 +2252,136 @@ In `demos/forest/captures/`:
 - **The golden glade's 24-40 m band** is 2.4, up from 1.6.
 - **Carried over:** the far canopy's sun-height gap (noon +3.6, golden −7.9).
 
+## Step 8c: the frame, the far canopy's sun, the meadow at true scale, near forms
+
+### What changed
+
+- **Leaves posed once a leaf** (bro ccf3fc07). A compute pass
+  (`forest_leaf_pose.comp`) places, widens and sways each colour leaf into a
+  per-frame pose buffer, 64 bytes a leaf. Each vertex reads its point from
+  that pose. A group past the buffer's 4 M leaves poses vertex by vertex
+  (`FOREST_LEAF_INLINE`). The per-band metrics are unchanged.
+  `BRO_VK_PIPELINE_STATS=1` logs each scene pipeline's register counts:
+  sprite FS 96, leaf 72, cluster 80.
+- **The far canopy follows its leaves at every sun height** (bro 93311593).
+  - A far tier is lit through one normal a pixel, but its leaves face every
+    way about it. Its wrapped diffuse is now the wrap's mean over cosines
+    spread 0.6 either side (`SceneSurface::leafSpread`,
+    `FOREST_MASS_SPREAD`).
+  - A crown's one-disc shadow caster stops 0.4 of its leaves' even depth
+    (`FOREST_CROWN_CLUMPING`, forestry's clumping index). An even disc
+    shaded a golden far canopy through the low sun's long shadows.
+  - What showed it: in the direct light alone, the gap was +5.1 at noon and
+    −5.9 at golden. With shadows off it was +7.9 / +1.9. So the low sun's
+    crown shadows were too strong, and the narrow normal spread lit noon
+    too fully.
+- **A meadow at true scale in the forest** (broworkshop 79f7b76, 16ec510).
+  - `MEADOW` is an 85 m clearing in a shallow hollow, with a ragged, shrubby
+    forest edge. Inside it the trees are cut and the ground is damper.
+  - The `meadow` shot runs from the edge across it to 150 m. The
+    `understory` shot is a forest interior.
+  - `capture.js meadow` writes full-frame JPEGs at 0.5, 3, 30, 60 and 150 m,
+    and the understory view, for each sky.
+- **Near forms** (bro 1f862e6a, broflora 90d3b7c).
+  - **Yarrow.** Its head is a dome of tiny five-lobed florets with cream
+    eyes, on six stalks, its flat underside seen from below. Its leaves are
+    narrow fronds of many finely cut pairs.
+  - **Foxglove.** Its bells hang on short pedicels, mostly to one side and
+    the odd one to the other. They are shorter and a little apart, each
+    shaded at its shoulder.
+  - **Plantain.** Raised pale ribs run base to tip and meet at both ends,
+    and the blade puckers between them.
+  - **Poppy.** `HerbSpecies::hairs` (record slot 43) gives a stem a wider
+    card with fine pale hairs spreading up and out. The poppy's stems are
+    pale grey-green and stand clear of the grass.
+- **The turf close by** (`groundBlades`, scene_ground.glsl).
+  - It lays tapering short live blades and fewer dead ones, each its own
+    tone, over the sward's dark foot. Soil shows only in fine crumbs where
+    the grass is thin.
+  - The grove's ground is now turf (`turf: true`). It had been a flat
+    vertex-coloured soil mesh, which was the flat dark grey-green at 0.5 m.
+
+### Numbers
+
+**Far canopy, By size − Leaves dY** (`p1` → `g6_metrics.json`):
+
+| Shot, sky | 40-80 | 80-160 |
+|---|---|---|
+| canopy noon | +1.9 → +2.5 | +3.6 → **+2.9** |
+| canopy golden | −2.6 → −1.5 | −7.7 → **−5.3** |
+| skim noon | +9.6 → +8.6 | −4.7 → −5.5 |
+| skim golden | −5.6 → −6.0 | −6.3 → −5.3 |
+
+**Flight** (1280x720, 4x MSAA). The GPU was shared with other bro-headless
+sessions through this step, and a contended run spikes to a p95 of 8.7.
+
+| | ms |
+|---|---|
+| p95 | 4.62 to 5.0 |
+| median | 3.9 to 4.2 |
+| max | about 5.4 to 6.1 |
+
+**Tried without gain, all reverted:**
+
+- dithered cascade selection for leaves;
+- nearest-first lobe order (reversing it costs +0.17 ms, so outermost-first
+  stays);
+- a separate crown fragment build for the lobes (clumps:broad stayed at
+  0.635 ms);
+- sorting shadow casters by light depth;
+- cores for broad nodes.
+
+In clumps:broad's 0.65 ms, lighting is about 0.26 ms, and the direct light
+is about 70% of that.
+
+**Herb hand-over in the forest meadow** (`herbs @-69.3/12/-54.6/-151.4/0/-128
+h3`, an elevated view; full vs handover):
+
+| Sky | 24-40 drgb | 40-80 drgb | 80-150 |
+|---|---|---|---|
+| noon | 1.7 | 5.1 | Y 169.0 vs 179.5, drgb 19.7 |
+| golden | 0.7 | 2.9 | drgb 9.7 |
+
+From the ground the bands up to 80 m stay at drgb ≤ 2.4. Past the far ring
+(72 m) the turf is brighter and flat, and the flowers are gone. A far of
+150 m took `opaque:grass` from 0.25 to 0.47 ms, and 96 m took it to 0.32;
+both were reverted.
+
+**Tests.**
+
+- bro: scene 79/79, flora 7/7, grass 2/2.
+- broworkshop `validate.sh demos/forest demos/grove`: 4/4.
+
+### Captures
+
+In broworkshop `demos/forest/captures/`:
+
+- `m3_meadow_{noon,golden}_{0.5,3,30,60,150}m.jpg`;
+- `m3_understory_{noon,golden}.jpg`;
+- `meadow_meadow_*` and `meadow_understory_*`: the same shots after the
+  near-turf change;
+- `g6_metrics.json`, `p1_metrics.json`: the far canopy, after and before.
+
+In `demos/grove/captures/`:
+
+- `n3_foxglove_noon.jpg`;
+- `n4_poppy_noon.jpg`, `n4_plantain_noon.jpg`;
+- `n1/n2_yarrow_noon.jpg`;
+- `n10_meadow_{noon,golden}.jpg`: the near ground at 0.5, 1, 3 and 10 m.
+
+### Still open
+
+- **p95 is not robustly under 4.7.** The crown trace (0.45 to 0.57 ms) is
+  the next structural lever: a two-level bound over a crown's lobes. After
+  that come posing the shadow casters in compute, as the colour leaves now
+  are, and the sprite fragment shader's register pressure.
+- **Past the far herb ring** the turf reads brighter and flat, and the
+  flowers vanish at 72 m. The turf needs the flowers' colour in its mean at
+  that distance, or a cheaper far ring that can reach 150 m.
+- **The skim view's 80-160 m band at noon** is −5.5, down from −4.7.
+- **Yarrow's heads** are still a little uniform from plant to plant.
+- **The near turf at 0.5 m** still shows faint soil blotches.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
