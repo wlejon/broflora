@@ -58,9 +58,11 @@ namespace broflora {
 // (kSway*Gain) divide a level's stiffness, standing for what a uniform beam
 // on a rigid footing leaves out: a trunk tapers, so it bends most near the
 // top, and its root plate turns in the soil (in tree-pulling tests the
-// anchorage gives as much as the stem); a limb's base gives in its fork.
-// They were set by eye against field ranges (an open-grown tree of 10 m
-// sways at ~0.5-1 Hz; a leafy twig flutters at a few hertz).
+// anchorage gives as much as the stem); a limb's base gives in its fork,
+// and so does a twig's (as a rigid footing, a leafy spray rang at 6-8 Hz,
+// a buzz rather than a flutter). They were set by eye against field ranges
+// (an open-grown tree of 10 m sways at ~0.5-1 Hz; a leafy twig flutters at
+// a few hertz).
 inline constexpr float kSwayReferenceWind = 10.0f;  // m/s: `sway` is the deflection at this wind
 inline constexpr float kSwayAirDensity = 1.2f;      // kg/m^3
 inline constexpr float kSwayDrag = 0.3f;            // Cd of a leafy crown streamlined at 10 m/s
@@ -72,8 +74,8 @@ inline constexpr float kSwaySprayDiameter = 0.008f; //    last fork, at its base
 inline constexpr float kSwayWoodModulus = 9.0e9f;   // Pa: green hardwood
 inline constexpr float kSwayWoodDensity = 800.0f;   // kg/m^3: green hardwood
 inline constexpr float kSwayTrunkGain = 10.0f;
-inline constexpr float kSwayLimbGain = 4.0f;
-inline constexpr float kSwayTwigGain = 1.0f;
+inline constexpr float kSwayLimbGain = 2.5f;   // (4 rang a limb well under its trunk, one slow sway with it)
+inline constexpr float kSwayTwigGain = 4.0f;
 // The wind inside and under a crown: it falls off down through the leaves
 // the crown holds above, u(z) = u_top exp(-a (1 - z / H)) (Cionco's canopy
 // profile; a from about 1 in a sparse crown to 4 in a dense one), so the

@@ -242,6 +242,14 @@ void computePlantSway(const Plant& plant,
             const float shelter = limbOpen[i] > 0.0f ? limbLoad[i].area / limbOpen[i] : 1.0f;
             tl.area = 0.375f * face * shelter;
             s.twig = swayCantilever(d, twigLen, tl, kSwayTwigGain);
+            // A limb rings under the sprays it carries: a short stiff limb
+            // (a shrub's stem) is held at its fork by them as much as by its
+            // wood, so it rings no faster than 0.8 of them (what keeps a
+            // boxwood's or a lavender's stems from buzzing at 5-9 Hz). Only
+            // the frequency moves; how far it bends is its stiffness's. A
+            // thick-tipped limb's sprays, as soft as their fork lets them be,
+            // would otherwise fall under it and move as one with it.
+            s.limb.freq = std::min(s.limb.freq, 0.8f * s.twig.freq);
         }
     }
 }
