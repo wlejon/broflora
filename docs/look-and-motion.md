@@ -3576,6 +3576,148 @@ time; nothing is baked.
 - The p95 margin is 0.1-0.2 ms. The near leaves (needle leaves and cards
   at t ≈ 26-28 s) are the next place to look.
 
+## Step 15: herbs and shrubs reviewed, their motion, near blades physical
+
+Every herb preset (bracken, lady fern, daisy, poppy, foxglove, bluebell,
+yarrow, nettle, plantain, clover, wood sorrel) and shrub (boxwood, holly,
+hydrangea, hibiscus, lavender) was looked at in the grove at 0.5, 1.5, 4 and
+15 m (the shrubs at 2.5, 6, 20, 60 m), noon and golden. Bracken, lady fern,
+poppy, plantain, clover, wood sorrel, holly, hibiscus, boxwood and hydrangea
+read right; the foxglove, nettle, bluebell, yarrow, daisy (from behind) and
+lavender were fixed, structure first. Everything is still derived per plant
+at run time.
+
+### Structure and surface (bro f46459be, broflora 325ff5f)
+
+- **Foxglove spikes without slivers.** A stem, a raceme and a flower turn
+  their card to the eye from where each point of them is, not from their
+  root: a raceme passing close to the eye, turned by its root's way, showed
+  the eye its edge and its bells stretched into long pink spindles and
+  floating petals (seen at 1920x1080 in the 0.6 m and 1.5 m panes). A
+  raceme's side is settled once at its middle and its "down" leans down the
+  stalk as the card lies.
+- **Each spike its own.** Every stem stands at its own lean and bows along
+  its length (`HerbStalk::bow`, `bow2`). A foxglove has its own bell count
+  (0.7-1.25 of the record's) and stage: in bud to its middle, or open near
+  its top with the lowest bells gone to green pods; bells spaced wider low,
+  each at its own size and side.
+- **Stem leaves.** `HerbSpecies::stemLeaves` / `stemLeafSize` put alternate
+  stalkless leaves up a rosette's flowering stem (foxglove 4 a stem from 0.7
+  of a rosette leaf, smaller upward; yarrow 2). The record is 56 floats (52:
+  stemLeaves, stemLeafSize); the mean and side covers count them.
+- **Nettle** in clumps: a leafy herb's leaves are drawn a pair a card
+  (opposite, decussate), two shoots of six pairs, drooping, hairy.
+- **Daisy from behind** shows its rays' backs round a cup of green bracts.
+  Bluebells take their own size, place and slant a bell. A yarrow's corymb
+  is a dozen small heads with shade between them.
+- **Lavender** takes narrow grey felted leaves in stalkless opposite pairs.
+
+### Motion (bro 1c43ffcc, broflora a2772d2, broworkshop d15b6bf)
+
+- **Lavender's bare stalks.** A spray's tip is now a segment with nothing
+  of any length beyond it (`sway.cpp`). A shoot's newest module can be a
+  zero-length bud, which left every lavender limb without a tip, so without
+  a twig cantilever and without the cap at 0.8 of its sprays' frequency: the
+  flower stalks rang at 6-10 Hz. Its limbs are now 2.5-3.0 Hz under
+  3.1-3.9 Hz sprays. Boxwood, holly, hydrangea and hibiscus are unchanged
+  (limbs 2.0-3.3 Hz, sprays 4.3 Hz).
+- **Sprays damped by their leaves.** `VEG_TWIG_DAMPING` 0.05 → 0.2 (kit
+  `sway.js` mirrors it). A leafy shoot's leaves are most of its face and
+  little of its mass; at 0.05 every spray rang at its one frequency, and a
+  shrub, whose sprays are a third of its height, flickered with them
+  (zeroing the twig level took the boxwood's flicker away; zeroing the leaf
+  flutter did not).
+- **Shrubs part without jerks.** `vegMoverPush` takes each trail sample as
+  the spring's response to a push held over its 0.1 s step (the step
+  response at its age less a step earlier), not an impulse: an impulse's
+  response starts moving at once, so each new sample kicked the shrub's
+  speed. The trail's last half second fades.
+- **Herbs brushed aside.** A walker's push on a herb is 0.7 and a trample's
+  lean 0.9 (were 1.2, 1.5): at the old values a poppy's head crossed a hand's
+  breadth a frame as the walker came by. With the push zeroed the contrast
+  floor run had 21 pops (the grass's own), so about half its pops were the
+  herbs.
+- Grove motion oracle, `motion/s15_before/` → this:
+
+  | run | before | after |
+  | --- | --- | --- |
+  | shrub walker, shrub pops / flashes | 71 / 74 | 50 / 73 |
+  | shrub walker, its grass pops | 32 | 26 |
+  | meadow walker, pops | 77 | 64 |
+  | meadow walker, contrast floor, pops | 45 | 32 |
+  | boxwood 6 m, flickering blocks top / middle / bottom | 4 / 36 / 17 | 0 / 8 / 5 |
+  | lavender 6 m, wiggle median top / middle | 7.2 / 8.4 Hz | 4.5 / 5.7 Hz |
+  | grove tree (gusty), flicker p90 | 2.30 / 3.03 / 3.14 | 2.13 / 2.82 / 2.96 |
+  | grove tree (gusty), pops | 59 / 168 / 172 | 51 / 138 / 160 |
+
+- The boxwood's image wiggle stays 6-7 Hz at 6 m: its blocks move 0.2-0.5
+  px a frame, under the tracker's noise, and with its twigs zeroed it still
+  read 5-7 Hz; its limbs ring at 3.3 Hz and sprays 4.3 Hz.
+- **The grass drift** 1-2.5 m from the path (step 10's open item) is gone
+  since steps 12/12b: change left at the end at 1-1.5 m 19% → 2% of peak,
+  0.6-1 m 26% → 3%, against `motion_s10_before/`.
+
+### Near blades physical, gust waves (bro ff296f93)
+
+- A thin blade (or the turf standing for blades) takes as much light
+  through its face as it reflects, yellower (`SWARD_TRANSMIT`,
+  max(-N·L, 0) / π), not a leaf's art glow of about four times that. Near
+  and far share `swardGlow`: 0.3 of the light through is even, 0.7 in a
+  cos⁴ lobe about the sun's way (as much light in all as an even spread),
+  so looking toward a low sun the meadow glows. A near blade's face the eye
+  sees is lit by its own slope to the sun where that is more than its
+  softened bulk normal's.
+- Forest `meadowtone` (the same ground at 8°, against 3 m; `s15base` →
+  `s15t3`):
+
+  | | 10 m | 30 m | 60 m | 100 m | 150 m |
+  | --- | --- | --- | --- | --- | --- |
+  | golden before | -10.2% | -19.4% | -18.3% | -15.7% | -10.0% |
+  | golden after | -4.4% | -12.8% | -12.0% | -9.5% | -3.4% |
+  | noon before | -2.8% | -8.7% | -7.0% | -4.5% | -1.6% |
+  | noon after | -2.1% | -9.0% | -7.4% | -4.8% | -1.8% |
+
+- `meadowbands` (the standing eye, against 2-4 m): noon within -5..+4%
+  as before; golden 32-150 m +13..+16% → +20..+23%, because the near band,
+  seen steeply, loses its art glow (2-4 m luma 85.9 → 83.1; with the sun
+  ahead 87.5 → 80.8, 4-8 m 96.0 → 82.7). With the near transmission at 4×
+  physical the near band returned to 88.4 / 97.8, so that is where the old
+  glow came from.
+- **Gust waves.** The far blades (from 4-20 m) and the turf take a gust's
+  lift about the gust field's mean (`grassGustFar`, the field's mean 0.34 of
+  its strength measured over 160,000 points), so the waves stand out of the
+  sward's mean light and the meadow's tone does not move. Gusty meadow slit
+  at 30 m: change in time 6.91 → 8.49 levels rms, best-match correlation
+  0.70 → 0.79; 60 m 5.34 → 6.92, 100 m 6.11 → 6.45, 150 m 3.54 → 4.26.
+  The bands run diagonally in the slit images, but the 30 m travel figure
+  still peaks in place (0 m/s): the gust structure is about as wide as the
+  view at 30 m, so a 0.5 s lag barely separates the shifts.
+
+### Captures
+
+- Presets, 0.5 / 1.5 / 4 / 15 m (shrubs 2.5 / 6 / 20 / 60 m), noon and
+  golden: `broworkshop/demos/grove/captures/{s15base,s15after}_<preset>_{noon,golden}.jpg`
+  (the foxglove's golden base was overwritten; its spindles are in
+  `s15fx_foxglove_{noon,golden}.jpg` at 1080p, fixed in
+  `s15a_foxglove_{noon,golden}.jpg`).
+- Motion: `broworkshop/demos/grove/captures/motion/s15_before/` (before)
+  and the same names in `motion/` (after); forest meadow
+  `broworkshop/demos/forest/captures/motion/s15_before/forest_meadow_gusty_motion*`
+  and `motion/forest_meadow_gusty_motion*`.
+- Meadow tone: `broworkshop/demos/forest/captures/{s15base,s15t1,s15t2,s15t3}_meadow{tone,bands}.json`
+  and their frames.
+
+### Still open
+
+- The shrub walker's 73 flashes are single-frame darkenings inside the
+  boxwood, with the frames either side alike; not the movers' push.
+- The near meadow at golden, seen steeply, is darker than before; the far
+  meadow seen toward the sun is brighter than it.
+- The 30 m gust travel measure, as above.
+- The flight trace was not run on this step alone: the forest work in
+  progress beside it (step 14) was built into the same binary and drew
+  42 M vertices among the trunks.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
