@@ -3829,6 +3829,58 @@ at run time.
   progress beside it (step 14) was built into the same binary and drew
   42 M vertices among the trunks.
 
+## Step 16: tree-like wind
+
+The user's report on a tall, slim conifer: the top moved like a spring,
+fluid but not tree-like; small trees were springier than their size
+allows; they should be pushed by the wind and stay there while it blows,
+and the top half of slim trees hardly answered the wind.
+
+Diagnosis (`demos/grove/lean.js`, the ground truth in `lib/kit/sway.js`
+under scripted winds: a step to 12 m/s, a 5 -> 12 m/s gust and its
+release, a steady 10 m/s):
+
+- Every level rang about its lean as a lightly damped oscillator. Young
+  fir (8.6 m): the top overshot a step 1.75x and rang 14 cycles, its low
+  bough 1.97x for 18; steady 10 m/s wobbled 0.34-0.41 of the lean. Young
+  oak 1.43-1.67x, 13-23 cycles.
+- The leader stopped at a conifer's whorls, so the top 2-6 m of a fir or
+  spruce was a separate limb (spruce: 6.3 m at 0.65 Hz) springing on its
+  own: the "springy top".
+- The trunk bent as one stiff cantilever, so a slim stem's top leaned no
+  more than a thick one's.
+
+Changes:
+
+- broflora `sway.cpp`: the trunk is the stem strained alike along its
+  taper, so a slender stem leans further and its slim top bends most; its
+  bend has the shape h^p (p 1..4) carried in the trunk word (freq 9 bits |
+  sway 9 | shape 6) and its frequency is Rayleigh's over that bend. The
+  leader runs on through whorls while its thickest child is 80% of it or
+  1.3x the next.
+- bro `scene_vegetation.glsl` (vegTreeLevel, vegDamping): each level
+  holds a lean downwind under the drag; damping by size (a trunk rings
+  weakly, a bough is near critical, a spray over-damped); the trunk feels
+  the wind averaged over its last half period; eddies too small for the
+  gust field buffet limbs and sprays slowly about the lean. Herbs keep
+  their motion. `lib/kit/sway.js` follows it step for step.
+
+Before -> after (top; `s16base_young.txt`, `s16now.txt` in
+`demos/grove/captures/motion/`):
+
+- Young fir: step overshoot 1.75x, 14 cycles -> 1.16x with eddies, 1.00x
+  and no ringing without them; gust release overshoot 0.30 (low bough
+  0.78) -> 0.09; steady std/mean 0.34-0.41 -> 0.08.
+- Young oak: 1.43x, 23 cycles -> 1.17x (1.00x without eddies); steady
+  0.10-0.23 -> 0.09.
+- Every tree and shrub preset: without eddies a step settles with no
+  overshoot (pine 1.07x the most); steady wobble 0.06-0.16 of the lean.
+- broflora ctest 4/4, bro `tests/flora` 7/7, `validate.sh demos/forest
+  demos/grove` 4/4.
+
+Still open: the flight trace on this step; a strip of the tall conifer
+holding its lean in steady strong wind for the user to judge.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
