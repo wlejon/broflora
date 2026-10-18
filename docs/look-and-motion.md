@@ -3927,6 +3927,21 @@ softer side view), their outline ramp moved out (+2.6..6.7 cover, side
 view 20-40 m hard 7.2 -> 6.3), a stratified leaf order by clump (no
 change), a wider cell search (+0.7..2.5).
 
+New species, first try: a weeping willow (not committed). Its narrow
+toothed leaves read well close up. Its form did not: a lateral aimed
+below the horizon (lateralElevation -1.35) fights the spawn's collision
+term and the shoots coil into loops (more so with weepingModule as the
+lateral module), and round clumps make balls at the limbs' ends. Tall
+clumps (clumpFlat over 1, hung below their shoot; clamps to 3 in
+broflora's emit and clumps, bro's forest_node and the two leafFlat light
+paths) gave columns, not curtains. What a willow needs is a sag at emit:
+young shoots bend down under their own load (leaves and wood beyond
+them) against their stiffness (E I from their radius, the cantilever
+terms sway.cpp already has), from the tip inward, so the whips hang
+straight from limbs that rise and arch. The same pass would hang a
+birch's twigs and a spruce's boughs' tips by physics instead of set
+points.
+
 Still open:
 
 - Pine and spruce seen from above in By size (canopy shot): grey-green
