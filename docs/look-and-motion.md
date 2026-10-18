@@ -2924,6 +2924,87 @@ it derived per clump at run time; near trees draw the twigs.
 - The twigs cast no shadow; the caster's leaves carry no shoot bend.
 - The flight numbers need a quiet GPU to confirm.
 
+## Step 11b: twigs as wood
+
+Step 11's twigs read well from 3 m out, but inside a shrub and up to about
+a metre they were a cage of thick, near-black, dead-straight rods, many
+crossing the view and the sky with no leaf on them. Now they are crooked,
+tapering wood at a real radius, bark-shaded, branching from the clump's
+base through limbs to leafy shoots. Still all derived per clump at run
+time (bro `scene_forest_shoot.glsl`); nothing is baked per plant.
+
+### What changed
+
+- **A structure, not spokes.** Each lobe's stem is a crooked polyline (4
+  pieces, a quadratic from the clump's base B, which is the parent
+  segment's end, out past the lobe's centre). A lobe of three or more
+  sprays grows (L+2)/3 limbs (3 pieces each, curved and crooked) off the
+  stem, on a Fibonacci lattice of directions, each leaving the stem at
+  0.4-0.94 of its length by its direction. A spray's twig leaves the limb
+  (or the stem, for small lobes) where it passes nearest the spray's start,
+  a cubic along the wood it leaves and into its axis (3 pieces): short
+  twigs off a branch, not one spoke a spray from the clump's middle.
+- **Crooked and zigzag.** Every joint steps aside by up to 0.2 of its
+  piece (`forestCrook`); a spray's axis (4 pieces) and a shoot (4 pieces)
+  zigzag between nodes, 0.1 leaf length for alternate phyllotaxis, 0.045
+  otherwise, alternating sides. A shoot is moved to leave its axis as
+  drawn, and a leaf's node lies on its shoot as drawn. Shorter: 0.35 leaf
+  lengths between a shoot's nodes (was 0.6), 0.75 between a spray's shoots
+  (was 1.1), so the bare spans are short and inside the crown.
+- **Real radii.** The pipe model: a shoot 0.011 → 0.005 leaf lengths base
+  to tip, wood carrying k shoots 0.011·sqrt(k); capped at 7 mm
+  (`FOREST_TWIG_MAX_RADIUS`). A pixel wide at the least only where that
+  is under a pixel (far); near, it is its own width, and it thins away
+  from 0.9 m to 0.2 m from the eye with its cover (as the leaves shrink
+  away), so no rod crosses the eye inside a crown.
+- **Bark-shaded.** Twigs go through mesh.frag's `barkSurface` with the
+  specimen's bark word (inUV.y = -2 - word, cover in inUV.x), lit as the
+  tubes are, darker toward the ground and as deep in the crown as the
+  leaves where they are; this year's shoots tinted green toward the tip.
+  They were lit as leaves with no colour, which is why they were black.
+- A clump draws 12 + 9·limbs + 7·NB + 4·S pieces (`forestTwigPieces`,
+  `ForestNode::twigPieces`).
+- broworkshop `lib/kit/sway.js` ports all of it step for step.
+
+### Numbers
+
+- Twig oracle (`motion.js twigs`, grove broadleaf, 62 leaves, petiole
+  median 37 mm): at rest 0 mm. Gusty median 1.11, p95 6.65, max 11.63 mm,
+  0.15 / 0.34 of the petiole (step 11: 7.4, 21.3, 24.4 mm; 0.63 / 0.77).
+  Breeze p95 3.37, max 5.71 mm, 0.075 / 0.17 (step 11: 10.4 mm, 0.38).
+- Gusty plant run (grove `plant tree wind=gusty`), step 11 → now: top
+  flicker 273 → 232 blocks, events 41.6 → 36.6/s; middle flicker 460 →
+  340, 79.2 → 64.2/s; bottom flicker 367 → 302, 66.6 → 50.2/s, and the
+  bottom's jitter flag gone. Both still flag FLICKER and EVENTS in every
+  region.
+- Leaves vs By size per band, unchanged within 0.6 (twigs are near only):
+  canopy noon 20-40 113.0/114.3, 40-80 118.6/122.8 (4.1; was 3.9),
+  80-160 110.6/113.9; golden canopy 82.2/80.2, 88.4/87.5, 89.8/84.9.
+- Flight (1280x720), never on a quiet GPU: another bro-headless ran
+  throughout. Back to back, step 11's shaders → these: median 4.37, 4.31
+  → 4.44, 4.59 ms; p95 6.07, 6.31 → 5.38, 5.75 (contended, not the
+  budget's numbers).
+- `validate.sh demos/forest demos/grove`, bro `tests/flora`, broflora's
+  tests pass.
+
+### Captures
+
+- Before (step 11): `broworkshop/demos/{forest,grove}/captures/s12pre_*`.
+- After: `broworkshop/demos/forest/captures/after12_{broadleaf,shrub}_{noon,golden}_{inside,1m,3m}.png`,
+  `broworkshop/demos/grove/captures/after12_{broadleaf,birch,hydrangea,holly}_{noon,golden}_{inside,1m,3m}.png`.
+- Motion: `broworkshop/demos/grove/captures/motion/s12{before,after}_plant_tree_gusty_motion*`.
+- Metrics: `broworkshop/demos/forest/captures/after12_metrics.json`.
+
+### Still open
+
+- Canopy noon 40-80 m stays 4.1 apart (from step 11's petiole and cover,
+  not the twigs).
+- The flight on a quiet GPU.
+- Some spray twigs in the large grove broadleaf clumps (r 1.6-2.7 m) are
+  still long and straight at 1 m.
+- Twigs cast no shadow, and the casters' leaves carry no spray or shoot
+  bend.
+
 ## Order
 
 1. Motion: the wind field, hierarchical sway, bulk normals and translucency in
