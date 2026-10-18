@@ -4023,6 +4023,16 @@ since its leaves' tips are thin enough that the placer hung broad leaves
 on them. A blue-green rosette 0.8 m tall at 2.5 to 20 m; past that it is
 under the bark's cut.
 
+A vine, first as a creeping one (ground ivy): a vine climbs something,
+and nothing in a world of plants alone is yet there for it to climb, so
+it trails along the ground. Seven runners fanned level from the root,
+branching flat (plagiotropic modules, no orthotropy, nothing budding past
+0.15 m), flat clumps of small glossy heart-shaped leaves on long stalks.
+The first try (heightMax 0.25, clumpFlat 0.35, leafSize 0.55) heaped into
+a 0.7 m mound; the preset is a mat 0.4 m tall with its runners showing,
+from 2.5 to 20 m. Not yet: a climbing vine, on another plant's wood or on
+rock.
+
 Still open:
 
 - Pine and spruce seen from above in By size (canopy shot): grey-green

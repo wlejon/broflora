@@ -330,6 +330,30 @@ std::optional<PresetDef> presetDef(std::string_view name) {
         s.barkColor = rgb(0.20f, 0.30f, 0.24f);
         return d;
     }
+    // Vine (a creeping one: ground ivy, a trailing groundcover): runners
+    // fanned out level from the root, branching flat along the ground and
+    // never rising past a hand's height, clothed along their length in
+    // glossy, heart-shaped, dark leaves.
+    if (name == "vine") {
+        d.habit = "shrub";
+        d.species = shrubBase();
+        d.root = basalStemsModule(7, 1.0f, 0.12f, 1.0f, "vine:root");
+        d.leader = plagiotropicModule(2, 0.8f, 0.5f, 0.35f, 1.0f, "vine:leader");
+        Species& s = d.species;
+        s.growthScale = 2.4f; s.orthotropy = 0.0f; s.tropismG2 = 0.0f; s.kink = 0.35f;
+        s.lateralOrthotropy = 0.0f; s.lateralElevation = 0.0f;
+        s.heightMax = 0.15f;
+        s.leafDiameter = 0.006f;
+        s.clumpFlat = 0.22f; s.clumpScale = 0.3f; s.clumpInner = 1.0f;
+        s.leafSize = 0.5f;
+        s.leafColor = rgb(0.035f, 0.075f, 0.03f);
+        s.leafWidth = 0.9f; s.leafTip = 0.3f; s.leafGloss = 0.45f;
+        s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Alternate);
+        s.petiole = 0.6f;
+        bark(s, 0.1f, 0.6f, 0.0f, 0.0f);
+        s.barkColor = rgb(0.2f, 0.17f, 0.12f);
+        return d;
+    }
     // Cactus (a saguaro): a thick, ribbed green column whose few arms leave
     // it level and turn straight up; no leaves (its stems are all thicker
     // than any shoot that carries them).
@@ -585,7 +609,7 @@ const std::vector<std::string>& speciesPresetNames() {
     static const std::vector<std::string> names = {
         "oak", "elm", "beech", "birch", "willow", "palm", "cactus",
         "pine", "spruce", "fir", "cedar", "redwood", "cypress", "juniper",
-        "boxwood", "holly", "hydrangea", "hibiscus", "lavender", "succulent",
+        "boxwood", "holly", "hydrangea", "hibiscus", "lavender", "succulent", "vine",
     };
     return names;
 }

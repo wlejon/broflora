@@ -20,7 +20,8 @@
 //   shrub      boxwood, holly, hydrangea, hibiscus, lavender: a clump of
 //              stems from the ground, small dense modules over them;
 //              succulent (an agave: a stemless rosette of thick pointed
-//              leaves drawn as its wood, leafless otherwise)
+//              leaves drawn as its wood, leafless otherwise); vine (a
+//              creeping groundcover: level runners, glossy heart leaves)
 //
 // What a renderer draws the foliage as (Species::leafForm), its colour and
 // the bark's ride in the Species too; bro.flora's JS layer pairs each leaf
