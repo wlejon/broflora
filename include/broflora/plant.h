@@ -232,11 +232,22 @@ struct Species {
     //               a sharp point, not a rounded tooth)
     //   leafGloss   0 a matte leaf (the renderer's roughness), 1 a waxy,
     //               glossy one (holly): a tighter, brighter sun highlight
+    // How a broad leaf hangs on its shoot (the renderer grows each clump's
+    // leaves on twigs: bro.scene's scene_forest_shoot.glsl, bromesh's
+    // leafOnShoot):
+    //   phyllotaxis Phyllotaxis: its leaves alternate in two ranks (beech,
+    //               birch, holly), stand in opposite pairs each a quarter
+    //               turn from the last (hydrangea, boxwood: decussate), or
+    //               spiral round the shoot at 2/5 (hibiscus)
+    //   petiole     its leaf stalk's length over the blade's (0 sessile; a
+    //               birch's ~0.3, a holly's short 0.1)
     float leafWidth          = 0.0f;
     float leafTip            = 0.0f;
     float leafTeeth          = 0.0f;
     float leafToothDepth     = 0.0f;
     float leafGloss          = 0.0f;
+    uint32_t phyllotaxis     = 0;
+    float petiole            = 0.2f;
     // A needle or scale-leaf spray's set in its clump (leafForm Needle or
     // Scale):
     //   sprayBrush  0: the sprays lie round the clump, facing out (a fir's,
@@ -267,6 +278,14 @@ enum class BloomForm : uint32_t {
     Spike = 3,    // florets up a bare upright stalk (lavender)
 };
 inline constexpr uint32_t kBloomFormCount = 4;
+
+// How a broad leaf's leaves stand on their shoot (Species::phyllotaxis).
+enum class Phyllotaxis : uint32_t {
+    Alternate = 0,   // one a node, alternating in two ranks: a flat spray
+    Opposite = 1,    // two a node, each pair a quarter turn from the last
+    Spiral = 2,      // one a node, 2/5 of a turn apart
+};
+inline constexpr uint32_t kPhyllotaxisCount = 3;
 
 // What a plant's leaves are drawn as (Species::leafForm).
 enum class LeafForm : uint32_t {

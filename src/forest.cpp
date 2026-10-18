@@ -321,6 +321,8 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
         sp.leafToothDepth = std::clamp(plant.species.leafToothDepth, 0.0f, 0.6f);
         sp.leafGloss = std::clamp(plant.species.leafGloss, 0.0f, 1.0f);
         sp.sprayBrush = std::clamp(plant.species.sprayBrush, 0.0f, 1.0f);
+        sp.phyllotaxis = std::min(plant.species.phyllotaxis, kPhyllotaxisCount - 1);
+        sp.petiole = std::clamp(plant.species.petiole, 0.0f, 0.6f);
         const Vec3 o = plant.origin;
 
         // Bark, thickest first by each segment's keep radius: the thickest

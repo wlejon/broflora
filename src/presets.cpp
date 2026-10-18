@@ -178,6 +178,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             s.leafColor = rgb(0.08f, 0.155f, 0.04f);
             // Triangular-ovate leaves, double toothed.
             s.leafWidth = 0.65f; s.leafTeeth = 9.0f; s.leafToothDepth = 0.07f; s.leafGloss = 0.2f;
+            s.petiole = 0.3f;   // long stalks: the leaves flutter
             bark(s, 0.15f, 0.7f, 0.1f, 0.3f);
             s.barkColor = rgb(0.72f, 0.70f, 0.65f);
         }
@@ -342,6 +343,8 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             // Small oval leaves, blunt and round-tipped, entire, with a
             // soft sheen.
             s.leafWidth = 0.6f; s.leafTip = 1.0f; s.leafGloss = 0.35f;
+            // In opposite pairs on near-stalkless bases.
+            s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Opposite); s.petiole = 0.05f;
         } else if (name == "holly") {
             // Upright and dense, glossy dark green.
             d.root = basalStemsModule(4, 0.3f, 0.45f, 1.0f, "holly:root");
@@ -352,6 +355,8 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             // Stiff, waxy leaves edged with a few sharp spines.
             s.leafWidth = 0.55f; s.leafTip = 0.2f; s.leafTeeth = 3.0f; s.leafToothDepth = 0.32f;
             s.leafGloss = 0.9f;
+            // Spirally set on short, stout stalks.
+            s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Spiral); s.petiole = 0.1f;
         } else if (name == "hydrangea") {
             // A broad rounded mound of arching stems, big pale leaves.
             d.root = basalStemsModule(8, 0.7f, 0.3f, 1.0f, "hydrangea:root");
@@ -363,6 +368,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             // Broad, ovate leaves drawn to a point, finely toothed, matte.
             s.leafWidth = 0.62f; s.leafTip = 0.0f; s.leafTeeth = 12.0f; s.leafToothDepth = 0.06f;
             s.leafGloss = 0.1f;
+            s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Opposite); s.petiole = 0.25f;
             // Mophead blooms: big round heads of pale blue florets.
             s.bloomForm = static_cast<uint32_t>(BloomForm::Head);
             s.bloomColor = rgb(0.42f, 0.5f, 0.85f);
@@ -377,6 +383,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
             // Glossy ovate leaves, coarsely toothed.
             s.leafWidth = 0.6f; s.leafTip = 0.1f; s.leafTeeth = 7.0f; s.leafToothDepth = 0.08f;
             s.leafGloss = 0.6f;
+            s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Spiral); s.petiole = 0.35f;
             // Large open red flowers.
             s.bloomForm = static_cast<uint32_t>(BloomForm::Flower);
             s.bloomColor = rgb(0.8f, 0.06f, 0.08f);

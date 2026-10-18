@@ -82,6 +82,8 @@ struct ForestSpecimen {
     // leafToothDepth, leafGloss.
     float leafWidth = 0.0f, leafTip = 0.0f, leafTeeth = 0.0f, leafToothDepth = 0.0f, leafGloss = 0.0f;
     float sprayBrush = 0.0f;       // Species::sprayBrush
+    uint32_t phyllotaxis = 0;      // Species::phyllotaxis
+    float petiole = 0.0f;          // Species::petiole
     // Its blooms (ForestEmit::blooms), and what they are: Species::bloomForm,
     // bloomColor and bloomSize (count 0 for a plant not flowering, or one
     // whose species bears none).

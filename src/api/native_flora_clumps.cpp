@@ -171,13 +171,14 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
     // bloomForm (0 none, 1 flower, 2 head, 3 spike), bloomSize,
     // bloomColor.rgb, 0.
     // Per specimen, its broad leaf: leafWidth, leafTip, leafTeeth,
-    // leafToothDepth, leafGloss, and its sprays' sprayBrush, 0, 0.
+    // leafToothDepth, leafGloss, its sprays' sprayBrush, its petiole and
+    // phyllotaxis (0 alternate, 1 opposite, 2 spiral).
     std::vector<float> spec, inst, looks, leaves, blooms;
     for (const auto& s : f.specimens) {
         looks.insert(looks.end(), {s.leafColor.x, s.leafColor.y, s.leafColor.z, static_cast<float>(s.leafForm),
                                    s.barkColor.x, s.barkColor.y, s.barkColor.z, s.leafSize});
         leaves.insert(leaves.end(), {s.leafWidth, s.leafTip, s.leafTeeth, s.leafToothDepth, s.leafGloss,
-                                     s.sprayBrush, 0.0f, 0.0f});
+                                     s.sprayBrush, s.petiole, static_cast<float>(s.phyllotaxis)});
         blooms.insert(blooms.end(), {static_cast<float>(s.bloomStart), static_cast<float>(s.bloomCount),
                                      static_cast<float>(s.bloomForm), s.bloomSize, s.bloomColor.x, s.bloomColor.y,
                                      s.bloomColor.z, 0.0f});
