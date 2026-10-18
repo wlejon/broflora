@@ -209,8 +209,10 @@ std::vector<HerbSpecies> makePresets() {
         h.rise = 0.9f;
         h.arch = 0.5f;
         h.leafColor = rgb(0.06f, 0.1f, 0.04f);
-        h.stemColor = rgb(0.07f, 0.1f, 0.04f);
-        h.stemDiameter = 0.0025f;
+        // Wiry, pale grey-green stems bristling with white spreading hairs.
+        h.stemColor = rgb(0.11f, 0.15f, 0.065f);
+        h.stemDiameter = 0.003f;
+        h.hairs = 1.0f;
         h.bloomForm = HerbBloom::Cup;
         h.bloomSize = 0.075f;
         h.petals = 4;
@@ -291,8 +293,8 @@ std::vector<HerbSpecies> makePresets() {
         h.patchCover = 0.35f;
         add(h);
     }
-    {   // Yarrow: feathery, finely cut leaves and stiff stems topped by a flat
-        // umbel of tiny white florets.
+    {   // Yarrow: feathery, finely cut leaves and stiff stems topped by a
+        // domed cluster of tiny white florets.
         HerbSpecies h;
         h.name = "yarrow";
         h.habit = HerbHabit::Rosette;
@@ -300,11 +302,15 @@ std::vector<HerbSpecies> makePresets() {
         h.spread = 0.12f;
         h.leaves = 6;
         h.stems = 2;
-        h.leafShape = HerbLeaf::Lobed;
+        // Two or three times pinnate: a narrow frond of many pairs of
+        // leaflets, each cut into fine segments (feathery, the "thousand
+        // leaves" of its name).
+        h.leafShape = HerbLeaf::Frond;
         h.leafLength = 0.15f;
-        h.leafWidth = 0.22f;
-        h.pinnae = 12;
-        h.lobes = 0.95f;
+        h.leafWidth = 0.26f;
+        h.pinnae = 18;
+        h.lobes = 0.85f;
+        h.ribDiameter = 0.0012f;
         h.stalk = 0.1f;
         h.rise = 0.7f;
         h.arch = 0.6f;
@@ -554,7 +560,7 @@ void herbRecord(const HerbSpecies& h, float* o) {
         h.bloomColor.x, h.bloomColor.y, h.bloomColor.z, h.nod,
         h.centreColor.x, h.centreColor.y, h.centreColor.z, h.ribDiameter,
         h.shade, h.shadeRange, h.abundance, h.patch,
-        h.patchCover, bs, cover, 0.0f,
+        h.patchCover, bs, cover, h.hairs,
         h.stemSway.freq, h.stemSway.sway, h.leafSway.freq, h.leafSway.sway,
         spacing, side, sideBloom, herbLeafTop(h),
     };

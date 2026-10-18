@@ -92,6 +92,7 @@ struct HerbSpecies {
     bromath::Vec3 stemColor{0.08f, 0.12f, 0.04f};
     float stemDiameter = 0.003f;   // m, at the base
     float ribDiameter = 0.002f;    // m: a leaf's midrib (a frond's rachis) at its base
+    float hairs = 0.0f;            // 0 bare .. 1 bristling: hairs standing off its stems (a poppy's)
     // Its blooms.
     HerbBloom bloomForm = HerbBloom::None;
     float bloomSize = 0.0f;        // m: a flower's or a head's across; a raceme's or a spike's length
@@ -158,7 +159,7 @@ float herbLeafTop(const HerbSpecies& h);
 ///   28 bloomColor rgb, nod
 ///   32 centreColor rgb, ribDiameter
 ///   36 shade, shadeRange, abundance, patch
-///   40 patchCover, bloomShare, cover, 0
+///   40 patchCover, bloomShare, cover, hairs
 ///   44 stem freq, stem sway, leaf freq, leaf sway
 ///   48 spacing (worked out when 0), side cover, its blooms' share, leaf top
 inline constexpr size_t kHerbRecordFloats = 52;
