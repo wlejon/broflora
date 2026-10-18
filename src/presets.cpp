@@ -146,6 +146,50 @@ Species shrubBase() {
     return s;
 }
 
+// A palm's stem: a clear column `height` tall, leaning and curving a little,
+// topped by a rosette of `fronds` terminals, the inner ones near upright and
+// the outer ones level (the spear leaf at terminal 0, straight up).
+BranchModulePrototype palmTrunkModule(float height, uint32_t fronds, const char* name) {
+    BranchModulePrototype p;
+    p.name = name;
+    constexpr uint32_t n = 8;
+    for (uint32_t i = 0; i <= n; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(n);
+        p.nodes.push_back({{0.25f * height * t * t * 0.3f, height * t, 0.02f * std::sin(t * 5.0f)}, 0.03f * i, 1.0f, 1.0f});
+        if (i) p.edges.push_back({i - 1, i});
+    }
+    p.rootNode = 0;
+    const Vec3 top = p.nodes[n].position;
+    p.nodes.push_back({top + Vec3{0.0f, 0.2f, 0.0f}, 0.25f, 1.0f, 1.0f});
+    p.edges.push_back({n, n + 1});
+    p.terminalNodes.push_back(n + 1);
+    for (uint32_t k = 0; k < fronds; ++k) {
+        // A golden-angle spiral, each frond lower than the last.
+        const float a = static_cast<float>(k) * 2.39996f;
+        const float lift = 1.2f - 1.1f * static_cast<float>(k) / static_cast<float>(std::max(fronds - 1, 1u));
+        const Vec3 d{std::cos(a) * std::cos(lift), std::sin(lift), std::sin(a) * std::cos(lift)};
+        p.nodes.push_back({top + d * 0.15f, 0.25f, 1.0f, 1.0f});
+        p.edges.push_back({n, static_cast<uint32_t>(p.nodes.size() - 1)});
+        p.terminalNodes.push_back(static_cast<uint32_t>(p.nodes.size() - 1));
+    }
+    return p;
+}
+
+// A palm frond: one unbranched rachis `length` long, curving out from its
+// stalk (no terminals: it never branches on).
+BranchModulePrototype frondModule(float length, const char* name) {
+    BranchModulePrototype p;
+    p.name = name;
+    constexpr uint32_t n = 8;
+    for (uint32_t i = 0; i <= n; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(n);
+        p.nodes.push_back({{0.0f, length * t, 0.0f}, 0.04f * i, 1.0f, 1.0f});
+        if (i) p.edges.push_back({i - 1, i});
+    }
+    p.rootNode = 0;
+    return p;
+}
+
 void bark(Species& s, float furrow, float scale, float moss, float flare) {
     s.barkFurrow = furrow;
     s.barkScale = scale;
@@ -207,6 +251,30 @@ std::optional<PresetDef> presetDef(std::string_view name) {
         s.petiole = 0.08f;
         bark(s, 0.55f, 1.3f, 0.3f, 0.6f);   // deep, criss-crossing furrows
         s.barkColor = rgb(0.25f, 0.22f, 0.18f);
+        return d;
+    }
+    // Palm: a clear, unbranched column topped by a rosette of long fronds
+    // that never branch, arching over under their own weight (Species::sag),
+    // each a rachis lined with long narrow leaflets.
+    if (name == "palm") {
+        d.habit = "broadleaf";
+        d.species = broadleafBase();
+        d.root = palmTrunkModule(5.0f, 14, "palm:root");
+        d.leader = frondModule(3.2f, "palm:leader");
+        Species& s = d.species;
+        s.growthScale = 2.6f; s.orthotropy = 0.0f; s.tropismG2 = 0.0f; s.apicalControl = 0.4f;
+        s.pipeExp = 1.3f;
+        s.leafDiameter = 0.04f;   // a frond's stalk, tapering to a third
+        s.sag = 100.0f;
+        s.clumpFill = 1.0f;
+        s.clumpInner = 1.0f;
+        s.leafSize = 1.6f;
+        s.leafColor = rgb(0.10f, 0.16f, 0.05f);
+        s.leafWidth = 0.08f; s.leafGloss = 0.5f;
+        s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Alternate);
+        s.petiole = 0.0f;
+        bark(s, 0.2f, 0.5f, 0.0f, 0.4f);
+        s.barkColor = rgb(0.30f, 0.26f, 0.21f);
         return d;
     }
     // --- conifers ---------------------------------------------------------
@@ -441,7 +509,7 @@ std::optional<PresetDef> presetDef(std::string_view name) {
 
 const std::vector<std::string>& speciesPresetNames() {
     static const std::vector<std::string> names = {
-        "oak", "elm", "beech", "birch", "willow",
+        "oak", "elm", "beech", "birch", "willow", "palm",
         "pine", "spruce", "fir", "cedar", "redwood", "cypress", "juniper",
         "boxwood", "holly", "hydrangea", "hibiscus", "lavender",
     };

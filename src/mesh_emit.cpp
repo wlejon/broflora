@@ -702,9 +702,17 @@ size_t emitPlantSegmentsInto(const Plant& plant,
             }
         }
 
-        // Continuous radius for each node in the module.
+        // Continuous radius for each node in the module. One with no
+        // terminals never branches on (a palm's frond): it tapers from its
+        // base to a third of it at its deepest node.
         std::vector<float> nodeRadius(numNodes, rootR);
+        uint32_t deepest = 0;
+        for (size_t i = 0; i < numNodes; ++i) deepest = std::max(deepest, depth[i]);
         for (size_t i = 0; i < numNodes; ++i) {
+            if (proto.terminalNodes.empty()) {
+                nodeRadius[i] = rootR * (1.0f - 0.65f * static_cast<float>(depth[i]) / static_cast<float>(std::max(deepest, 1u)));
+                continue;
+            }
             if (reach[i].empty()) {
                 nodeRadius[i] = rootR;
                 continue;

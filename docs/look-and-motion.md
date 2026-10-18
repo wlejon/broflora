@@ -3958,6 +3958,18 @@ sag 30) stands 6.6 m, a dome of hanging shoots to the ground at 20 m
 and a rounded clump at 60 m. Not yet: the far tiers draw it as a round
 crown, not a curtain; its hanging foliage is thin close up.
 
+A palm, from the same parts. Its root module is a clear column (5 m,
+14 frond terminals in a golden-angle rosette from upright to level), and
+each frond is a module with no terminals, so it never branches on. Such
+a module now tapers from its base to a third of it at its tip (it had
+one radius along it; no other preset has one): with a frond of one
+radius the sag turned it most at its base and every frond hung straight
+down from the crown; tapered, the stiff stalk rises and the thin end
+arches over. The palm stands 8.4 m, a rosette of arching fronds on a
+column at 20 m. Not yet: the fronds carry the broad-leaf clumps (bunches
+of narrow leaves), not leaflets in two ranks along the rachis, so they
+do not read as feathers; that is the shoot shader's to draw.
+
 Still open:
 
 - Pine and spruce seen from above in By size (canopy shot): grey-green
