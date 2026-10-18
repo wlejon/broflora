@@ -3916,9 +3916,13 @@ above an open crown's fine branches are a grey haze over much of it: with
 no cut, pure clusters match the leaves (39.0 against 39.3 at 90 m).
 barkPixels 0.35 costs nothing on the flight, but the budget pays for it
 in leaves (detail 1.07 -> 1.16) and the side view's 40-80 m hard edges
-drop 5.7 -> 5.0. The fix is sub-pixel bark drawn by its cover (a ribbon a
-pixel wide covering its width, as the clump twigs are), not more of the
-round bark. Rejected along the way: clusters' leaves 15% larger (+2 cover,
+drop 5.7 -> 5.0. Fixed by sub-pixel bark drawn by its cover (bro
+a8e30042): what the round bark cuts or thins, down to half the cut, is a
+ribbon a pixel wide covering its width, as the clump twigs are, outside
+the budget. It was also the canopy's missing hard edges: 40-80 m noon
+5.7 -> 6.5 (Leaves 9.0), 20-40 m 7.2 -> 8.7 (9.7), golden 20-40 m
+5.3 -> 8.0 (8.3). Twigs pass 0.35 -> 0.6 ms on the flight. Rejected along
+the way: clusters' leaves 15% larger (+2 cover,
 softer side view), their outline ramp moved out (+2.6..6.7 cover, side
 view 20-40 m hard 7.2 -> 6.3), a stratified leaf order by clump (no
 change), a wider cell search (+0.7..2.5).
