@@ -3981,6 +3981,20 @@ fronds, at 20 m a radiating crown of them. Not yet: the leaflets favour
 each frond's outer half (the clump placer's), and past 60 m the clump
 and crown tiers draw the fronds as wisps, then a round blob.
 
+The far willow and palm. Silhouettes (grove capture `species ... sil`,
+leaves forced against auto) showed the far tiers matched the willow's
+leaves tier: the leaves tier itself was a cloud of round balls, each
+clump's leaves on its lobes' spheres. The willow takes pinnate leaves
+too, in small clumps (clumpScale 0.35, leafSize 1.2), so they line its
+whips: strands of foliage hanging from the arching limbs at 20 and 60
+m. And a pinnate clump's sprites (the clump tier) are its three lobes in
+a run along its wood, a third of the run each and a leaflet's reach
+across, not spheres round it: the willow's clump tier hangs in strands,
+and the palm keeps its radiating fronds at 60 m and a palm's outline at
+150 m (it was a round blob). Not yet: close up the willow's leaves lie in
+two flat ranks like a fern's, and at 60 m in auto the crown tier draws
+it as a dome.
+
 A cactus (a saguaro), from the same parts and one new bark. Its root
 module is a column with three arms leaving its upper part level and
 turning up at an elbow; the leader and arms lengthen only (maxBranchOrder

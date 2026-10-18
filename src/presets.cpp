@@ -274,10 +274,12 @@ std::optional<PresetDef> presetDef(std::string_view name) {
         s.sag = 30.0f;
         s.clumpFill = 1.0f;
         s.clumpInner = 0.6f;
-        s.leafSize = 0.8f;
+        s.clumpScale = 0.35f;   // short runs of leaves, following the whips
+        s.leafSize = 1.2f;
         s.leafColor = rgb(0.11f, 0.17f, 0.04f);
         s.leafWidth = 0.2f; s.leafTeeth = 14.0f; s.leafToothDepth = 0.03f; s.leafGloss = 0.3f;
         s.petiole = 0.08f;
+        s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Pinnate);   // along the whips themselves
         bark(s, 0.55f, 1.3f, 0.3f, 0.6f);   // deep, criss-crossing furrows
         s.barkColor = rgb(0.25f, 0.22f, 0.18f);
         return d;
