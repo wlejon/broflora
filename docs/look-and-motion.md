@@ -4048,13 +4048,30 @@ limb in every frame, where with its own sway (a 6 m column of thin wood)
 its mass swung off the bark. Nothing is baked: a forest draws the pair as
 two specimens under one instance. Not yet: a climber on rock.
 
-Lobe self-shade against the leaves tier, measured and left: the lobe's
-density (forestMassDepth from its real leaf count) times 0.8 matches the
-broadleaf's leaves tier at 45 / 120 m (Y 123.7 / 125.4 against 124.0 /
-125.4; at 0.5 it is 2 levels light at 120 m), but takes the shrubs 3.5
-levels further below theirs, which with no lobe self-shade at all match
-(97.9 / 100.1 against 98.1 / 101.3 at 10 / 20 m): the shadow map, not the
-lobe's leaf count, is what differs between the habits' leaves tiers.
+Lobe self-shade against the leaves tier (bro a05ef3fc): the leaves tier's
+shade among a lobe's own leaves is the shadow map's, whose lookup is
+pushed off along the leaf's normal and biased in depth by a few texels,
+so no leaf is shaded by the leaves that near it toward the light; the
+analytic path through a placed leaf's sphere now skips its first 3 shadow
+texels too (at most 0.15 m), and the lobe sprite and cluster take 0.8 of
+the lobe's depth (0.5 before the skip). Clumps against leaves: shrubs at
+noon 10 / 20 m -6.7 / -6.6 -> -1.6 / -2.5 levels, golden -8.1 / -5.4 ->
+-5.6 / -2.5; broadleaf noon side 45 / 75 / 120 m +1.7 / +2.1 / +2.1 ->
++0.6 / +0.9 / +0.7. (Without the skip, 0.8 matched the broadleaf but took
+the shrubs 3.5 levels further down; with no lobe self-shade at all the
+shrubs matched.)
+
+Casters for thinned leaves (bro d6212931): a leaf is shaded by the casters
+alone, and a tree's caster had gone to clump discs (each past its lobe's
+middle, shading the lobes behind) while the camera still drew its leaves.
+Where the camera draws leaves the caster now keeps leaves at the tile's
+widening. Broadleaf auto against its leaves, golden 45 / 75 m +6.3 /
++11.1 -> +1.5 / +7.0 levels, 120 m +0.9 after (not measured before; the
+commit's "+2.2" was not a measurement); noon 75 m +3.9 -> +2.4. The
+flight's shadow vertices 6.2 -> 6.3 M. The flight trace's GPU times on
+the Windows box swing tenfold between identical runs (one second 51 ms
+in one, 4.4 ms in the other, same vertex counts): frame time is judged
+on jserve, not there.
 
 Still open:
 
