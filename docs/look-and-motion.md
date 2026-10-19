@@ -4122,6 +4122,24 @@ pixels takes in the ground through a fine crown's part-covered pixels.
 Per the leaves tier's cover, it agrees on the sign (golden 45 / 75 m
 +3.5 / +9).
 
+Then (bro 175a3a63 and after): the golden excess is the light through
+the leaves. With translucency off (scene_lighting.glsl's leaf `amount`),
+45 m unshadowed, bark cut to nothing: auto against leaves is -3.9 at
+noon and -4.6 at golden, the same depth (AO) gap under both suns. With it
+on, translucency adds +47 to the leaves tier at golden and +55 to auto.
+It is not the extra cover: the widened sprays shrunk to k^0.85 (cover
+12.6 -> 11.7% against 11.2%) leave golden at 97.1 against 88.4
+(shadowed). Not yet tested: a widened spray's needles span more pixels,
+so fewer of their normals are averaged within a pixel and more face away
+from a low sun. The thing to measure next is the share of auto's pixels
+with N.L < 0 against the leaves tier's.
+
+The meadow's band of poppies (grove herbs captures at 3 and 10 m) is the
+roller's trampled lane, not a herb ring: moving the inner ring's edge
+and doubling the handover bands left it in place. A trampled herb only
+leans (scene_herb.glsl: a leg brushing a stalk), so its poppies stand
+clear above the flattened grass.
+
 Still open:
 
 - Pine and spruce seen from above in By size (canopy shot): grey-green
