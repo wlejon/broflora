@@ -4,6 +4,7 @@
 // (include/broflora/sway.h).
 #include "broflora/sway.h"
 
+#include "broflora/forest_records.h"
 #include "broflora/mesh_emit.h"
 
 #include "bromath/vec.h"
@@ -583,14 +584,21 @@ void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s) {
 
 void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s, float along0, float along1,
                              float length) {
+    namespace v = forest_records::vegetation;
+    static_assert(v::kFloats == kSegmentVegetationFloats);
     const auto at = [&](float t) { return s.weightFrom + (s.weightTo - s.weightFrom) * t; };
-    const float v[kSegmentVegetationFloats] = {
-        s.root.x, s.root.y, s.root.z, s.height,
-        s.crown.x, s.crown.y, s.crown.z, s.crownRadius,
-        at(along0), at(along1), s.pathFrom + along0 * length, s.bark,
-        0.0f, packSwayTwig(s.phase, s.twig), packSwayLimb(s.limb), packSwayTrunk(s.trunk),
-    };
-    out.insert(out.end(), v, v + kSegmentVegetationFloats);
+    float* r = forest_records::append(out, v::kFloats);
+    r[v::kRoot] = s.root.x; r[v::kRoot + 1] = s.root.y; r[v::kRoot + 2] = s.root.z;
+    r[v::kHeight] = s.height;
+    r[v::kCrown] = s.crown.x; r[v::kCrown + 1] = s.crown.y; r[v::kCrown + 2] = s.crown.z;
+    r[v::kCrownRadius] = s.crownRadius;
+    r[v::kWeightFrom] = at(along0);
+    r[v::kWeightTo] = at(along1);
+    r[v::kPath] = s.pathFrom + along0 * length;
+    r[v::kBark] = s.bark;
+    r[v::kTwig] = packSwayTwig(s.phase, s.twig);
+    r[v::kLimb] = packSwayLimb(s.limb);
+    r[v::kTrunk] = packSwayTrunk(s.trunk);
 }
 
 float packBarkWord(float furrow, float scale, float moss, bool ribs) {

@@ -3,6 +3,7 @@
 // emitFoliageTransforms, emitFoliageVegetation) and world.emitClumps().
 
 #include "native_flora_internal.h"
+#include "broflora/forest_records.h"
 
 namespace broflora::api {
 
@@ -163,52 +164,25 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
     }
     const broflora::ForestEmit f = broflora::emitForest(*w->world, fo);
 
-    // Per specimen: segStart, segCount, clumpStart, clumpCount, leafStart,
-    // leafCount, height, crownRadius, crown.xyz (relative), plant index,
-    // origin.xyz, its clumps' height over their width (Species::clumpFlat).
-    // Per specimen, its look: leafColor.rgb, leafForm, barkColor.rgb, leafSize.
-    // Per specimen, its blooms: bloomStart, bloomCount (into `blooms`),
-    // bloomForm (0 none, 1 flower, 2 head, 3 spike), bloomSize,
-    // bloomColor.rgb, 0.
-    // Per specimen, its broad leaf: leafWidth, leafTip, leafTeeth,
-    // leafToothDepth, leafGloss, its sprays' sprayBrush, its petiole and
-    // phyllotaxis (0 alternate, 1 opposite, 2 spiral).
-    std::vector<float> spec, inst, looks, leaves, blooms;
-    for (const auto& s : f.specimens) {
-        looks.insert(looks.end(), {s.leafColor.x, s.leafColor.y, s.leafColor.z, static_cast<float>(s.leafForm),
-                                   s.barkColor.x, s.barkColor.y, s.barkColor.z, s.leafSize});
-        leaves.insert(leaves.end(), {s.leafWidth, s.leafTip, s.leafTeeth, s.leafToothDepth, s.leafGloss,
-                                     s.sprayBrush, s.petiole, static_cast<float>(s.phyllotaxis)});
-        blooms.insert(blooms.end(), {static_cast<float>(s.bloomStart), static_cast<float>(s.bloomCount),
-                                     static_cast<float>(s.bloomForm), s.bloomSize, s.bloomColor.x, s.bloomColor.y,
-                                     s.bloomColor.z, 0.0f});
-        spec.insert(spec.end(), {static_cast<float>(s.segStart), static_cast<float>(s.segCount),
-                                 static_cast<float>(s.clumpStart), static_cast<float>(s.clumpCount),
-                                 static_cast<float>(s.leafStart), static_cast<float>(s.leafCount),
-                                 s.height, s.crownRadius, s.crown.x, s.crown.y, s.crown.z,
-                                 static_cast<float>(s.plant), s.origin.x, s.origin.y, s.origin.z, s.clumpFlat});
-        // x, y, z, scale, yaw, specimen, 0, 0: drawn where the plant grew.
-        inst.insert(inst.end(), {s.origin.x, s.origin.y, s.origin.z, 1.0f, 0.0f,
-                                 static_cast<float>(inst.size() / 8), 0.0f, 0.0f});
-    }
+    // Per specimen: specimens, specimenLooks, specimenLeaves, specimenBlooms
+    // and instances, laid out as broflora/forest_records.h says.
+    const broflora::forest_records::Packed packed = broflora::forest_records::pack(f);
     ev::Persistent obj(ev::createObject());
     const auto put = [&](const char* name, const std::vector<float>& v) {
         ev::Persistent a(makeFloat32Array(v.empty() ? nullptr : v.data(), v.size()));
         obj.set(ev::setProperty(obj.get(), name, a.get()));
     };
-    put("specimens", spec);
-    put("specimenLooks", looks);
-    put("specimenLeaves", leaves);
-    put("instances", inst);
+    put("specimens", packed.specimens);
+    put("specimenLooks", packed.looks);
+    put("specimenLeaves", packed.leafLooks);
+    put("instances", packed.instances);
     put("segments", f.segments);
     put("tangents", f.tangents);
     put("segmentVegetation", f.segmentVegetation);
     put("keepRadius", f.keepRadius);
     put("clumps", f.clumps);
     put("clumpVegetation", f.clumpVegetation);
-    put("specimenBlooms", blooms);
-    // Per bloom: position.xyz (relative), size, direction.xyz, its segment
-    // (an index into its specimen's segments).
+    put("specimenBlooms", packed.blooms);
     put("blooms", f.blooms);
     {
         // Leaf (clump, key) pairs stay integers: a world's keys pass 2^24.
@@ -222,8 +196,8 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
         obj.set(ev::setProperty(obj.get(), "leafForm", lfName));
     }
     obj.set(ev::setProperty(obj.get(), "specimenCount", ev::fromDouble(static_cast<double>(f.specimens.size()))));
-    obj.set(ev::setProperty(obj.get(), "leafCount", ev::fromDouble(static_cast<double>(f.leaves.size() / 2))));
-    obj.set(ev::setProperty(obj.get(), "bloomCount", ev::fromDouble(static_cast<double>(f.blooms.size() / 8))));
+    obj.set(ev::setProperty(obj.get(), "leafCount", ev::fromDouble(static_cast<double>(f.leaves.size() / broflora::forest_records::leaf::kValues))));
+    obj.set(ev::setProperty(obj.get(), "bloomCount", ev::fromDouble(static_cast<double>(f.blooms.size() / broflora::forest_records::bloom::kFloats))));
     obj.set(ev::setProperty(obj.get(), "seed", ev::fromDouble(static_cast<double>(f.leafOptions.seed))));
     obj.set(ev::setProperty(obj.get(), "upBias", ev::fromDouble(f.leafOptions.upBias)));
     obj.set(ev::setProperty(obj.get(), "tiltJitter", ev::fromDouble(f.leafOptions.tiltJitter)));

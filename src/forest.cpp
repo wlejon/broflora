@@ -1,5 +1,7 @@
 #include "broflora/forest.h"
 
+#include "broflora/forest_records.h"
+
 #include "broflora/sway.h"
 
 #include <bromath/vec.h>
@@ -12,6 +14,12 @@
 #include <vector>
 
 namespace broflora {
+
+namespace rec = forest_records;
+
+namespace {
+void put3(float* d, const bromath::Vec3& v) { d[0] = v.x; d[1] = v.y; d[2] = v.z; }
+}  // namespace
 
 using bromath::Vec3;
 
@@ -128,8 +136,9 @@ uint64_t splitmix(uint64_t& s) {
 // A record moved to be relative to `o`: its root (floats 0-2) and its crown
 // or tip (4-6) are points.
 void relativeRecord(float* r, const Vec3& o) {
-    r[0] -= o.x; r[1] -= o.y; r[2] -= o.z;
-    r[4] -= o.x; r[5] -= o.y; r[6] -= o.z;
+    for (const size_t f : {rec::vegetation::kRoot, rec::vegetation::kCrown}) {
+        r[f] -= o.x; r[f + 1] -= o.y; r[f + 2] -= o.z;
+    }
 }
 
 // How far apart (in bloom sizes, centre to centre) a plant's blooms stand at
@@ -153,7 +162,7 @@ void appendBlooms(ForestEmit& out, ForestSpecimen& sp, const Plant& plant,
                   const std::vector<bromesh::BranchSegment>& segs, const std::vector<TubeSegment>& tubes,
                   uint64_t seed) {
     const Species& s = plant.species;
-    sp.bloomStart = static_cast<uint32_t>(out.blooms.size() / 8);
+    sp.bloomStart = static_cast<uint32_t>(out.blooms.size() / rec::bloom::kFloats);
     sp.bloomForm = s.bloomForm < kBloomFormCount ? s.bloomForm : 0u;
     sp.bloomColor = s.bloomColor;
     sp.bloomSize = s.bloomSize > 0.0f ? s.bloomSize : 0.0f;
@@ -259,10 +268,13 @@ void appendBlooms(ForestEmit& out, ForestSpecimen& sp, const Plant& plant,
         keptAt.push_back(p);
         keptSize.push_back(size);
         const Vec3 r = p - plant.origin;
-        out.blooms.insert(out.blooms.end(), {r.x, r.y, r.z, size, facing.x, facing.y, facing.z,
-                                             static_cast<float>(pieceOf(a.segment))});
+        float* b = rec::append(out.blooms, rec::bloom::kFloats);
+        put3(b + rec::bloom::kPosition, r);
+        b[rec::bloom::kSize] = size;
+        put3(b + rec::bloom::kDir, facing);
+        b[rec::bloom::kSegment] = static_cast<float>(pieceOf(a.segment));
     }
-    sp.bloomCount = static_cast<uint32_t>(out.blooms.size() / 8) - sp.bloomStart;
+    sp.bloomCount = static_cast<uint32_t>(out.blooms.size() / rec::bloom::kFloats) - sp.bloomStart;
 }
 
 }  // namespace
@@ -354,14 +366,19 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
         std::stable_sort(tubes.begin(), tubes.end(), [&](const TubeSegment& a, const TubeSegment& b) {
             return keep[static_cast<size_t>(a.segment)] > keep[static_cast<size_t>(b.segment)];
         });
-        sp.segStart = static_cast<uint32_t>(out.segments.size() / 8);
+        sp.segStart = static_cast<uint32_t>(out.segments.size() / rec::segment::kFloats);
         sp.segCount = static_cast<uint32_t>(tubes.size());
         for (const TubeSegment& t : tubes) {
             out.keepRadius.push_back(keep[static_cast<size_t>(t.segment)]);
             const Vec3 f = t.from - o, e = t.to - o;
-            out.segments.insert(out.segments.end(), {f.x, f.y, f.z, t.rFrom, e.x, e.y, e.z, t.rTo});
-            out.tangents.insert(out.tangents.end(), {t.tangentFrom.x, t.tangentFrom.y, t.tangentFrom.z,
-                                                     t.tangentTo.x, t.tangentTo.y, t.tangentTo.z});
+            float* g = rec::append(out.segments, rec::segment::kFloats);
+            put3(g + rec::segment::kFrom, f);
+            g[rec::segment::kRFrom] = t.rFrom;
+            put3(g + rec::segment::kTo, e);
+            g[rec::segment::kRTo] = t.rTo;
+            float* tg = rec::append(out.tangents, rec::tangent::kFloats);
+            put3(tg + rec::tangent::kFrom, t.tangentFrom);
+            put3(tg + rec::tangent::kTo, t.tangentTo);
             const size_t at = out.segmentVegetation.size();
             appendTubeVegetation(out.segmentVegetation, t, sway, segs);
             relativeRecord(&out.segmentVegetation[at], o);
@@ -369,30 +386,35 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
 
         // Clumps, and their leaves shuffled into an even thinning order.
         sp.clumpStart = static_cast<uint32_t>(clumpAt);
-        sp.leafStart = static_cast<uint32_t>(out.leaves.size() / 2);
+        sp.leafStart = static_cast<uint32_t>(out.leaves.size() / rec::leaf::kValues);
         std::vector<uint32_t> mine;   // (clump, key) pairs
         while (clumpAt < clumps.size() && static_cast<size_t>(clumps[clumpAt].segment) < segEnd) {
             const bromesh::LeafClump& c = clumps[clumpAt];
             const Vec3 p = c.center - o;
-            out.clumps.insert(out.clumps.end(), {p.x, p.y, p.z, c.radius, c.dir.x, c.dir.y, c.dir.z,
-                                                 static_cast<float>(leafCount[clumpAt])});
+            float* cr = rec::append(out.clumps, rec::clump::kFloats);
+            put3(cr + rec::clump::kCentre, p);
+            cr[rec::clump::kRadius] = c.radius;
+            put3(cr + rec::clump::kTwig, c.dir);
+            cr[rec::clump::kLeafCount] = static_cast<float>(leafCount[clumpAt]);
             const size_t local = static_cast<size_t>(c.segment) - segBase;
             const size_t at = out.clumpVegetation.size();
             appendClumpVegetation(out.clumpVegetation, sway[local]);
             relativeRecord(&out.clumpVegetation[at], o);
             for (int k = 0; k < leafCount[clumpAt]; ++k) {
-                mine.push_back(static_cast<uint32_t>(clumpAt));
-                mine.push_back(leafKey[clumpAt] + static_cast<uint32_t>(k));
+                uint32_t l[rec::leaf::kValues];
+                l[rec::leaf::kClump] = static_cast<uint32_t>(clumpAt);
+                l[rec::leaf::kKey] = leafKey[clumpAt] + static_cast<uint32_t>(k);
+                mine.insert(mine.end(), l, l + rec::leaf::kValues);
             }
             ++clumpAt;
         }
         sp.clumpCount = static_cast<uint32_t>(clumpAt) - sp.clumpStart;
-        const size_t n = mine.size() / 2;
+        const size_t n = mine.size() / rec::leaf::kValues;
         uint64_t rng = opts.seed ^ (static_cast<uint64_t>(pi + 1) * 0xD1B54A32D192ED03ULL);
         for (size_t i = n; i > 1; --i) {
             const size_t j = static_cast<size_t>(splitmix(rng) % i);
-            std::swap(mine[2 * (i - 1)], mine[2 * j]);
-            std::swap(mine[2 * (i - 1) + 1], mine[2 * j + 1]);
+            std::swap_ranges(mine.begin() + rec::leaf::kValues * (i - 1), mine.begin() + rec::leaf::kValues * i,
+                             mine.begin() + rec::leaf::kValues * j);
         }
         out.leaves.insert(out.leaves.end(), mine.begin(), mine.end());
         sp.leafCount = static_cast<uint32_t>(n);
@@ -404,6 +426,55 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
         segBase = segEnd;
     }
     return out;
+}
+
+forest_records::Packed forest_records::pack(const ForestEmit& f) {
+    Packed p;
+    for (const ForestSpecimen& s : f.specimens) {
+        float* r = append(p.specimens, specimen::kFloats);
+        r[specimen::kSegStart] = static_cast<float>(s.segStart);
+        r[specimen::kSegCount] = static_cast<float>(s.segCount);
+        r[specimen::kClumpStart] = static_cast<float>(s.clumpStart);
+        r[specimen::kClumpCount] = static_cast<float>(s.clumpCount);
+        r[specimen::kLeafStart] = static_cast<float>(s.leafStart);
+        r[specimen::kLeafCount] = static_cast<float>(s.leafCount);
+        r[specimen::kHeight] = s.height;
+        r[specimen::kCrownRadius] = s.crownRadius;
+        put3(r + specimen::kCrown, s.crown);
+        r[specimen::kPlant] = static_cast<float>(s.plant);
+        put3(r + specimen::kOrigin, s.origin);
+        r[specimen::kClumpFlat] = s.clumpFlat;
+
+        float* l = append(p.looks, look::kFloats);
+        put3(l + look::kLeafColor, s.leafColor);
+        l[look::kLeafForm] = static_cast<float>(s.leafForm);
+        put3(l + look::kBarkColor, s.barkColor);
+        l[look::kLeafSize] = s.leafSize;
+
+        float* ll = append(p.leafLooks, leaf_look::kFloats);
+        ll[leaf_look::kWidth] = s.leafWidth;
+        ll[leaf_look::kTip] = s.leafTip;
+        ll[leaf_look::kTeeth] = s.leafTeeth;
+        ll[leaf_look::kToothDepth] = s.leafToothDepth;
+        ll[leaf_look::kGloss] = s.leafGloss;
+        ll[leaf_look::kSprayBrush] = s.sprayBrush;
+        ll[leaf_look::kPetiole] = s.petiole;
+        ll[leaf_look::kPhyllotaxis] = static_cast<float>(s.phyllotaxis);
+
+        float* b = append(p.blooms, specimen_bloom::kFloats);
+        b[specimen_bloom::kStart] = static_cast<float>(s.bloomStart);
+        b[specimen_bloom::kCount] = static_cast<float>(s.bloomCount);
+        b[specimen_bloom::kForm] = static_cast<float>(s.bloomForm);
+        b[specimen_bloom::kSize] = s.bloomSize;
+        put3(b + specimen_bloom::kColor, s.bloomColor);
+
+        // Drawn where the plant grew.
+        float* in = append(p.instances, instance::kFloats);
+        put3(in + instance::kPosition, s.origin);
+        in[instance::kScale] = 1.0f;
+        in[instance::kSpecimen] = static_cast<float>(p.instances.size() / instance::kFloats - 1);
+    }
+    return p;
 }
 
 } // namespace broflora
