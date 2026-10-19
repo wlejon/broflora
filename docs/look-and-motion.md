@@ -4073,6 +4073,20 @@ the Windows box swing tenfold between identical runs (one second 51 ms
 in one, 4.4 ms in the other, same vertex counts): frame time is judged
 on jserve, not there.
 
+The needle trees' mid range (forest tiers, part=needle, shadow=0, noon):
+auto at 45 / 75 m reads 100.8 / 100.6 against the leaves tier's 107.1 /
+107.2, and it is not the widening: with no thinning (lod leafPixels 1)
+auto is 102.4, and with the bark's cut taken to nothing (barkPixels 0.02)
+107.1, the leaves tier exactly. A pine's fine wood, all under the bark's
+cut and the ribbons' (half of it), is about 5 levels of its crown's
+colour at 45 m: the orange shoots through its needles. Tried and reverted
+(bro, uncommitted): raising the drawn ribbons' cover by the cut wood's
+area over theirs, and drawing the 64 thickest cut segments as ribbons:
+no change at all, unexplained (with a flat 8x on the natural ribbon band
+at barkPixels 0.35 Y rose to 112, so the ribbons do reach the image
+there). Next: draw the cut wood itself as ribbons a tree at a time with
+the cover of its pixel width, and measure the cost on jserve.
+
 Still open:
 
 - Pine and spruce seen from above in By size (canopy shot): grey-green
