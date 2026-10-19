@@ -7,6 +7,7 @@
 #include <bromath/vec.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <numeric>
@@ -362,6 +363,21 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
         shape.minRadius = opts.minRadius;
         shape.rootFlare = plant.species.rootFlare;
         shape.branchCollar = plant.species.branchCollar;
+        // Each segment's clumps, its own and every one beyond it, while
+        // they are few (indices into the specimen's clumps): a clump counted
+        // on its way up to the root.
+        constexpr size_t kSubMax = rec::segment_clumps::kMax;
+        std::vector<std::array<uint32_t, kSubMax>> subList(segs.size());
+        std::vector<uint32_t> subCount(segs.size(), 0);
+        for (size_t ci = clumpAt; ci < clumps.size() && static_cast<size_t>(clumps[ci].segment) < segEnd; ++ci) {
+            for (int64_t s = static_cast<int64_t>(clumps[ci].segment) - static_cast<int64_t>(segBase);
+                 s >= 0 && static_cast<size_t>(s) < segs.size(); s = segs[static_cast<size_t>(s)].parent) {
+                const size_t k = static_cast<size_t>(s);
+                if (subCount[k] < kSubMax) subList[k][subCount[k]] = static_cast<uint32_t>(ci - clumpAt);
+                ++subCount[k];
+                if (segs[k].parent >= s) break;
+            }
+        }
         std::vector<TubeSegment> tubes = tubeSegments(segs, shape);
         std::stable_sort(tubes.begin(), tubes.end(), [&](const TubeSegment& a, const TubeSegment& b) {
             return keep[static_cast<size_t>(a.segment)] > keep[static_cast<size_t>(b.segment)];
@@ -370,6 +386,13 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
         sp.segCount = static_cast<uint32_t>(tubes.size());
         for (const TubeSegment& t : tubes) {
             out.keepRadius.push_back(keep[static_cast<size_t>(t.segment)]);
+            {
+                const size_t k = static_cast<size_t>(t.segment);
+                float* sc = rec::append(out.segmentClumps, rec::segment_clumps::kFloats);
+                for (size_t j = 0; j < kSubMax; ++j)
+                    sc[rec::segment_clumps::kClumps + j] =
+                        j < subCount[k] && subCount[k] <= kSubMax ? static_cast<float>(subList[k][j]) : -1.0f;
+            }
             const Vec3 f = t.from - o, e = t.to - o;
             float* g = rec::append(out.segments, rec::segment::kFloats);
             put3(g + rec::segment::kFrom, f);

@@ -91,6 +91,17 @@ inline constexpr size_t kRTo = 7;
 inline constexpr size_t kFloats = 8;
 }  // namespace segment
 
+/// ForestEmit::segmentClumps: the clumps a segment leads to, its own and
+/// every one beyond it, when they are at most kMax: each an index into its
+/// specimen's clumps, -1 past the last. All -1: none, or more than kMax (a
+/// renderer dropping clumps keeps that wood whatever they do). Listed, not a
+/// run: a subtree's clumps are not always neighbours in clump order.
+namespace segment_clumps {
+inline constexpr size_t kClumps = 0;       // kMax of them
+inline constexpr size_t kMax = 4;
+inline constexpr size_t kFloats = 4;
+}  // namespace segment_clumps
+
 /// ForestEmit::tangents: the bark's direction at a segment's ends.
 namespace tangent {
 inline constexpr size_t kFrom = 0;         // xyz

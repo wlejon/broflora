@@ -145,6 +145,9 @@ struct ForestEmit {
     /// order's key: it never grows down a specimen's list, so "every segment
     /// whose keep radius is at least r" is a connected prefix.
     std::vector<float> keepRadius;
+    /// Per segment: the few clumps it leads to, if few (forest_records.h's
+    /// segment_clumps, 4 floats).
+    std::vector<float> segmentClumps;
     /// Per clump: centre.xyz, radius, twig dir.xyz, leaf count (8 floats).
     std::vector<float> clumps;
     /// Per clump: its 16-float vegetation record (appendClumpVegetation).
