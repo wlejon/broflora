@@ -4134,6 +4134,27 @@ so fewer of their normals are averaged within a pixel and more face away
 from a low sun. The thing to measure next is the share of auto's pixels
 with N.L < 0 against the leaves tier's.
 
+Fixed (bro 55f299ba): the light through a widened spray, and through a
+spray node's sprites, is its leaves' mean over a spread of facings
+(SceneSurface::leafThroughSpread). Needle auto against leaves, golden
+45 / 75 m: +9.1 / +9.2 -> +0.9 / +3.1 levels. Broad lobes keep their own
+facing (with the spread, a broadleaf's far crowns went 7 dark at golden).
+Also (bro d5506448): a broad node's lobe sprites reach further, and tint
+toward its bark in shade, by the cut wood's share, standing in for the
+limbs the cut leaves out (120 m cover 44.3 -> 46.7% against 47.3).
+
+Open, the scale-leaf (cypress) node: auto goes to the crowns tier by
+45 m (its clumps are a few pixels), and that tier is wrong both ways.
+Without shadows it is 8.5 levels darker than its leaves (92.2 against
+100.7 at 45 m noon). With them it is lighter: the cast shade darkens the
+leaves tier by 33 and the crowns by 19, since a crown caster is one disc
+past its middle. Golden crowns are +10.7 at 45 m and -10.8 at 120 m.
+Tried and reverted: a broadleaf's whole-crown shading for spray nodes
+(needle crowns noon +5.8 -> -7.4; scale worse), and the handover moved
+later (lod crownFrom 3.5, crownTo 2.25: 45 m golden +2.0, noon +17.7). The
+clumps tier is the steadier one: golden -4.3 / -4.2 / -5.3 at 45 / 75 /
+120 m, noon +7.5 / +2.4 / -1.4.
+
 The meadow's band of poppies (grove herbs captures at 3 and 10 m) is the
 roller's trampled lane, not a herb ring: moving the inner ring's edge
 and doubling the handover bands left it in place. A trampled herb only
