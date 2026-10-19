@@ -4108,7 +4108,19 @@ while widened (cardWidening 100) swings the same (104.7 / 121.2 against
 spray's light is its anchor's (vegCrownShade: depth AO and the bulk
 normal from the crown's centre), and a sparse kept set lets more of the
 crown's far side show; with a low sun that side faces the light when
-the view is toward it. Not yet tested.
+the view is toward it. Tested, and wrong: with the bulk normal zeroed
+the swing stays (45 m unshadowed noon -3.1, golden +2.9). With the AO
+fixed at 1, noon closes (-0.5) and golden stays (+3.7), so the noon part
+is depth. No single change closes golden: shrinking every leaf by 0.8
+(noon -1.7, golden +2.6), dropping the widened spray's inward move (-2.0
+/ +3.9), and the flutter (wind only). Without shadows the tint adds the
+same at both suns (about +6), so the golden excess is the widened tier's
+light, and no single albedo tint can brighten it at noon and darken it
+at golden. The tiers capture now also prints dY (broworkshop 4eb6943),
+the mean signed luminance change over the pane: Y over the covered
+pixels takes in the ground through a fine crown's part-covered pixels.
+Per the leaves tier's cover, it agrees on the sign (golden 45 / 75 m
++3.5 / +9).
 
 Still open:
 
