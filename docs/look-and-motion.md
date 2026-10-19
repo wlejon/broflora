@@ -4205,6 +4205,36 @@ unshadowed -3.1 -> -0.2), golden gets worse (needle 75 m +3.1 -> +5.4,
 scale 75 m +9.4 -> +10.2): a trade, and a leaf's facings don't depend on
 where the eye is.
 
+A broad lobe's own shade now takes the area its leaves turn to the light,
+as its disc caster already did (bro 0fa9e7c3): leaves leaning up stop less
+of a low sun than of a high one, (1 - b) + 2 b |L.y| with b the up bias,
+on 0.9 of the depth through the lobe (was 0.8 for every sun). Clumps minus
+leaves: broadleaf noon 35/75/120 m +1.6/+1.8/+1.3 -> -0.4/-0.3/-0.5,
+golden +3.9/+1.6/+0.9 -> +3.6/+1.3/+0.6; grove birch noon 5/20/60/150 m
++6.8/+2.8/+5.0/+4.8 -> +4.5/+0.9/+3.7/+2.9. The trade: one scale can't
+bring both the oak and the birch within 1.5. The birch's lobes stand apart,
+so they take little of the other lobes' disc shade that a dense oak crown
+makes up its weak self term with; it wants about twice the oak's self
+depth. At 1.0 the birch goes +3.8/+0.4/+3.3/+2.4, but the canopy at golden
+goes 0.4 darker than its leaves at 80-160 m; at 1.6 the birch is
++1.0/-1.8/+1.7/+0.3 and the broadleaf 2.7 to 4.1 too dark. Weakening the
+lobes' disc casters to let the self term rise doesn't work either: auto's
+casters near the leaves handover are those discs, so auto goes lighter
+(golden 35 m +3.0 -> +5.1 at 0.7 of their depth). 0.9 is the most the
+golden metrics take unchanged (all within 0.1).
+
+Near the leaves handover the auto tier is lighter than its leaves at
+golden even though its surfaces are the same (shadow=0: identical at 25
+and 35 m): the shade is in the casters. The shadow tiles are coarse
+(their own widening 7-29), so they choose crowns, which casterLod hands
+to clump discs; a disc stands at its lobe's middle and shades the leaves
+behind it, not among them. Casting the camera's leaves share as leaves
+instead fixes the tiers (golden 75 m auto Y +4.5 -> +2.9) but over-shades
+the forest at low sun (glade golden 10-20 m -0.1 -> -5.9 against its
+leaves, canopy 40-80 m -0.6 -> -4.6, needle 45 m -15): widened leaf cards
+shade more than the leaves they stand for. Capping their widening near
+the camera's makes auto lighter than now.
+
 The meadow's band of poppies (grove herbs captures at 3 and 10 m) is the
 roller's trampled lane, not a herb ring: moving the inner ring's edge
 and doubling the handover bands left it in place. A trampled herb only
@@ -4225,6 +4255,15 @@ Still open:
   canopy view; crowns tier pinholes (cover 71% against 87% at 10 m).
 - Broadleaf crowns in By size read paler and cottony up close (canopy
   20-40 m).
+- Broadleaf auto near the leaves handover, golden: +3.0 over its leaves at
+  35 m, +4.4 at 75 m. The casters, above. Even with casters near forced
+  leaves' own (the camera's leaves share cast as leaves at the camera's
+  widening, k=1), auto stays 1.4-2.5 lighter at 35 m: some other
+  difference between auto's casters and forced leaves' is still unfound
+  (bark at the camera's cut moves it 1.0).
+- Birch lobes still pale balls at 5 / 60 / 150 m (+4.5 / +3.7 / +2.9,
+  above): a lobe's self depth that knows how much of the crown's shade
+  its neighbours give it, rather than one scale.
 - On the Mac (MoltenVK) two renders of one still frame differ in ~40
   scattered foliage pixels (R and G by ~5 levels): grove/forest calm-still
   tests fail there. Not on Windows or halo.
