@@ -4155,6 +4155,36 @@ later (lod crownFrom 3.5, crownTo 2.25: 45 m golden +2.0, noon +17.7). The
 clumps tier is the steadier one: golden -4.3 / -4.2 / -5.3 at 45 / 75 /
 120 m, noon +7.5 / +2.4 / -1.4.
 
+Then (bro 7fe93804) the distance flip is gone. A far pixel's crown trace
+merges a run's clumps into one ball (radius times grow, same density), so
+the seen leaf's self-shade path grew with distance. It now takes its own
+clump's radius (S.w / grow). A spray crown's caster disc also stands a
+quarter radius past its centre, not half. Scale crowns golden 85.9 / 80.3 /
+76.5 -> 83.1 / 85.0 / 85.3 at 45 / 75 / 120 m (leaves 75.3 / 75.6 / 87.3),
+dY against leaves +0.87 / +0.42 / -0.58 -> +0.64 / +0.79 / -0.13. The
+lit side still reads pale cream where the leaves are olive.
+
+Tried and reverted, measured against 7fe93804:
+- The spray crown's disc at the centre: scale near zero (noon dY +0.35 /
+  +0.37 / -0.26), but needle golden crowns -1.3 / -0.8 / -0.75 dY.
+  Somewhere between a quarter and a half radius trades the two forms.
+- Translucency through a widened spray and a spray sprite as a blend toward
+  its every-facing mean (N.L uniform on [-1, 1], 0.625), by 1 - 1/k^2: the
+  summed |dY| went needle 2.28 -> 2.33, scale 2.91 -> 3.29. (55f299ba's
+  three taps stay.)
+- Crowns given the lobes' sun flecks (m.sun = draws, sunN 0.25 per pixel):
+  scale golden -2.3 Y, but the draws' grid reads as blocky checkers on a
+  crown, and needle golden 120 m went -2.5 -> -5.3.
+- The wood tint (e.wood) is 1 on a spray crown: removing it changes
+  nothing, so it isn't the cream.
+- Unshadowed the scale crowns are darker than the leaves (92 vs 101); with
+  shade they are lighter. What's left is cast shade: one disc can't do a
+  dense column's leaves shading leaves.
+
+Needle widened sprays (auto at 25-45 m) darken as they widen, unshadowed:
+Y -2.1 / -5.6 / -6.9 at k 1.6 / 2.2 / 2.9, cover +0 / +0.4 / +0.8 points.
+Cards are not it ('lod={"cardWidening":100}' leaves 45 m the same).
+
 The meadow's band of poppies (grove herbs captures at 3 and 10 m) is the
 roller's trampled lane, not a herb ring: moving the inner ring's edge
 and doubling the handover bands left it in place. A trampled herb only
