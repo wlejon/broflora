@@ -4084,8 +4084,16 @@ colour at 45 m: the orange shoots through its needles. Tried and reverted
 area over theirs, and drawing the 64 thickest cut segments as ribbons:
 no change at all, unexplained (with a flat 8x on the natural ribbon band
 at barkPixels 0.35 Y rose to 112, so the ribbons do reach the image
-there). Next: draw the cut wood itself as ribbons a tree at a time with
-the cover of its pixel width, and measure the cost on jserve.
+there). Then tried: a needle node's ribbons down to 0.07 px wide whatever
+the widening: 45 / 75 m 100.8 / 100.6 -> 104.6 / 104.6 (0.03 px: 104.6 /
+105.9), but the flight's vertices 19.0 -> 29.9 M; capped at its 128
+thickest extra pieces a tree and none on crowns, no cost and no change.
+The colour is in a pine's thousands of finest shoots, so no per-piece
+draw buys it cheaply; the spray card's own twig line is about 3% of the
+spray, too thin to. Next (a design): tint a needle node's sprays and
+lobes toward its bark by the share of its wood the cut leaves out at the
+tree's widening (per specimen, from its segments' areas in keep-radius
+order against its crown's), on a channel of its own.
 
 Still open:
 
