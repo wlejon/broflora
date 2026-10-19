@@ -263,6 +263,13 @@ struct Species {
     // I from its radius), times this. 0: none (the default); 1: green wood's
     // own; a willow's whips, wetter and heavier with leaves, several times.
     float sag                = 0.0f;
+    // A climber's (an ivy's) turns a metre about the wood it climbs: a plant
+    // of it standing where a plant that does not climb stands (their
+    // origins one, across) climbs that plant's way up (Plant::support), its
+    // stems wound round the wood, hugging it, this many turns a metre as
+    // they rise (emitPlantSegments; the simulation grows it as a column).
+    // 0: it stands on its own (the default).
+    float climb              = 0.0f;
     // A needle or scale-leaf spray's set in its clump (leafForm Needle or
     // Scale):
     //   sprayBrush  0: the sprays lie round the clump, facing out (a fir's,
@@ -337,6 +344,17 @@ struct Plant {
     // Topologically sorted modules — `modules[0]` is u_root, every
     // `modules[i].parent` is < i (or UINT32_MAX for the root).
     std::vector<BranchModuleInstance> modules;
+
+    // A climber's (Species::climb) support: the way up of the plant standing
+    // where it stands, as that plant last stood (refreshSupports, each step):
+    // the joints from its root to its highest tip while its wood is at
+    // least kSupportMinRadius thick, 4 floats each, the joint (world) and
+    // the wood's radius there. Empty: it climbs nothing.
+    std::vector<float> support;
+    // ... and how that plant's stem sways (emitPlantSway's): its height and
+    // its trunk's cantilever (freq, sway, length, shape), which the
+    // climber's wood takes as its own, so it moves with the bark it holds.
+    float supportSway[5] = {};
 
     // Effective root-vigor cap, scaled by climate adaptation σ and by
     // senescence ramp once age > maxAge.

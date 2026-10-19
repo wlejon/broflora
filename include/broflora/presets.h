@@ -21,7 +21,10 @@
 //              stems from the ground, small dense modules over them;
 //              succulent (an agave: a stemless rosette of thick pointed
 //              leaves drawn as its wood, leafless otherwise); vine (a
-//              creeping groundcover: level runners, glossy heart leaves)
+//              creeping groundcover: level runners, glossy heart leaves);
+//              ivy (a climber, Species::climb: planted where a tree
+//              stands, its stems wound up the tree's trunk and leading
+//              limbs, hugging the bark and swaying with it)
 //
 // What a renderer draws the foliage as (Species::leafForm), its colour and
 // the bark's ride in the Species too; bro.flora's JS layer pairs each leaf

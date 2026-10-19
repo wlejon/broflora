@@ -164,6 +164,21 @@ float foliageDensity(const FoliageSample& f);
 // Returns an empty vector when the plant has no modules.
 std::vector<bromesh::BranchSegment> emitPlantSegments(const Plant& plant);
 
+// A climber's support (Plant::support) leaves off where its host's wood is
+// thinner than this (m): the climber keeps to the trunk and the limbs that
+// lead its way up.
+inline constexpr float kSupportMinRadius = 0.04f;
+
+// `host`'s way up as a climber's support: the joints from its root to its
+// highest tip while its wood is at least kSupportMinRadius thick (Plant::
+// support's layout); empty when that is under one piece.
+std::vector<float> supportPath(const Plant& host);
+
+// Every climber's support from the plant standing where it stands (the
+// first that does not climb, their origins one across), or none. step()
+// calls it after the plants grow; plantSpecies for a climber.
+void refreshSupports(WorldState& world);
+
 // Same, but appends every plant in the world into a single segment list.
 // Segment `parent` indices are absolute into the returned vector — i.e.
 // continue counting across plant boundaries, so a single

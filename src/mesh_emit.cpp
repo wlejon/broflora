@@ -607,6 +607,50 @@ void sagSegments(const Species& sp, float leafR, std::vector<bromesh::BranchSegm
     }
 }
 
+// A climber's wood (Species::climb) wound round its support: a point h up
+// from the climber's origin goes to its support's way up at h along it,
+// out from it by the wood's radius there and the climber's stem, at the
+// angle the point stands at about the origin plus `climb` turns a metre of
+// h. How far it stood out from the origin moves it out from the wood by a
+// quarter of that, up to a leaf stalk's reach, so a side shoot keeps to the
+// bark. A point is moved by where it is alone, so the joints stay joined.
+// Past the support's top the way runs on along its last piece.
+void climbSegments(const Plant& plant, std::vector<bromesh::BranchSegment>& out, size_t start) {
+    const auto& sup = plant.support;
+    const size_t m = sup.size() / 4;
+    if (!(plant.species.climb > 0.0f) || m < 2 || out.size() == start) return;
+    const auto joint = [&](size_t k) { return Vec3{sup[4 * k], sup[4 * k + 1], sup[4 * k + 2]}; };
+    std::vector<float> arc(m, 0.0f);
+    for (size_t k = 1; k < m; ++k) arc[k] = arc[k - 1] + bromath::vlen(joint(k) - joint(k - 1));
+    const float stem = out[start].radius;
+    const float turns = 2.0f * bromath::PI * plant.species.climb;
+    const Vec3 o = plant.origin;
+    const auto place = [&](Vec3 p) {
+        const Vec3 rel = p - o;
+        const float h = std::max(rel.y, 0.0f);
+        size_t k = 1;
+        while (k + 1 < m && arc[k] < h) ++k;
+        const Vec3 a = joint(k - 1), b = joint(k);
+        const float L = std::max(arc[k] - arc[k - 1], 1e-6f);
+        const float t = std::min((h - arc[k - 1]) / L, k + 1 < m ? 1.0f : std::numeric_limits<float>::infinity());
+        const Vec3 T = (b - a) * (1.0f / L);
+        const Vec3 at = a + (b - a) * t;
+        const float R = sup[4 * (k - 1) + 3] + (sup[4 * k + 3] - sup[4 * (k - 1) + 3]) * std::clamp(t, 0.0f, 1.0f);
+        // A frame across the way up: world x and z, made square to it.
+        Vec3 e1 = Vec3{1.0f, 0.0f, 0.0f} - T * T.x;
+        e1 = e1 * (1.0f / std::max(bromath::vlen(e1), 1e-6f));
+        const Vec3 e2 = bromath::vcross(e1, T);
+        const float r = std::hypot(rel.x, rel.z);
+        const float th = std::atan2(rel.z, rel.x) + turns * h;
+        const float off = R + stem + std::min(0.25f * r, 0.12f);
+        return at + (e1 * std::cos(th) + e2 * std::sin(th)) * off;
+    };
+    for (size_t i = start; i < out.size(); ++i) {
+        out[i].from = place(out[i].from);
+        out[i].to = place(out[i].to);
+    }
+}
+
 size_t emitPlantSegmentsInto(const Plant& plant,
                              std::vector<bromesh::BranchSegment>& out) {
     const size_t startSize = out.size();
@@ -841,6 +885,7 @@ size_t emitPlantSegmentsInto(const Plant& plant,
     }
 
     sagSegments(plant.species, leafR, out, startSize);
+    climbSegments(plant, out, startSize);
     if (plant.species.barkRibs > 0.5f) bluntTips(out, startSize);
     return out.size() - startSize;
 }
@@ -851,6 +896,49 @@ std::vector<bromesh::BranchSegment> emitPlantSegments(const Plant& plant) {
     std::vector<bromesh::BranchSegment> out;
     emitPlantSegmentsInto(plant, out);
     return out;
+}
+
+std::vector<float> supportPath(const Plant& host) {
+    std::vector<float> path;
+    const auto segs = emitPlantSegments(host);
+    if (segs.empty()) return path;
+    size_t top = 0;
+    for (size_t j = 1; j < segs.size(); ++j)
+        if (segs[j].to.y > segs[top].to.y) top = j;
+    std::vector<size_t> way;
+    for (int64_t i = static_cast<int64_t>(top); i >= 0; i = segs[static_cast<size_t>(i)].parent) {
+        way.push_back(static_cast<size_t>(i));
+        if (segs[static_cast<size_t>(i)].parent >= i) break;
+    }
+    std::reverse(way.begin(), way.end());
+    const auto push = [&](Vec3 p, float r) { path.insert(path.end(), {p.x, p.y, p.z, r}); };
+    push(segs[way.front()].from, segs[way.front()].radius);
+    for (size_t i : way) {
+        if (segs[i].radius < kSupportMinRadius) break;
+        push(segs[i].to, segs[i].radius);
+    }
+    if (path.size() < 8) path.clear();
+    return path;
+}
+
+void refreshSupports(WorldState& world) {
+    for (auto& p : world.plants) {
+        if (!(p.species.climb > 0.0f)) continue;
+        p.support.clear();
+        std::fill(std::begin(p.supportSway), std::end(p.supportSway), 0.0f);
+        for (const auto& host : world.plants) {
+            if (&host == &p || host.species.climb > 0.0f) continue;
+            if (std::fabs(host.origin.x - p.origin.x) > 1e-3f || std::fabs(host.origin.z - p.origin.z) > 1e-3f) continue;
+            p.support = supportPath(host);
+            const auto sway = emitPlantSway(host);
+            if (!p.support.empty() && !sway.empty()) {
+                const SegmentSway& s = sway.front();
+                const float v[5] = {s.height, s.trunk.freq, s.trunk.sway, s.trunk.length, s.trunk.shape};
+                std::copy(std::begin(v), std::end(v), std::begin(p.supportSway));
+            }
+            break;
+        }
+    }
 }
 
 std::vector<bromesh::BranchSegment> emitWorldSegments(const WorldState& world) {

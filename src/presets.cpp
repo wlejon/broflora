@@ -1,5 +1,6 @@
 #include "broflora/presets.h"
 
+#include "broflora/mesh_emit.h"   // refreshSupports
 #include "broflora/prototypes.h"
 #include "broflora/world_io.h"   // internName
 
@@ -354,6 +355,32 @@ std::optional<PresetDef> presetDef(std::string_view name) {
         s.barkColor = rgb(0.2f, 0.17f, 0.12f);
         return d;
     }
+    // Ivy (a climber): planted where a tree stands, a few stems up its
+    // trunk and its leading limbs (Species::climb), wound round them a
+    // turn every eight metres, short side shoots hugging the bark, clothed
+    // in the creeping vine's glossy dark leaves. Grown as a column; with
+    // nothing to climb it stands as one.
+    if (name == "ivy") {
+        d.habit = "shrub";
+        d.species = shrubBase();
+        d.root = basalStemsModule(3, 0.2f, 1.2f, 1.0f, "ivy:root");
+        d.leader = monopodialLeaderModule(2, 0.6f);
+        Species& s = d.species;
+        s.climb = 0.12f;
+        s.growthScale = 2.4f; s.orthotropy = 1.0f; s.tropismG2 = 0.0f; s.kink = 0.3f;
+        s.heightMax = 9.0f;
+        s.pipeExp = 2.5f;
+        s.leafDiameter = 0.006f;
+        s.clumpFlat = 0.5f; s.clumpScale = 0.35f; s.clumpInner = 1.0f;
+        s.leafSize = 0.6f;
+        s.leafColor = rgb(0.035f, 0.075f, 0.03f);
+        s.leafWidth = 0.9f; s.leafTip = 0.3f; s.leafGloss = 0.45f;
+        s.phyllotaxis = static_cast<uint32_t>(Phyllotaxis::Alternate);
+        s.petiole = 0.6f;
+        bark(s, 0.3f, 0.5f, 0.0f, 0.0f);
+        s.barkColor = rgb(0.22f, 0.18f, 0.13f);
+        return d;
+    }
     // Cactus (a saguaro): a thick, ribbed green column whose few arms leave
     // it level and turn straight up; no leaves (its stems are all thicker
     // than any shoot that carries them).
@@ -609,7 +636,7 @@ const std::vector<std::string>& speciesPresetNames() {
     static const std::vector<std::string> names = {
         "oak", "elm", "beech", "birch", "willow", "palm", "cactus",
         "pine", "spruce", "fir", "cedar", "redwood", "cypress", "juniper",
-        "boxwood", "holly", "hydrangea", "hibiscus", "lavender", "succulent", "vine",
+        "boxwood", "holly", "hydrangea", "hibiscus", "lavender", "succulent", "vine", "ivy",
     };
     return names;
 }
@@ -672,7 +699,10 @@ Plant& plantSpecies(WorldState& world, const SpeciesHandle& handle, Vec3 origin)
     root.vigor = p.species.minVigor * 2.0f;
     root.light = 1.0f;
     if (root.prototype) p.modules.push_back(root);
-    return addPlant(world, std::move(p));
+    Plant& added = addPlant(world, std::move(p));
+    // A climber takes its host's way up now, as it will each step.
+    if (added.species.climb > 0.0f) refreshSupports(world);
+    return added;
 }
 
 } // namespace broflora

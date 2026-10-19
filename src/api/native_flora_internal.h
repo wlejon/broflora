@@ -622,6 +622,7 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readFloatField(spec, "sprayBrush",                  s.sprayBrush);
     readFloatField(spec, "petiole",                     s.petiole);
     readFloatField(spec, "sag",                         s.sag);
+    readFloatField(spec, "climb",                       s.climb);
     {
         // "alternate" / "opposite" / "spiral" / "pinnate" or its number.
         Value ph = ev::getProperty(spec, "phyllotaxis");
@@ -728,6 +729,7 @@ inline Value speciesObject(const broflora::Species& s) {
     num("sprayBrush", s.sprayBrush);
     num("petiole", s.petiole);
     num("sag", s.sag);
+    num("climb", s.climb);
     {
         static const char* const kPhyllo[] = {"alternate", "opposite", "spiral", "pinnate"};
         Value str = ev::fromUtf8(s.phyllotaxis < broflora::kPhyllotaxisCount ? kPhyllo[s.phyllotaxis] : "alternate");

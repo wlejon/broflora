@@ -29,7 +29,7 @@ struct MirrorInstance {
 static_assert(sizeof(BranchModuleInstance) == sizeof(MirrorInstance), "world_io: BranchModuleInstance changed");
 struct MirrorPlant {
     Species species; bromath::Vec3 origin; float age; std::vector<BranchModuleInstance> modules;
-    float effectiveRootVigorMax; bool flowering, senescing;
+    std::vector<float> support; float supportSway[5]; float effectiveRootVigorMax; bool flowering, senescing;
 };
 static_assert(sizeof(Plant) == sizeof(MirrorPlant), "world_io: Plant changed");
 struct MirrorPrototype {
@@ -52,7 +52,7 @@ static_assert(sizeof(SoilMap) == sizeof(MirrorSoil), "world_io: SoilMap changed"
 
 // Written whole: all 4-byte fields, so no padding reaches the bytes (and
 // the cache key built from them).
-static_assert(sizeof(Species) == 76 * 4, "world_io: Species changed");
+static_assert(sizeof(Species) == 77 * 4, "world_io: Species changed");
 static_assert(sizeof(ModuleNode) == 6 * 4, "world_io: ModuleNode changed");
 static_assert(sizeof(ModuleEdge) == 2 * 4, "world_io: ModuleEdge changed");
 static_assert(sizeof(PrototypeVoronoiSite) == 4 * 4, "world_io: PrototypeVoronoiSite changed");
@@ -61,7 +61,7 @@ static_assert(sizeof(GridFootprint2D) == 5 * 4, "world_io: GridFootprint2D chang
 static_assert(sizeof(bromath::Vec3) == 12 && sizeof(Euler3) == 12, "world_io: Vec3/Euler3 changed");
 
 constexpr uint32_t kMagic = 0x574c4642;  // "BFLW"
-constexpr uint32_t kFormat = 12;  // 2: Species gained the bark fields; 3: the habit, foliage and colour fields, site groups; 4: leafSize; 5: clumpFlat, clumpReach; 6: crownLift, heightMax, clumpFill, the bloom fields; 7: clumpInner; 8: clumpGap; 9: the broad leaf's look (leafWidth, leafTip, leafTeeth, leafToothDepth, leafGloss) and sprayBrush; 10: phyllotaxis, petiole; 11: sag; 12: barkRibs
+constexpr uint32_t kFormat = 13;  // 2: Species gained the bark fields; 3: the habit, foliage and colour fields, site groups; 4: leafSize; 5: clumpFlat, clumpReach; 6: crownLift, heightMax, clumpFill, the bloom fields; 7: clumpInner; 8: clumpGap; 9: the broad leaf's look (leafWidth, leafTip, leafTeeth, leafToothDepth, leafGloss) and sprayBrush; 10: phyllotaxis, petiole; 11: sag; 12: barkRibs; 13: climb, Plant::support
 
 struct Writer {
     std::vector<uint8_t> b;
@@ -196,6 +196,8 @@ std::vector<uint8_t> writeWorld(const WorldState& world, std::string* err) {
         w.pod(pl.effectiveRootVigorMax);
         w.pod<uint8_t>(pl.flowering ? 1 : 0);
         w.pod<uint8_t>(pl.senescing ? 1 : 0);
+        w.vec(pl.support);
+        w.pod(pl.supportSway);
         w.pod<uint64_t>(pl.modules.size());
         for (const auto& m : pl.modules) {
             uint32_t proto = UINT32_MAX;
@@ -290,6 +292,8 @@ bool readWorld(const uint8_t* data, size_t size, WorldState& out, std::string* e
         r.pod(senescing);
         pl.flowering = flowering != 0;
         pl.senescing = senescing != 0;
+        if (!r.vec(pl.support)) return fail("truncated");
+        r.pod(pl.supportSway);
         uint64_t moduleCount = 0;
         if (!r.count(moduleCount, 1)) return fail("truncated");
         pl.modules.resize(static_cast<size_t>(moduleCount));

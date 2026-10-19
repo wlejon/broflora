@@ -184,6 +184,52 @@ TEST(presets_newborn_modules_stand_on_their_plant) {
     ASSERT(steps > 100 && stray == 0, "no segment strays from its plant");
 }
 
+TEST(presets_ivy_climbs_its_host) {
+    WorldState world = openWorld();
+    auto oak = addSpeciesPreset(world, "oak");
+    auto ivy = addSpeciesPreset(world, "ivy");
+    ASSERT(oak && ivy, "both presets register");
+    plantSpecies(world, *oak, {0.0f, 0.0f, 0.0f});
+    plantSpecies(world, *ivy, {0.0f, 0.0f, 0.0f});
+    for (int t = 0; t < 400; ++t) step(world, 0.02f);
+    const Plant& host = world.plants[0];
+    const Plant& vine = world.plants[1];
+    ASSERT(vine.support.size() >= 8, "the ivy takes the oak's way up");
+    const auto& sup = vine.support;
+    // Every joint of the ivy lies on the oak's bark: within its stem, the
+    // reach a side shoot is let stand off and a little more of the wood
+    // under it (past the support's top it runs on along its last piece).
+    const auto segs = emitPlantSegments(vine);
+    ASSERT(!segs.empty(), "the ivy grows");
+    float worst = 0.0f;
+    for (const auto& g : segs) {
+        for (const auto& q : {g.from, g.to}) {
+            float best = 1e9f;
+            for (size_t k = 0; k + 1 < sup.size() / 4; ++k) {
+                const bromath::Vec3 a{sup[4 * k], sup[4 * k + 1], sup[4 * k + 2]};
+                bromath::Vec3 b{sup[4 * k + 4], sup[4 * k + 5], sup[4 * k + 6]};
+                // The last piece runs on past the top.
+                if (k + 2 == sup.size() / 4) b = a + (b - a) * 100.0f;
+                const bromath::Vec3 ab = b - a;
+                const float t = std::clamp(bromath::vdot(q - a, ab) / std::max(bromath::vdot(ab, ab), 1e-9f), 0.0f, 1.0f);
+                const float r = std::max(sup[4 * k + 3], sup[4 * k + 7]);
+                best = std::min(best, bromath::vlen(q - (a + ab * t)) - r);
+            }
+            worst = std::max(worst, best);
+        }
+    }
+    ASSERT(worst < segs.front().radius + 0.12f + 0.05f, "the ivy hugs the oak's bark");
+    // And moves with it: its wood takes the oak's stem's sway.
+    const auto hs = emitPlantSway(host), vs = emitPlantSway(vine);
+    ASSERT(!vs.empty() && vs.back().trunk.freq == hs.front().trunk.freq && vs.back().height == hs.front().height,
+           "the ivy sways as the oak's stem");
+    ASSERT(vs.back().limb.sway == 0.0f, "with no limb of its own");
+    // A climber's world round-trips.
+    const auto bytes = writeWorld(world);
+    WorldState back;
+    ASSERT(readWorld(bytes.data(), bytes.size(), back) && writeWorld(back) == bytes, "a climber's world round-trips");
+}
+
 TEST(presets_world_round_trips) {
     WorldState a;
     grow("spruce", 200, &a);

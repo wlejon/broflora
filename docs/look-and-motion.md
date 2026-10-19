@@ -4030,8 +4030,31 @@ branching flat (plagiotropic modules, no orthotropy, nothing budding past
 0.15 m), flat clumps of small glossy heart-shaped leaves on long stalks.
 The first try (heightMax 0.25, clumpFlat 0.35, leafSize 0.55) heaped into
 a 0.7 m mound; the preset is a mat 0.4 m tall with its runners showing,
-from 2.5 to 20 m. Not yet: a climbing vine, on another plant's wood or on
-rock.
+from 2.5 to 20 m.
+
+Ivy, the climber (Species::climb, Plant::support): a plant of a climbing
+species standing where a plant that does not climb stands (their origins
+one across) takes that plant's way up, its root-to-highest-tip joints
+while its wood is at least 4 cm thick, refreshed every step (the
+simulation grows the climber as a column; the emit winds it). Its emitted
+wood goes to the support at its height along it, out by the bark's radius
+and its stem, at its angle about its origin plus `climb` turns a metre,
+side shoots standing off a quarter of how far out they grew, at most
+12 cm. Each joint is moved by where it is alone, so nothing parts. It
+sways as the host's stem at its height (the host's height and trunk
+cantilever ride with the support; no limb or twig mode of its own): in
+the grove's leanstrip under a strong wind it held to the oak's trunk and
+limb in every frame, where with its own sway (a 6 m column of thin wood)
+its mass swung off the bark. Nothing is baked: a forest draws the pair as
+two specimens under one instance. Not yet: a climber on rock.
+
+Lobe self-shade against the leaves tier, measured and left: the lobe's
+density (forestMassDepth from its real leaf count) times 0.8 matches the
+broadleaf's leaves tier at 45 / 120 m (Y 123.7 / 125.4 against 124.0 /
+125.4; at 0.5 it is 2 levels light at 120 m), but takes the shrubs 3.5
+levels further below theirs, which with no lobe self-shade at all match
+(97.9 / 100.1 against 98.1 / 101.3 at 10 / 20 m): the shadow map, not the
+lobe's leaf count, is what differs between the habits' leaves tiers.
 
 Still open:
 

@@ -1,6 +1,7 @@
 #include "broflora/world.h"
 
 #include "broflora/light.h"
+#include "broflora/mesh_emit.h"
 #include "broflora/vigor.h"
 #include "broflora/development.h"
 #include "broflora/spawning.h"
@@ -228,6 +229,9 @@ void stepWithObserver(WorldState& world, float dt, const StepObserver& obs) {
     // E. Ecosystem-wide senescence + seeding (paper §3.5).
     ecosystemTick(world, dt, world.rngState);
     if (obs.postSenescence) obs.postSenescence(world);
+
+    // F. Climbers take their hosts' ways up as they now stand.
+    refreshSupports(world);
 
     world.simTime += dt;
 }

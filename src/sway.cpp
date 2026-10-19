@@ -285,6 +285,20 @@ void computePlantSway(const Plant& plant,
             s.limb.freq = std::min(s.limb.freq, 0.8f * s.twig.freq);
         }
     }
+
+    // A climber's wood holds to its host's bark (Plant::support), standing
+    // where the host stands: every piece of it is the host's stem at its
+    // height, bending with it, with no limb of its own.
+    const float* host = plant.supportSway;
+    if (plant.species.climb > 0.0f && !plant.support.empty() && host[0] > 0.0f) {
+        for (size_t i = 0; i < n; ++i) {
+            SegmentSway& s = out[base + i];
+            s.height = host[0];
+            s.trunk = Cantilever{host[1], host[2], host[3], host[4]};
+            s.weightFrom = s.weightTo = 0.0f;
+            s.limb = s.twig = Cantilever{};
+        }
+    }
 }
 
 // A positive number on a log scale over `range`, `bits` wide: code 0 is
