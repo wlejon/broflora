@@ -436,6 +436,17 @@
         // or where crowns overlap: createGrass's `floor` (the leaf litter and
         // the low leafy plants of a forest floor).
         cover.canopy = function canopy(x, z) { return canopyAt(handle, x, z); };
+        // Each over a grid at once (cols x rows points (x0 + i * cell, z0 +
+        // j * cell), row-major, a Float32Array), on every core: the form a
+        // grass bake asks for (scene.createGrass reads `grid` where a
+        // function has one).
+        const grid = (which) => function grid(x0, z0, cell, cols, rows) {
+            const out = new Float32Array(cols * rows);
+            _native.forestCoverGrid(handle, which ? null : out, which ? out : null, x0, z0, cell, cols, rows);
+            return out;
+        };
+        cover.grid = grid(0);
+        cover.canopy.grid = grid(1);
         return cover;
     });
 

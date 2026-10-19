@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <thread>
 
 namespace broflora {
 
@@ -64,18 +65,43 @@ ForestCover::ForestCover(const std::vector<ForestCoverTree>& trees, const Forest
     trunkFar2_ = (clear * 3.5) * (clear * 3.5) * 1.001;
 }
 
-double ForestCover::at(double x, double z) const {
-    double canopy = 0.0, trunk = 1.0;
-    sum(x, z, canopy, trunk);
+double ForestCover::coverOf(double canopy, double trunk) const {
     const double closed = opts_.closed, floor = opts_.floor;
     const double lit = 1 - std::min(1.0, canopy / closed);
     return trunk * (1 - smooth(0.7 * closed, closed, canopy)) * (floor + (1 - floor) * lit * lit);
+}
+
+double ForestCover::at(double x, double z) const {
+    double canopy = 0.0, trunk = 1.0;
+    sum(x, z, canopy, trunk);
+    return coverOf(canopy, trunk);
 }
 
 double ForestCover::canopyAt(double x, double z) const {
     double canopy = 0.0, trunk = 1.0;
     sum(x, z, canopy, trunk);
     return std::min(1.0, canopy);
+}
+
+void ForestCover::grid(double x0, double z0, double cell, int cols, int rows, float* cover, float* canopy) const {
+    if (cols <= 0 || rows <= 0 || (!cover && !canopy)) return;
+    const auto band = [&](int j0, int j1) {
+        for (int j = j0; j < j1; ++j)
+            for (int i = 0; i < cols; ++i) {
+                double c = 0.0, t = 1.0;
+                sum(x0 + i * cell, z0 + j * cell, c, t);
+                const size_t k = static_cast<size_t>(j) * cols + i;
+                if (cover) cover[k] = static_cast<float>(coverOf(c, t));
+                if (canopy) canopy[k] = static_cast<float>(std::min(1.0, c));
+            }
+    };
+    // Bands of rows, one a core; a small grid on the calling thread.
+    const int n = static_cast<long long>(cols) * rows < 65536
+                      ? 1 : std::clamp(static_cast<int>(std::thread::hardware_concurrency()), 1, std::min(rows, 32));
+    std::vector<std::thread> pool;
+    for (int b = 1; b < n; ++b) pool.emplace_back(band, rows * b / n, rows * (b + 1) / n);
+    band(0, rows / n);
+    for (auto& th : pool) th.join();
 }
 
 void ForestCover::sum(double x, double z, double& canopy, double& trunk) const {

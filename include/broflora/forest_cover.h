@@ -34,8 +34,14 @@ public:
     /// open, 1 under one crown's middle or where crowns overlap (the leaf
     /// litter and the understory bro.scene's grass draws there).
     double canopyAt(double x, double z) const;
+    /// at() and canopyAt() over a grid, `cols` x `rows` points (i, j) at
+    /// (x0 + i * cell, z0 + j * cell), row-major; either output may be null.
+    /// The same answers, a world's grass field at a time, on every core.
+    void grid(double x0, double z0, double cell, int cols, int rows, float* cover, float* canopy) const;
 
 private:
+    // The cover left by that overlap and clearing (at()'s answer).
+    double coverOf(double canopy, double trunk) const;
     // The crowns' overlap at a point and how clear of trunks it is.
     void sum(double x, double z, double& canopy, double& trunk) const;
     // The trees by grid cell (a counting sort: each cell keeps them in the
