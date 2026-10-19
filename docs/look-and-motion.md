@@ -3307,8 +3307,13 @@ as its blades do on average (bro `scene_lighting.glsl` `sceneSwardLight`,
     through the light on its other side: a thin leaf transmits about as
     much as it reflects in the green (PROSPECT's R ~ T), less blue
     (`SWARD_TRANSMIT` 0.95/1.0/0.45).
-  - Times the share of the seen blades the light reaches: a turbid canopy
-    (G 0.6) along both lines, with Kuusk's hot spot (width 0.12). Seen
+  - Times the share of the seen blades in light, as the near blades show
+    it at the same view: `SWARD_LIT_TOP` 1.25 less the sine of the eye's
+    line to the blades' way (all lit seen low across, a quarter seen from
+    straight above). It was a turbid canopy (G 0.6) along both lines with
+    Kuusk's hot spot, but the near blades show no sun-following shade of
+    their neighbours, so the far meadow read 10-16% darker than its near
+    blades at the same angle (meadowtone, 8 degrees). Seen
     across, the eye meets blade sides lit at a slant and the undersides of
     those leaning away, so a far meadow under a high sun is darker than
     level ground; under a low sun behind the eye it sees lit faces, looking
