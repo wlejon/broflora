@@ -4184,6 +4184,26 @@ Tried and reverted, measured against 7fe93804:
 Needle widened sprays (auto at 25-45 m) darken as they widen, unshadowed:
 Y -2.1 / -5.6 / -6.9 at k 1.6 / 2.2 / 2.9, cover +0 / +0.4 / +0.8 points.
 Cards are not it ('lod={"cardWidening":100}' leaves 45 m the same).
+Occlusion is: with vegAO forced to 1 on every spray, 45 m unshadowed auto
+is 118.1 against leaves 117.2, where it was 104.1 / 107.2. vegAO scales only
+the indirect light, and forcing it to 1 lifts auto by 14 and the leaves by
+10, so the widened sprays seen sit deeper on average. It isn't the
+hang-point offset: taking a widened spray's depth half its growth further
+out changes nothing (that growth is centimetres; a crown is metres). It
+isn't the keep order either (emitForest shuffles each specimen's leaves).
+Measured directly (mesh.frag writing vegAO as grey on sprays, 45 m): the
+widened sprays seen are less occluded than the leaves, 185.4 against
+178.0. So it isn't occlusion. Their indirect light is larger and their
+direct light smaller, and occlusion at 1 only lifts the larger term more.
+The direct deficit came with 55f299ba's translucency spread: before it,
+noon unshadowed auto was 107.0 against 107.2. The spread is fitted to
+golden, where translucency adds about 50, and costs about 3 at noon,
+where it's a tenth of that times the leaves' own through-term. Tried and
+reverted: letting the spread ride with the back-lighting (mixing the three
+taps in by pow(dot(-V, L), 3)). Noon improves (needle 45 m Y -1.7 -> -0.5,
+unshadowed -3.1 -> -0.2), golden gets worse (needle 75 m +3.1 -> +5.4,
+scale 75 m +9.4 -> +10.2): a trade, and a leaf's facings don't depend on
+where the eye is.
 
 The meadow's band of poppies (grove herbs captures at 3 and 10 m) is the
 roller's trampled lane, not a herb ring: moving the inner ring's edge
