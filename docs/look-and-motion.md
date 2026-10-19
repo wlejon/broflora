@@ -4095,6 +4095,21 @@ lobes toward its bark by the share of its wood the cut leaves out at the
 tree's widening (per specimen, from its segments' areas in keep-radius
 order against its crown's), on a channel of its own.
 
+Done (bro 158be7c7): the tint, by 0.6 of the cut wood's area over the
+crown's outline, carried in a draw entry's third record. Needle auto
+against leaves at 45 / 75 m: unshadowed noon 100.8 / 100.6 -> 107.0 /
+108.1 (leaves 107.1 / 107.2); noon -5.8 / -9.2 -> -0.4 / -3.2 levels;
+golden +4.3 / +3.7 -> +9.1 / +9.2. The golden excess is not the tint's: with
+the bark cut to nothing (lod barkPixels 0.02, so no tint) auto at 45 m
+is -2.0 at noon and +3.4 at golden unshadowed, and with no widening
+(leafPixels 0.01) exactly the leaves tier at both; the near form kept
+while widened (cardWidening 100) swings the same (104.7 / 121.2 against
+107.1 / 117.4). So the widening itself moves with the sun. A widened
+spray's light is its anchor's (vegCrownShade: depth AO and the bulk
+normal from the crown's centre), and a sparse kept set lets more of the
+crown's far side show; with a low sun that side faces the light when
+the view is toward it. Not yet tested.
+
 Still open:
 
 - Pine and spruce seen from above in By size (canopy shot): grey-green
