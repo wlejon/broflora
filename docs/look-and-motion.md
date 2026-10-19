@@ -4246,6 +4246,33 @@ and doubling the handover bands left it in place. A trampled herb only
 leans (scene_herb.glsl: a leg brushing a stalk), so its poppies stand
 clear above the flattened grass.
 
+The leaves tier, the reference every far tier is fitted to, depends on the
+shadow atlas's size. The forest's first cascade covers 0-169 m on a 181 m
+radius, so its texel is 35 / 18 / 9 cm at atlas 2048 / 4096 / 8192 (the
+second, to 389 m, 77 / 39 / 19 cm): wider than a leaf at every size, and
+a lobe is a few texels across. What a leaf takes of the leaves near it
+toward the sun therefore moves with the texel. Leaves Y at 2048 / 4096 /
+8192, still (forest tiers, grove species birch; broworkshop's captures
+take `atlas=N`):
+
+| | noon | golden |
+|---|---|---|
+| broadleaf 35 m | 126.7 / 124.9 / 123.0 | 128.1 / 122.7 / 120.1 |
+| needle 35 m | 96.5 / 91.6 / 88.3 | 92.4 / 85.2 / 79.5 |
+| scale 35 m | 79.7 / 65.6 / 58.6 | 97.1 / 75.1 / 62.6 |
+| birch 5 m | 114.6 / 112.2 / 109.8 | 102.4 / 100.4 / 98.9 |
+
+(75 and 120 m are within a level or two of 35 m.) The shade the sun's
+shadow takes off halves its gap a doubling (broadleaf golden 35 m 20 / 25
+/ 28 levels, scale noon 21 / 35 / 42), so the limit lies past 8192. It is
+not the biases: capping the receiver's offsets at 1 cm, no caster slope
+bias, one tap, or a 0.3 m depth bias each leave most of it; counting only
+occluders over 2 m in front leaves 3-5. The clumps tier does not move
+(its shade within a lobe is analytic, the map read at the lobe's exit).
+**Every far-tier fit in this file, step 17's included, is to the leaves at
+the demos' 4096 atlas** (pcf 3, three cascades): at another atlas or
+cascade layout the leaves move and the fits with them.
+
 Still open:
 
 - Pine and spruce seen from above in By size (canopy shot): grey-green
@@ -4269,6 +4296,8 @@ Still open:
 - Birch lobes still pale balls at 5 / 60 / 150 m (+4.5 / +3.7 / +2.9,
   above): a lobe's self depth that knows how much of the crown's shade
   its neighbours give it, rather than one scale.
+- The leaves reference is atlas-dependent (above): up to 8 levels across
+  2048-8192 for a broadleaf, 13 for a pine, 34 for a cypress at golden.
 - On the Mac (MoltenVK) two renders of one still frame differ in ~40
   scattered foliage pixels (R and G by ~5 levels): grove/forest calm-still
   tests fail there. Not on Windows or halo.
