@@ -181,6 +181,7 @@ Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
     put("segmentVegetation", f.segmentVegetation);
     put("keepRadius", f.keepRadius);
     put("segmentClumps", f.segmentClumps);
+    put("clumpGroups", f.clumpGroups);
     put("clumps", f.clumps);
     put("clumpVegetation", f.clumpVegetation);
     put("specimenBlooms", packed.blooms);

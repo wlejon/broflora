@@ -378,6 +378,21 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
                 if (segs[k].parent >= s) break;
             }
         }
+        // Each clump's drop group: the clumps beyond the farthest segment on
+        // its way to the root that leads to at most kSubMax, named by the
+        // first of them, so a renderer dropping a group drops that wood too.
+        std::vector<uint32_t> group;
+        for (size_t ci = clumpAt; ci < clumps.size() && static_cast<size_t>(clumps[ci].segment) < segEnd; ++ci) {
+            uint32_t g = static_cast<uint32_t>(ci - clumpAt);
+            for (int64_t s = static_cast<int64_t>(clumps[ci].segment) - static_cast<int64_t>(segBase);
+                 s >= 0 && static_cast<size_t>(s) < segs.size(); s = segs[static_cast<size_t>(s)].parent) {
+                const size_t k = static_cast<size_t>(s);
+                if (subCount[k] > kSubMax) break;
+                g = *std::min_element(subList[k].begin(), subList[k].begin() + subCount[k]);
+                if (segs[k].parent >= s) break;
+            }
+            group.push_back(g);
+        }
         std::vector<TubeSegment> tubes = tubeSegments(segs, shape);
         std::stable_sort(tubes.begin(), tubes.end(), [&](const TubeSegment& a, const TubeSegment& b) {
             return keep[static_cast<size_t>(a.segment)] > keep[static_cast<size_t>(b.segment)];
@@ -419,6 +434,7 @@ ForestEmit emitForest(const WorldState& world, const ForestOptions& opts) {
             cr[rec::clump::kRadius] = c.radius;
             put3(cr + rec::clump::kTwig, c.dir);
             cr[rec::clump::kLeafCount] = static_cast<float>(leafCount[clumpAt]);
+            out.clumpGroups.push_back(static_cast<float>(group[clumpAt - sp.clumpStart]));
             const size_t local = static_cast<size_t>(c.segment) - segBase;
             const size_t at = out.clumpVegetation.size();
             appendClumpVegetation(out.clumpVegetation, sway[local]);

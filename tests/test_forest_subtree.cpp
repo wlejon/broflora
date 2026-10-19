@@ -130,3 +130,46 @@ TEST(forest_segment_clumps_a_segment_lists_the_few_clumps_beyond_it) {
     ASSERT(lists > nSeg / 10, "many segments lead to only a few clumps");
     ASSERT(emitForest(w).segmentClumps == f.segmentClumps, "deterministic");
 }
+
+TEST(forest_clump_groups_hold_a_listed_segments_clumps_together) {
+    const WorldState w = subtreeWorld();
+    const ForestEmit f = emitForest(w);
+    const size_t nSeg = f.segments.size() / rec::segment::kFloats;
+    const size_t nClump = f.clumps.size() / rec::clump::kFloats;
+    namespace sc = rec::segment_clumps;
+    ASSERT(f.clumpGroups.size() == nClump, "a group a clump");
+    if (f.clumpGroups.size() != nClump) return;
+    bool named = true, small = true, together = true;
+    size_t grouped = 0;
+    for (const ForestSpecimen& sp : f.specimens) {
+        std::map<int, int> size;
+        for (uint32_t c = 0; c < sp.clumpCount; ++c) {
+            const int g = static_cast<int>(f.clumpGroups[sp.clumpStart + c]);
+            // Named by its first clump, which is its own group.
+            named = named && g >= 0 && g <= static_cast<int>(c) &&
+                    static_cast<int>(f.clumpGroups[sp.clumpStart + static_cast<uint32_t>(g)]) == g;
+            ++size[g];
+        }
+        for (const auto& [g, n] : size) {
+            small = small && n <= static_cast<int>(sc::kMax);
+            if (n > 1) grouped += static_cast<size_t>(n);
+        }
+        // A segment's listed clumps are one group, so its wood goes when it does.
+        for (uint32_t g = sp.segStart; g < sp.segStart + sp.segCount; ++g) {
+            int first = -1;
+            for (size_t j = 0; j < sc::kMax; ++j) {
+                const float c = f.segmentClumps[g * sc::kFloats + sc::kClumps + j];
+                if (c < 0.0f) break;
+                const int k = static_cast<int>(f.clumpGroups[sp.clumpStart + static_cast<uint32_t>(c)]);
+                if (first < 0) first = k;
+                together = together && k == first;
+            }
+        }
+    }
+    std::printf("  clump groups: %zu clumps, %zu in groups of more than one (%zu segments)\n", nClump, grouped, nSeg);
+    ASSERT(named, "a group is named by its first clump");
+    ASSERT(small, "a group holds at most a list's clumps");
+    ASSERT(together, "a listed segment's clumps share a group");
+    ASSERT(grouped > nClump / 4, "many clumps drop with others");
+    ASSERT(emitForest(w).clumpGroups == f.clumpGroups, "deterministic");
+}

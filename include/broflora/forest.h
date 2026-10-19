@@ -150,6 +150,11 @@ struct ForestEmit {
     std::vector<float> segmentClumps;
     /// Per clump: centre.xyz, radius, twig dir.xyz, leaf count (8 floats).
     std::vector<float> clumps;
+    /// Per clump: its drop group, the first (specimen index) of the few
+    /// clumps beyond the farthest segment toward the root leading to at most
+    /// segment_clumps::kMax; a renderer leaving clumps bare by group leaves
+    /// that segment's wood with nothing on it (segmentClumps).
+    std::vector<float> clumpGroups;
     /// Per clump: its 16-float vegetation record (appendClumpVegetation).
     std::vector<float> clumpVegetation;
     /// Per leaf: its clump (global index) and its placement key (2 values).
