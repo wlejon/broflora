@@ -1,7 +1,7 @@
 #pragma once
 
 // Species presets: the plants any app gets by default. A preset is a
-// Species (growth, habit, bark, foliage and colour) plus the modules its
+// Species (growth, habit, bark and foliage clumps) plus the modules its
 // axes grow from; `addSpeciesPreset` registers those modules in a world
 // under habit groups of their own, so conifers, shrubs and broadleaf trees
 // grow side by side in one world, each from its own modules:
@@ -25,10 +25,6 @@
 //              ivy (a climber, Species::climb: planted where a tree
 //              stands, its stems wound up the tree's trunk and leading
 //              limbs, hugging the bark and swaying with it)
-//
-// What a renderer draws the foliage as (Species::leafForm), its colour and
-// the bark's ride in the Species too; bro.flora's JS layer pairs each leaf
-// form with its card and material.
 
 #include "broflora/world.h"
 

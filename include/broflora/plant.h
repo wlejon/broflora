@@ -191,11 +191,8 @@ struct Species {
     float lateralOrthotropy  = std::numeric_limits<float>::quiet_NaN();
     float lateralElevation   = 0.0f;
 
-    // Foliage and colour (emit only, like the bark fields: the simulation
-    // never reads them). What a renderer draws the plant's leaves as and in:
-    //   leafForm    LeafForm: broad leaves, needles, or scale-leaf sprays
-    //   leafColor   the leaves' mean albedo (linear; 0,0,0: the renderer's own)
-    //   barkColor   the bark's (0,0,0: the renderer's own)
+    // Foliage (emit only, like the bark fields: the simulation never reads
+    // them). How the crown's leaf mass is gathered into clumps:
     //   clumpScale  the crown clumps' size, x what the emit's options give;
     //               0 none: leafless (a succulent's leaves drawn as its wood)
     //   leafSize    a leaf's size, x the renderer's card (a boxwood's small
@@ -221,39 +218,6 @@ struct Species {
     //   clumpGap    the clumps' spacing, x the emit's (1): above 1 they stand
     //               apart as separate tufts with sky between them (a pine's
     //               open crown of tufts at its shoots' ends)
-    //   bloomForm   BloomForm: what it flowers as once flowering (none, an
-    //               open flower, a round head of florets, an upright spike)
-    //   bloomColor  its blooms' albedo (linear)
-    //   bloomSize   a bloom's size (m): a flower's or a head's across, a
-    //               spike's length
-    // A broad leaf's own look (leafForm Broad; the renderer cuts the
-    // outline per pixel, so none of it costs geometry):
-    //   leafWidth   its width over its length (0: the renderer's, ~0.5): a
-    //               boxwood's near-round leaf 0.6, a willow's 0.15
-    //   leafTip     0 drawn to a point (acuminate: hydrangea), 1 blunt and
-    //               rounded (obtuse: boxwood)
-    //   leafTeeth   teeth along each side of the margin (0: entire)
-    //   leafToothDepth  how deep each cuts in, of the half-width: a fine
-    //               serration ~0.05, a holly's spines ~0.3 (each spine then
-    //               a sharp point, not a rounded tooth)
-    //   leafGloss   0 a matte leaf (the renderer's roughness), 1 a waxy,
-    //               glossy one (holly): a tighter, brighter sun highlight
-    // How a broad leaf hangs on its shoot (bromesh's leafOnShoot):
-    //   phyllotaxis Phyllotaxis: its leaves alternate in two ranks (beech,
-    //               birch, holly), stand in opposite pairs each a quarter
-    //               turn from the last (hydrangea, boxwood: decussate), or
-    //               spiral round the shoot at 2/5 (hibiscus), or are
-    //               leaflets lining the wood itself in two ranks, no twigs
-    //               (pinnate: a palm's fronds)
-    //   petiole     its leaf stalk's length over the blade's (0 sessile; a
-    //               birch's ~0.3, a holly's short 0.1)
-    float leafWidth          = 0.0f;
-    float leafTip            = 0.0f;
-    float leafTeeth          = 0.0f;
-    float leafToothDepth     = 0.0f;
-    float leafGloss          = 0.0f;
-    uint32_t phyllotaxis     = 0;
-    float petiole            = 0.2f;
     // How far the skeleton sags under its own load when emitted
     // (emitPlantSegments; the simulation never reads it): each joint turns
     // its shoot toward hanging by the load beyond it (wood, and leaves on
@@ -268,16 +232,6 @@ struct Species {
     // they rise (emitPlantSegments; the simulation grows it as a column).
     // 0: it stands on its own (the default).
     float climb              = 0.0f;
-    // A needle or scale-leaf spray's set in its clump (leafForm Needle or
-    // Scale):
-    //   sprayBrush  0: the sprays lie round the clump, facing out (a fir's,
-    //               a cypress's smooth mass); 1: they radiate from the
-    //               shoot's end and sweep up, a brush of needles (a pine's
-    //               tufts)
-    float sprayBrush         = 0.0f;
-    uint32_t leafForm        = 0;
-    bromath::Vec3 leafColor  = {0.0f, 0.0f, 0.0f};
-    bromath::Vec3 barkColor  = {0.0f, 0.0f, 0.0f};
     float clumpScale         = 1.0f;
     float leafSize           = 1.0f;
     float clumpFlat          = 1.0f;
@@ -285,37 +239,7 @@ struct Species {
     float clumpFill          = 0.0f;
     float clumpInner         = 0.0f;
     float clumpGap           = 1.0f;
-    uint32_t bloomForm      = 0;
-    bromath::Vec3 bloomColor = {0.0f, 0.0f, 0.0f};
-    float bloomSize          = 0.0f;
 };
-
-// What a plant flowers as (Species::bloomForm).
-enum class BloomForm : uint32_t {
-    None = 0,
-    Flower = 1,   // one open flower at a shoot's tip (a hibiscus)
-    Head = 2,     // a round head of many small florets (a hydrangea)
-    Spike = 3,    // florets up a bare upright stalk (lavender)
-};
-inline constexpr uint32_t kBloomFormCount = 4;
-
-// How a broad leaf's leaves stand on their shoot (Species::phyllotaxis).
-enum class Phyllotaxis : uint32_t {
-    Alternate = 0,   // one a node, alternating in two ranks: a flat spray
-    Opposite = 1,    // two a node, each pair a quarter turn from the last
-    Spiral = 2,      // one a node, 2/5 of a turn apart
-    Pinnate = 3,     // leaflets in two ranks along the wood itself, no
-                     // twigs: a palm frond's, on its rachis
-};
-inline constexpr uint32_t kPhyllotaxisCount = 4;
-
-// What a plant's leaves are drawn as (Species::leafForm).
-enum class LeafForm : uint32_t {
-    Broad  = 0,   // broad leaves: oak, maple, boxwood
-    Needle = 1,   // needle sprays: pine, spruce, fir, redwood
-    Scale  = 2,   // scale-leaf sprays: cypress, juniper, thuja
-};
-inline constexpr uint32_t kLeafFormCount = 3;
 
 // One plant instance.
 //

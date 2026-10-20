@@ -105,18 +105,6 @@ TEST(presets_species_keep_their_groups_apart) {
     }
 }
 
-TEST(presets_leaf_forms) {
-    for (const auto& name : speciesPresetNames()) {
-        WorldState world = openWorld();
-        const auto h = addSpeciesPreset(world, name);
-        const auto form = static_cast<LeafForm>(h->species.leafForm);
-        if (name == "cypress" || name == "juniper") ASSERT(form == LeafForm::Scale, "cypresses bear scale leaves");
-        else if (h->habit == "conifer") ASSERT(form == LeafForm::Needle, "the other conifers bear needles");
-        else ASSERT(form == LeafForm::Broad, "broadleaves and shrubs bear broad leaves");
-        ASSERT(h->species.barkColor.x > 0.0f || h->habit == "broadleaf", "conifers and shrubs carry a bark colour");
-    }
-}
-
 TEST(presets_fir_grows_a_cone) {
     const Shape s = grow("fir", 800);
     ASSERT(s.height > 5.0f && s.height < 20.0f, "a fir grows a tree's height");

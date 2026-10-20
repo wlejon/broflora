@@ -236,23 +236,6 @@ inline bool readVec3Prop(Value obj, std::string_view prop, bromath::Vec3& out) {
     return false;
 }
 
-// A leaf form (broflora::LeafForm): "broad" / "needle" / "scale" or its
-// number. False (and `out` untouched) for anything else.
-inline bool leafFormOf(Value v, int& out) {
-    if (ev::isNumber(v)) {
-        const double d = ev::toDouble(v);
-        if (d >= 0.0 && d < broflora::kLeafFormCount && d == std::floor(d)) { out = static_cast<int>(d); return true; }
-        return false;
-    }
-    if (!ev::isString(v)) return false;
-    const std::string s = ev::toUtf8(v);
-    if (s == "broad") out = static_cast<int>(broflora::LeafForm::Broad);
-    else if (s == "needle") out = static_cast<int>(broflora::LeafForm::Needle);
-    else if (s == "scale") out = static_cast<int>(broflora::LeafForm::Scale);
-    else return false;
-    return true;
-}
-
 inline void readSdfMeshOptions(Value in, broflora::SdfMeshOptions& opts) {
     if (!ev::isObject(in)) return;
     Rooted obj(in);
@@ -597,14 +580,7 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
         if (readFloatField(spec, "lateralGroup", g) && g >= 0.0f && g == std::floor(g))
             s.lateralGroup = static_cast<uint32_t>(g);
     }
-    // The look (emit only).
-    {
-        Value lf = ev::getProperty(spec, "leafForm");
-        int form = -1;
-        if (leafFormOf(lf, form)) s.leafForm = static_cast<uint32_t>(form);
-    }
-    readVec3Prop  (spec, "leafColor",                   s.leafColor);
-    readVec3Prop  (spec, "barkColor",                   s.barkColor);
+    // The clumps and the emitted skeleton (emit only).
     readFloatField(spec, "clumpScale",                  s.clumpScale);
     readFloatField(spec, "leafSize",                    s.leafSize);
     readFloatField(spec, "clumpFlat",                   s.clumpFlat);
@@ -612,43 +588,8 @@ inline void applySpeciesPartial(Value in, broflora::Species& s) {
     readFloatField(spec, "clumpFill",                   s.clumpFill);
     readFloatField(spec, "clumpInner",                  s.clumpInner);
     readFloatField(spec, "clumpGap",                    s.clumpGap);
-    readFloatField(spec, "leafWidth",                   s.leafWidth);
-    readFloatField(spec, "leafTip",                     s.leafTip);
-    readFloatField(spec, "leafTeeth",                   s.leafTeeth);
-    readFloatField(spec, "leafToothDepth",              s.leafToothDepth);
-    readFloatField(spec, "leafGloss",                   s.leafGloss);
-    readFloatField(spec, "sprayBrush",                  s.sprayBrush);
-    readFloatField(spec, "petiole",                     s.petiole);
     readFloatField(spec, "sag",                         s.sag);
     readFloatField(spec, "climb",                       s.climb);
-    {
-        // "alternate" / "opposite" / "spiral" / "pinnate" or its number.
-        Value ph = ev::getProperty(spec, "phyllotaxis");
-        static const char* const kPhyllo[] = {"alternate", "opposite", "spiral", "pinnate"};
-        if (ev::isNumber(ph)) {
-            const double d = ev::toDouble(ph);
-            if (d >= 0.0 && d < broflora::kPhyllotaxisCount && d == std::floor(d)) s.phyllotaxis = static_cast<uint32_t>(d);
-        } else if (ev::isString(ph)) {
-            const std::string name = ev::toUtf8(ph);
-            for (uint32_t i = 0; i < broflora::kPhyllotaxisCount; ++i)
-                if (name == kPhyllo[i]) s.phyllotaxis = i;
-        }
-    }
-    {
-        // "none" / "flower" / "head" / "spike" or its number.
-        Value bf = ev::getProperty(spec, "bloomForm");
-        static const char* const kBlooms[] = {"none", "flower", "head", "spike"};
-        if (ev::isNumber(bf)) {
-            const double d = ev::toDouble(bf);
-            if (d >= 0.0 && d < broflora::kBloomFormCount && d == std::floor(d)) s.bloomForm = static_cast<uint32_t>(d);
-        } else if (ev::isString(bf)) {
-            const std::string name = ev::toUtf8(bf);
-            for (uint32_t i = 0; i < broflora::kBloomFormCount; ++i)
-                if (name == kBlooms[i]) s.bloomForm = i;
-        }
-    }
-    readVec3Prop  (spec, "bloomColor",                  s.bloomColor);
-    readFloatField(spec, "bloomSize",                   s.bloomSize);
 }
 
 // A Species as a plain object, every field applySpeciesPartial reads.
@@ -705,13 +646,6 @@ inline Value speciesObject(const broflora::Species& s) {
     num("lateralElevation", s.lateralElevation);
     num("prototypeGroup", s.prototypeGroup);
     num("lateralGroup", s.lateralGroup);
-    {
-        static const char* const kForms[] = {"broad", "needle", "scale"};
-        Value str = ev::fromUtf8(s.leafForm < broflora::kLeafFormCount ? kForms[s.leafForm] : "broad");
-        sp.set(ev::setProperty(sp.get(), "leafForm", str));
-    }
-    vec("leafColor", s.leafColor);
-    vec("barkColor", s.barkColor);
     num("clumpScale", s.clumpScale);
     num("leafSize", s.leafSize);
     num("clumpFlat", s.clumpFlat);
@@ -719,27 +653,8 @@ inline Value speciesObject(const broflora::Species& s) {
     num("clumpFill", s.clumpFill);
     num("clumpInner", s.clumpInner);
     num("clumpGap", s.clumpGap);
-    num("leafWidth", s.leafWidth);
-    num("leafTip", s.leafTip);
-    num("leafTeeth", s.leafTeeth);
-    num("leafToothDepth", s.leafToothDepth);
-    num("leafGloss", s.leafGloss);
-    num("sprayBrush", s.sprayBrush);
-    num("petiole", s.petiole);
     num("sag", s.sag);
     num("climb", s.climb);
-    {
-        static const char* const kPhyllo[] = {"alternate", "opposite", "spiral", "pinnate"};
-        Value str = ev::fromUtf8(s.phyllotaxis < broflora::kPhyllotaxisCount ? kPhyllo[s.phyllotaxis] : "alternate");
-        sp.set(ev::setProperty(sp.get(), "phyllotaxis", str));
-    }
-    {
-        static const char* const kBlooms[] = {"none", "flower", "head", "spike"};
-        Value str = ev::fromUtf8(s.bloomForm < broflora::kBloomFormCount ? kBlooms[s.bloomForm] : "none");
-        sp.set(ev::setProperty(sp.get(), "bloomForm", str));
-    }
-    vec("bloomColor", s.bloomColor);
-    num("bloomSize", s.bloomSize);
     return sp.get();
 }
 
