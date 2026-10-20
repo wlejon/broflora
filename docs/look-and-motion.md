@@ -12,7 +12,7 @@ the grass are. The later rounds (steps 6 to 17: bro's forest node, its
 tiers, impostors and far canopy, and the grove and forest demos they were
 judged on) were retired with that node; their notes are in this file's git
 history. Today's foliage path is bro's plants node (`scene.createPlants`,
-bro `docs/scene-nodes-api.js`), drawn from the same records and the same
+bro `docs/vegetation-api.js`), drawn from the same records and the same
 pose.
 
 ## What looked best, and why
@@ -131,8 +131,8 @@ crownRadius, weightFrom, weightTo, 0, 0, 0, twig, limb, trunk.
 | `emitFoliageVegetation`, `emitSegmentVegetation` | 16 per leaf / segment instance, in lockstep with the transforms |
 
 bro's side (the wind field, `setWind` / `windAt`, the shaders, the shadow
-pass) is documented in bro's `docs/scene-api.js` and `docs/scene-nodes-api.js`
-"Vegetation"; the JS surface in bro's `docs/flora-api.js` "Vegetation records".
+pass) is documented in bro's `docs/scene-api.js` and `docs/vegetation-api.js`
+"Vegetation records"; the JS surface in bro's `docs/flora-api.js` "Vegetation records".
 
 ## Step 2 as built: the look
 
@@ -185,7 +185,7 @@ under-the-crown close shot.
 
 - **`scene.createGrass(opts)`** (bro `scene/grass_node.h`,
   `vulkan/shaders/scene_grass.glsl`, `scene_mesh_drawer_grass.cpp`; API in
-  bro `docs/scene-nodes-api.js`). Dense's meadow, ported: no per-blade data,
+  bro `docs/vegetation-api.js`). Dense's meadow, ported: no per-blade data,
   three rings of cells around the camera (6 cm, 20 cm, 55 cm cells out to
   20 / 55 / 150 m at the default range; step 5 made them four rings of
   tufts), each one instanced draw over only
