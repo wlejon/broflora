@@ -1,5 +1,5 @@
-// bench_nursery — the step's cost on a forest nursery: 24 specimens of three
-// habits grown 2,500 ticks of 0.02 (the broworkshop forest demo's nursery),
+// bench_nursery — the step's cost on a tree nursery: 24 specimens of three
+// habits grown 2,500 ticks of 0.02,
 // timed per phase through the StepObserver, with a checksum of the grown
 // world so a change to the step can be shown to grow the same plants.
 //

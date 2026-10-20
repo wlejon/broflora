@@ -48,8 +48,8 @@ struct PresetDef {
 
 Vec3 rgb(float r, float g, float b) { return {r, g, b}; }
 
-// The broadleaf trees the forest and grove demos grew before presets
-// existed: a clear trunk, monopodial modules over it.
+// The broadleaf trees the demos grew before presets existed: a clear trunk,
+// monopodial modules over it.
 Species broadleafBase() {
     Species s;
     s.pipeExp = 2.0f;

@@ -321,8 +321,7 @@ static void test_api_instance_layout() {
     )JS");
 }
 
-// Species presets from JS, a mixed forest emitted one leaf form at a time
-// with each specimen's look, and planted by a mix function.
+// Species presets from JS: added, planted with overrides, grown.
 static void test_api_species_presets() {
     runScript("species presets", R"JS(
         const F = bro.flora;
@@ -343,46 +342,7 @@ static void test_api_species_presets() {
         if (Math.abs(info.species.leafColor[1] - 0.3) > 1e-6 || Math.abs(info.species.clumpScale - 0.9) > 1e-6) fail("override");
         if (info.species.prototypeGroup === fir.species.prototypeGroup) fail("boxwood shares fir's group");
         w.grow(300, 0.02);
-
-        // The same options for each (a form's emit otherwise takes its own
-        // defaults for whatever is unset).
-        const O = { perArea: 60, upBias: 0.5, tiltJitter: 0.2, clumpSpacing: 1.2 };
-        const all = w.emitForest(O);
-        const needle = w.emitForest(Object.assign({ leafForm: "needle" }, O));
-        const broad = w.emitForest(Object.assign({ leafForm: 0 }, O));
-        const sprays = w.emitForest({ leafForm: "needle" });
-        if (!(sprays.leafCount > needle.leafCount)) fail("a needle emit packs its clumps by default");
-        if (all.specimenCount !== 2 || needle.specimenCount !== 1 || broad.specimenCount !== 1) fail("form filter");
-        if (needle.specimens[11] !== 0 || broad.specimens[11] !== 1) fail("specimen plant index");
-        if (needle.specimenLooks.length !== 8 || needle.specimenLooks[3] !== 1 || broad.specimenLooks[3] !== 0) fail("looks: form");
-        if (Math.abs(broad.specimenLooks[1] - 0.3) > 1e-6) fail("looks: leaf colour");
-        if (needle.specimenLooks[4] <= 0) fail("looks: bark colour");
-        if (!(broad.specimenLooks[7] > 0.1 && broad.specimenLooks[7] < 0.6) || needle.specimenLooks[7] !== 1)
-            fail("looks: leaf size (a boxwood's small leaves, a fir's sprays the card's)");
-        // Each emit numbers its own clumps (which seed their leaf counts), so
-        // the split is the whole only near enough.
-        if (!(needle.leafCount > 0 && broad.leafCount > 0) ||
-            Math.abs(needle.leafCount + broad.leafCount - all.leafCount) > 0.1 * all.leafCount) fail("leaves split by form");
-        for (let i = 0; i < broad.leaves.length; i += 2)
-            if (broad.leaves[i] >= broad.clumps.length / 8) fail("leaf clump index past the emit's clumps");
-        if (w.emitForest({ plants: [] }).specimenCount !== 0) fail("an empty plant list");
-        if (w.emitForest({ plants: [1] }).specimenCount !== 1) fail("a plant list");
-        let threw = false;
-        try { w.emitForest({ leafForm: "fern" }); } catch (e) { threw = e instanceof RangeError; }
-        if (!threw) fail("a bad leaf form");
-
-        const area = [-40, -40, 40, 40];
-        const one = F.plantForest(needle, { area: area, seed: 3 });
-        const mixed = F.plantForest([needle, broad], { area: area, seed: 3, mix: (x) => (x < 0 ? [1, 0] : [0, 1]) });
-        if (!Array.isArray(mixed) || mixed.length !== 2) fail("a mixed planting is one array per forest");
-        const rows = mixed[0].length / 8 + mixed[1].length / 8;
-        if (rows !== one.length / 8) fail("the mix splits the same cells: " + rows + " vs " + one.length / 8);
-        for (let i = 0; i < mixed[0].length; i += 8) if (mixed[0][i] >= 0) fail("forest 0 east of 0");
-        for (let i = 0; i < mixed[1].length; i += 8) if (mixed[1][i] < 0) fail("forest 1 west of 0");
-        const byIndex = F.plantForest([needle, broad], { area: area, seed: 3, mix: () => 1 });
-        if (byIndex[0].length !== 0 || byIndex[1].length !== one.length) fail("a mix by index");
-        const cover = F.forestCover([needle, broad], { instances: mixed });
-        if (!(cover(-20, -20) >= 0 && cover(-20, -20) <= 1) || typeof cover.canopy !== "function") fail("mixed cover");
+        if (w.plantCount !== 2) fail("both grew");
         "SUCCESS";
     )JS");
 }

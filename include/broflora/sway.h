@@ -293,6 +293,21 @@ std::vector<float> vegetationPerVertex(const std::vector<float>& perItem, size_t
 // splits a segment at a root flare or a branch collar) takes the weights
 // and the path at its own ends; `length` is the whole segment's.
 inline constexpr size_t kSegmentVegetationFloats = 16;
+// Each field's first float in the record (a vec3 takes three from there).
+namespace segment_vegetation {
+inline constexpr size_t kRoot = 0;         // xyz
+inline constexpr size_t kHeight = 3;
+inline constexpr size_t kCrown = 4;        // xyz
+inline constexpr size_t kCrownRadius = 7;
+inline constexpr size_t kWeightFrom = 8;
+inline constexpr size_t kWeightTo = 9;
+inline constexpr size_t kPath = 10;
+inline constexpr size_t kBark = 11;
+inline constexpr size_t kAxis = 12;
+inline constexpr size_t kTwig = 13;
+inline constexpr size_t kLimb = 14;
+inline constexpr size_t kTrunk = 15;
+}  // namespace segment_vegetation
 void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s);
 void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s, float along0, float along1,
                              float length);

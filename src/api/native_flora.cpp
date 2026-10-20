@@ -394,99 +394,6 @@ Value jsStep(Value /*thisVal*/, std::span<const Value> args) {
     return args[0];
 }
 
-// ── ForestCover handles ───────────────────────────────────────────────
-// Branded like the worlds: a payload is read as a ForestCover only while
-// its handle lives.
-std::mutex& coverBrandMutex() {
-    static std::mutex m;
-    return m;
-}
-std::unordered_set<const void*>& coverBrands() {
-    static auto* s = new std::unordered_set<const void*>();
-    return *s;
-}
-void destroyForestCover(void* p) {
-    {
-        std::lock_guard<std::mutex> lk(coverBrandMutex());
-        coverBrands().erase(p);
-    }
-    delete static_cast<broflora::ForestCover*>(p);
-}
-const broflora::ForestCover* getCover(Value v) {
-    void* data = ev::handleData(v);
-    if (!data) return nullptr;
-    std::lock_guard<std::mutex> lk(coverBrandMutex());
-    return coverBrands().count(data) ? static_cast<const broflora::ForestCover*>(data) : nullptr;
-}
-
-// forestCover(trees Float64Array of [x, z, crownX, crownZ, crownRadius]...,
-// floor, closed, trunkClear) -> handle
-Value jsForestCover(Value /*thisVal*/, std::span<const Value> args) {
-    if (args.size() < 4) return ev::undefined();
-    const auto info = ev::typedArrayInfo(args[0]);
-    if (!info || info.elementKind != ev::elements::Float64)
-        return ev::throwTypeError("forestCover: trees must be a Float64Array");
-    std::vector<broflora::ForestCoverTree> trees(info.elementCount / 5);
-    const auto* d = reinterpret_cast<const double*>(info.data);
-    for (size_t k = 0; k < trees.size(); ++k)
-        trees[k] = {d[k * 5], d[k * 5 + 1], d[k * 5 + 2], d[k * 5 + 3], d[k * 5 + 4]};
-    broflora::ForestCoverOptions o;
-    o.floor = ev::toDouble(args[1]);
-    o.closed = ev::toDouble(args[2]);
-    o.trunkClear = ev::toDouble(args[3]);
-    auto* cover = new broflora::ForestCover(trees, o);
-    {
-        std::lock_guard<std::mutex> lk(coverBrandMutex());
-        coverBrands().insert(cover);
-    }
-    return ev::makeHandle(cover, &destroyForestCover, ev::Finalize::InSweep);
-}
-
-// forestCoverAt(handle, x, z) -> 0..1
-Value jsForestCoverAt(Value /*thisVal*/, std::span<const Value> args) {
-    if (args.size() < 3) return ev::fromDouble(0.0);
-    const auto* cover = getCover(args[0]);
-    if (!cover) return ev::throwTypeError("forestCoverAt: not a forest cover");
-    return ev::fromDouble(cover->at(ev::toDouble(args[1]), ev::toDouble(args[2])));
-}
-
-// forestCanopyAt(handle, x, z) -> 0..1
-Value jsForestCanopyAt(Value /*thisVal*/, std::span<const Value> args) {
-    if (args.size() < 3) return ev::fromDouble(0.0);
-    const auto* cover = getCover(args[0]);
-    if (!cover) return ev::throwTypeError("forestCanopyAt: not a forest cover");
-    return ev::fromDouble(cover->canopyAt(ev::toDouble(args[1]), ev::toDouble(args[2])));
-}
-
-// forestCoverGrid(handle, cover, canopy, x0, z0, cell, cols, rows): at() and
-// canopyAt() over a grid into Float32Arrays of cols * rows (either null).
-Value jsForestCoverGrid(Value /*thisVal*/, std::span<const Value> args) {
-    if (args.size() < 8) return ev::throwTypeError("forestCoverGrid: 8 arguments");
-    const auto* cover = getCover(args[0]);
-    if (!cover) return ev::throwTypeError("forestCoverGrid: not a forest cover");
-    const double x0 = ev::toDouble(args[3]), z0 = ev::toDouble(args[4]), cell = ev::toDouble(args[5]);
-    const double c = ev::toDouble(args[6]), r = ev::toDouble(args[7]);
-    if (!(c >= 1 && r >= 1 && c * r <= 4.0e8)) return ev::throwRangeError("forestCoverGrid: bad grid size");
-    const int cols = static_cast<int>(c), rows = static_cast<int>(r);
-    const size_t n = static_cast<size_t>(cols) * rows;
-    const bool wantCover = !args[1].isNull() && !args[1].isUndefined();
-    const bool wantCanopy = !args[2].isNull() && !args[2].isUndefined();
-    std::vector<float> cv(wantCover ? n : 0), cn(wantCanopy ? n : 0);
-    cover->grid(x0, z0, cell, cols, rows, wantCover ? cv.data() : nullptr, wantCanopy ? cn.data() : nullptr);
-    // The outputs' pointers read only now, after the work (nothing allocates
-    // from here on).
-    for (int o = 0; o < 2; ++o) {
-        const std::vector<float>& src = o ? cn : cv;
-        if (src.empty()) continue;
-        const ev::TypedArrayInfo info = ev::typedArrayInfo(args[1 + o]);
-        if (!info || info.elementKind != ev::elements::Float32)
-            return ev::throwTypeError("forestCoverGrid: outputs must be Float32Arrays");
-        if (info.elementCount < n) return ev::throwRangeError("forestCoverGrid: an output is shorter than the grid");
-        std::memcpy(info.data, src.data(), n * sizeof(float));
-    }
-    return ev::undefined();
-}
-
 // grow(world, ticks, dt, cacheDir) -> { cached, key, ms, error? }
 Value jsGrow(Value /*thisVal*/, std::span<const Value> args) {
     if (args.empty()) return ev::undefined();
@@ -785,10 +692,6 @@ void registerFloraNativeHelpers() {
     REG_FN(removePlant, 2, jsRemovePlant);
     REG_FN(step, 2, jsStep);
     REG_FN(grow, 4, jsGrow);
-    REG_FN(forestCover, 4, jsForestCover);
-    REG_FN(forestCoverAt, 3, jsForestCoverAt);
-    REG_FN(forestCanopyAt, 3, jsForestCanopyAt);
-    REG_FN(forestCoverGrid, 8, jsForestCoverGrid);
     REG_FN(plantInfo, 2, jsPlantInfo);
     REG_FN(setClimate, 2, jsSetClimate);
     REG_FN(sampleShadow, 2, jsSampleShadow);
@@ -821,7 +724,6 @@ void registerFloraNativeHelpers() {
     REG_FN(emitFoliageVegetation, 2, jsEmitFoliageVegetation);
     REG_FN(emitSegmentVegetation, 1, jsEmitSegmentVegetation);
     REG_FN(emitClumps, 2, jsEmitClumps);
-    REG_FN(emitForest, 2, jsEmitForest);
     REG_FN(emitFoliageMesh, 3, jsEmitFoliageMesh);
     REG_FN(emitBloomMesh, 4, jsEmitBloomMesh);
     REG_FN(emitPlantFoliageMesh, 4, jsEmitPlantFoliageMesh);

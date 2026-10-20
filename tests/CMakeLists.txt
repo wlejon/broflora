@@ -9,9 +9,7 @@ add_executable(broflora_test
     test_orientation.cpp
     test_mesh_emit.cpp
     test_look.cpp
-    test_forest.cpp
-    test_forest_blooms.cpp
-    test_forest_subtree.cpp
+    test_tubes.cpp
     test_prototypes.cpp
     test_regression.cpp
     test_spatial_hash.cpp
@@ -20,7 +18,6 @@ add_executable(broflora_test
     test_remove_plant.cpp
     test_leaf_cluster.cpp
     test_world_io.cpp
-    test_forest_cover.cpp
     test_presets.cpp
     test_herbs.cpp
 )
@@ -36,7 +33,7 @@ endif()
 
 add_test(NAME broflora_test COMMAND broflora_test)
 
-# The step's cost on a forest nursery, per phase (not a test: it prints).
+# The step's cost on a tree nursery, per phase (not a test: it prints).
 add_executable(broflora_bench_nursery bench_nursery.cpp)
 target_link_libraries(broflora_bench_nursery PRIVATE broflora)
 target_compile_features(broflora_bench_nursery PRIVATE cxx_std_20)

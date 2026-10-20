@@ -238,9 +238,7 @@ struct Species {
     //               a sharp point, not a rounded tooth)
     //   leafGloss   0 a matte leaf (the renderer's roughness), 1 a waxy,
     //               glossy one (holly): a tighter, brighter sun highlight
-    // How a broad leaf hangs on its shoot (the renderer grows each clump's
-    // leaves on twigs: bro.scene's scene_forest_shoot.glsl, bromesh's
-    // leafOnShoot):
+    // How a broad leaf hangs on its shoot (bromesh's leafOnShoot):
     //   phyllotaxis Phyllotaxis: its leaves alternate in two ranks (beech,
     //               birch, holly), stand in opposite pairs each a quarter
     //               turn from the last (hydrangea, boxwood: decussate), or

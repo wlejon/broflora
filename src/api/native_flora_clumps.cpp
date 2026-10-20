@@ -3,7 +3,6 @@
 // emitFoliageTransforms, emitFoliageVegetation) and world.emitClumps().
 
 #include "native_flora_internal.h"
-#include "broflora/forest_records.h"
 
 namespace broflora::api {
 
@@ -118,94 +117,6 @@ Value scatterClumps(const broflora::WorldState& world, Value opts) {
     ev::Persistent bmaxA(hostArrayOf(3, [&](size_t i) { return ev::fromDouble(bmax[i]); }));
     obj.set(ev::setProperty(obj.get(), "boundsMin", bminA.get()));
     obj.set(ev::setProperty(obj.get(), "boundsMax", bmaxA.get()));
-    return obj.get();
-}
-
-// world.emitForest(opts) -> every plant as a specimen for bro.scene's forest
-// node (broflora/forest.h): typed arrays plus the leaf placement, and one
-// instance per specimen where its plant stands. The clump options read as
-// the foliage emits'; `minRadius` drops thin bark; `shuffleSeed` seeds the
-// leaves' thinning order (and the blooms'). A flowering plant whose species
-// bears blooms carries them too: `blooms` and `specimenBlooms`.
-Value jsEmitForest(Value /*thisVal*/, std::span<const Value> args) {
-    if (args.empty()) return ev::createObject();
-    auto* w = getWrapper(args[0]);
-    if (!w || !w->world) return ev::createObject();
-    const Rooted optsV(args.size() >= 2 ? args[1] : ev::undefined());
-    broflora::ForestOptions fo;
-    if (!readClumpOptions(optsV, fo.clumps, fo.leaves)) return ev::undefined();
-    const double g = getGlobalDensity();
-    if (g >= 0.0) fo.leaves.perArea *= static_cast<float>(g);
-    if (ev::isObject(optsV)) {
-        readFloatField(optsV, "minRadius", fo.minRadius);
-        uint64_t s = fo.seed;
-        if (!seedField(optsV, "shuffleSeed", "emitForest opts.shuffleSeed", s)) return ev::undefined();
-        fo.seed = s;
-        // Which plants: `plants` (indices), and of them `leafForm`'s.
-        Rooted plantsV(ev::getProperty(optsV, "plants"));
-        if (ev::isObject(plantsV)) {
-            uint32_t n = 0;
-            if (!lengthOf(plantsV, "emitForest opts.plants.length", n)) return ev::undefined();
-            fo.plants.reserve(std::min(n, kReserveCap));
-            for (uint32_t i = 0; i < n; ++i) {
-                int64_t v = 0;
-                if (!intValue(ev::getElement(plantsV, i), "emitForest opts.plants[i]", 0.0, kMaxUint32, v))
-                    return ev::undefined();
-                fo.plants.push_back(static_cast<uint32_t>(v));
-            }
-            // An empty list emits nothing (not every plant).
-            if (n == 0) fo.plants.push_back(UINT32_MAX);
-        }
-        Value lf = ev::getProperty(optsV, "leafForm");
-        if (!ev::isUndefined(lf) && !leafFormOf(lf, fo.leafForm)) {
-            ev::throwRangeError("emitForest opts.leafForm must be 'broad', 'needle', 'scale' or 0..2");
-            return ev::undefined();
-        }
-    }
-    const broflora::ForestEmit f = broflora::emitForest(*w->world, fo);
-
-    // Per specimen: specimens, specimenLooks, specimenLeaves, specimenBlooms
-    // and instances, laid out as broflora/forest_records.h says.
-    const broflora::forest_records::Packed packed = broflora::forest_records::pack(f);
-    ev::Persistent obj(ev::createObject());
-    const auto put = [&](const char* name, const std::vector<float>& v) {
-        ev::Persistent a(makeFloat32Array(v.empty() ? nullptr : v.data(), v.size()));
-        obj.set(ev::setProperty(obj.get(), name, a.get()));
-    };
-    put("specimens", packed.specimens);
-    put("specimenLooks", packed.looks);
-    put("specimenLeaves", packed.leafLooks);
-    put("instances", packed.instances);
-    put("segments", f.segments);
-    put("tangents", f.tangents);
-    put("segmentVegetation", f.segmentVegetation);
-    put("keepRadius", f.keepRadius);
-    put("segmentClumps", f.segmentClumps);
-    put("clumpGroups", f.clumpGroups);
-    put("clumps", f.clumps);
-    put("clumpVegetation", f.clumpVegetation);
-    put("specimenBlooms", packed.blooms);
-    put("blooms", f.blooms);
-    {
-        // Leaf (clump, key) pairs stay integers: a world's keys pass 2^24.
-        ev::Persistent a(makeUint32Array(f.leaves.empty() ? nullptr : f.leaves.data(), f.leaves.size()));
-        obj.set(ev::setProperty(obj.get(), "leaves", a.get()));
-    }
-    if (fo.leafForm >= 0) {
-        // The form it was filtered to (bro.scene's createForest draws it).
-        static const char* const kForms[] = {"broad", "needle", "scale"};
-        Value lfName = ev::fromUtf8(kForms[std::clamp(fo.leafForm, 0, 2)]);
-        obj.set(ev::setProperty(obj.get(), "leafForm", lfName));
-    }
-    obj.set(ev::setProperty(obj.get(), "specimenCount", ev::fromDouble(static_cast<double>(f.specimens.size()))));
-    obj.set(ev::setProperty(obj.get(), "leafCount", ev::fromDouble(static_cast<double>(f.leaves.size() / broflora::forest_records::leaf::kValues))));
-    obj.set(ev::setProperty(obj.get(), "bloomCount", ev::fromDouble(static_cast<double>(f.blooms.size() / broflora::forest_records::bloom::kFloats))));
-    obj.set(ev::setProperty(obj.get(), "seed", ev::fromDouble(static_cast<double>(f.leafOptions.seed))));
-    obj.set(ev::setProperty(obj.get(), "upBias", ev::fromDouble(f.leafOptions.upBias)));
-    obj.set(ev::setProperty(obj.get(), "tiltJitter", ev::fromDouble(f.leafOptions.tiltJitter)));
-    obj.set(ev::setProperty(obj.get(), "shell", ev::fromDouble(f.leafOptions.shell)));
-    obj.set(ev::setProperty(obj.get(), "baseScale", ev::fromDouble(f.leafOptions.baseScale)));
-    obj.set(ev::setProperty(obj.get(), "scaleJitter", ev::fromDouble(f.leafOptions.scaleJitter)));
     return obj.get();
 }
 

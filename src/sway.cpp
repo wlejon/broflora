@@ -4,7 +4,6 @@
 // (include/broflora/sway.h).
 #include "broflora/sway.h"
 
-#include "broflora/forest_records.h"
 #include "broflora/mesh_emit.h"
 
 #include "bromath/vec.h"
@@ -584,10 +583,10 @@ void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s) {
 
 void appendSegmentVegetation(std::vector<float>& out, const SegmentSway& s, float along0, float along1,
                              float length) {
-    namespace v = forest_records::vegetation;
-    static_assert(v::kFloats == kSegmentVegetationFloats);
+    namespace v = segment_vegetation;
     const auto at = [&](float t) { return s.weightFrom + (s.weightTo - s.weightFrom) * t; };
-    float* r = forest_records::append(out, v::kFloats);
+    out.resize(out.size() + kSegmentVegetationFloats, 0.0f);
+    float* r = out.data() + out.size() - kSegmentVegetationFloats;
     r[v::kRoot] = s.root.x; r[v::kRoot + 1] = s.root.y; r[v::kRoot + 2] = s.root.z;
     r[v::kHeight] = s.height;
     r[v::kCrown] = s.crown.x; r[v::kCrown + 1] = s.crown.y; r[v::kCrown + 2] = s.crown.z;
