@@ -209,9 +209,10 @@ under-the-crown close shot.
   it from the stamp time: blades spring back in about half a second, and
   flattened grass lies the way it was pushed, leaning from the root, paler,
   rising over about 20 s.
-- **bro.flora**: `world.groundCover({scale})` is the `density` function for
-  grass among grown plants: thin in the crowns' shade (the shadow grid's light
-  just above the ground), clear at each trunk.
+- **Where it grows**: the grass now stands on a bro.scene land and reads its
+  density, dryness, height and the canopy over it from the land's surface
+  module on the GPU (bro's docs/land-api.js); the step's CPU density function
+  (`world.groundCover`) went with the CPU-baked field.
 - **Cost** (1280x720, RTX 4090, perf.gpuFrameMs over 60 frames): the grass was
   1.6 to 2.2 ms of a 12.7 to 13 ms grove frame (10.7 to 11.4 ms without it),
   about 210k / 110k / 100k instances in the three rings.

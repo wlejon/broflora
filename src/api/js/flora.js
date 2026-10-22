@@ -376,36 +376,6 @@
         return _native ? _native.sampleShadow(this, pos) : 0;
     });
 
-    // Where ground cover (bro.scene's createGrass `density`) grows among the
-    // plants: a function (x, z, y) -> 0..1 in world metres. Grass thins in
-    // the crowns' shade (the shadow grid's light just above the ground) and
-    // clears at each trunk; `floor` is what is left at the darkest. `scale`
-    // is the node scale the plants are drawn at (world = plant space x scale).
-    fn(FloraWorld.prototype, "groundCover", function groundCover(opts) {
-        const o = opts || {};
-        const world = this;
-        const scale = o.scale > 0 ? +o.scale : 1;
-        const floor = typeof o.floor === 'number' ? o.floor : 0.3;
-        const shade = typeof o.shade === 'number' ? o.shade : 0.6;
-        const clear = typeof o.trunkClear === 'number' ? o.trunkClear : 0.7;
-        const above = typeof o.above === 'number' ? o.above : 0.5;
-        const roots = [];
-        const n = world.plantCount | 0;
-        for (let i = 0; i < n; i++) {
-            const info = world.plantInfo(i);
-            if (info && info.origin) roots.push([info.origin[0] * scale, info.origin[2] * scale]);
-        }
-        const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-        return function cover(x, z, y) {
-            let d = 1;
-            for (let i = 0; i < roots.length; i++)
-                d = Math.min(d, smooth(clear, clear * 3.5, Math.hypot(x - roots[i][0], z - roots[i][1])));
-            const L = world.sampleShadow([x / scale, ((+y || 0) + above) / scale, z / scale]);
-            if (typeof L === 'number') d *= 1 - shade * (1 - Math.min(Math.max(L, 0), 1));
-            return floor + (1 - floor) * d;
-        };
-    });
-
     fn(FloraWorld.prototype, "validate", function validate() {
         return _native ? _native.validate(this) : null;
     });
