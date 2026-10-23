@@ -70,7 +70,9 @@ void applyHerb(Value spec, broflora::HerbSpecies& h) {
     for (const FloatField& f : kFloats) readFloatField(o, f.name, h.*f.member);
     for (const CountField& f : kCounts) {
         float v = 0.0f;
-        if (readFloatField(o, f.name, v) && v >= 0.0f) h.*f.member = static_cast<uint32_t>(std::lround(v));
+        if (readFloatField(o, f.name, v) && v >= 0.0f && v <= 4294967295.0f) {
+            h.*f.member = static_cast<uint32_t>(std::lround(v));
+        }
     }
     for (const ColorField& f : kColors) readVec3Prop(o, f.name, h.*f.member);
     uint32_t e = 0;
@@ -161,7 +163,8 @@ Value jsHerbRecords(Value /*thisVal*/, std::span<const Value> args) {
     if (!args.empty() && ev::isObject(args[0])) {
         Rooted list(args[0]);
         Value lenV = ev::getProperty(list, "length");
-        const size_t n = ev::isNumber(lenV) ? static_cast<size_t>(std::max(0.0, ev::toDouble(lenV))) : 0;
+        const double lenD = ev::isNumber(lenV) ? ev::toDouble(lenV) : 0.0;
+        const size_t n = (std::isfinite(lenD) && lenD > 0.0) ? static_cast<size_t>(std::min(lenD, 64.0)) : 0;
         for (size_t i = 0; i < n && i < 64; ++i) {
             broflora::HerbSpecies h;
             if (herbOf(ev::getElement(list, static_cast<uint32_t>(i)), h)) hs.push_back(std::move(h));

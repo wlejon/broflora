@@ -268,8 +268,10 @@ Value jsAddVoronoiSite(Value /*thisVal*/, std::span<const Value> args) {
             return ev::undefined();
         }
         const uint32_t protoIdx = static_cast<uint32_t>(idx);
-        float det = args.size() >= 3 && ev::isNumber(args[2]) ? static_cast<float>(ev::toDouble(args[2])) : 1.0f;
-        float ac = args.size() >= 4 && ev::isNumber(args[3]) ? static_cast<float>(ev::toDouble(args[3])) : 0.5f;
+        float det = 1.0f;
+        if (args.size() >= 3) finiteFloat(args[2], det);
+        float ac = 0.5f;
+        if (args.size() >= 4) finiteFloat(args[3], ac);
         uint32_t group = 0;
         if (!optIntArg(args, 4, "bro.flora.FloraWorld.addVoronoiSite: group", 0.0, kMaxUint32 - 1.0, group))
             return ev::undefined();
@@ -548,7 +550,7 @@ Value jsProtoWhorl(Value /*thisVal*/, std::span<const Value> args) {
     uint32_t arms = 3;  // whorlModule clamps it to [2, 8]
     float spread = 0.55f;
     if (!optIntArg(args, 0, "bro.flora.prototypes.whorl: arms", 0.0, kMaxUint32, arms)) return ev::undefined();
-    if (args.size() >= 2 && ev::isNumber(args[1])) spread = static_cast<float>(ev::toDouble(args[1]));
+    if (args.size() >= 2) finiteFloat(args[1], spread);
     return protoToSpec(broflora::whorlModule(arms, spread));
 }
 
@@ -558,15 +560,15 @@ Value jsProtoMonopodial(Value /*thisVal*/, std::span<const Value> args) {
     if (!optIntArg(args, 0, "bro.flora.prototypes.monopodial: lateralBranches", 0.0, kMaxUint32, lateralBranches)) {
         return ev::undefined();
     }
-    if (args.size() >= 2 && ev::isNumber(args[1])) lateralSpread = static_cast<float>(ev::toDouble(args[1]));
+    if (args.size() >= 2) finiteFloat(args[1], lateralSpread);
     return protoToSpec(broflora::monopodialLeaderModule(lateralBranches, lateralSpread));
 }
 
 Value jsProtoSympodial(Value /*thisVal*/, std::span<const Value> args) {
     float primarySpread = 0.3f;
     float lateralSpread = 0.7f;
-    if (args.size() >= 1 && ev::isNumber(args[0])) primarySpread = static_cast<float>(ev::toDouble(args[0]));
-    if (args.size() >= 2 && ev::isNumber(args[1])) lateralSpread = static_cast<float>(ev::toDouble(args[1]));
+    if (args.size() >= 1) finiteFloat(args[0], primarySpread);
+    if (args.size() >= 2) finiteFloat(args[1], lateralSpread);
     return protoToSpec(broflora::sympodialForkModule(primarySpread, lateralSpread));
 }
 
@@ -576,22 +578,22 @@ Value jsProtoHorizontalTier(Value /*thisVal*/, std::span<const Value> args) {
     if (!optIntArg(args, 0, "bro.flora.prototypes.horizontalTier: arms", 0.0, kMaxUint32, arms)) {
         return ev::undefined();
     }
-    if (args.size() >= 2 && ev::isNumber(args[1])) spread = static_cast<float>(ev::toDouble(args[1]));
+    if (args.size() >= 2) finiteFloat(args[1], spread);
     return protoToSpec(broflora::horizontalTierModule(arms, spread));
 }
 
 Value jsProtoWeeping(Value /*thisVal*/, std::span<const Value> args) {
     float spread = 0.6f;
     float droop = 0.4f;
-    if (args.size() >= 1 && ev::isNumber(args[0])) spread = static_cast<float>(ev::toDouble(args[0]));
-    if (args.size() >= 2 && ev::isNumber(args[1])) droop = static_cast<float>(ev::toDouble(args[1]));
+    if (args.size() >= 1) finiteFloat(args[0], spread);
+    if (args.size() >= 2) finiteFloat(args[1], droop);
     return protoToSpec(broflora::weepingModule(spread, droop));
 }
 
 Value jsSetWind(Value /*thisVal*/, std::span<const Value> args) {
-    if (args.size() >= 1 && ev::isNumber(args[0])) s_windStrength = ev::toDouble(args[0]);
-    if (args.size() >= 2 && ev::isNumber(args[1])) s_windDirX = ev::toDouble(args[1]);
-    if (args.size() >= 3 && ev::isNumber(args[2])) s_windDirY = ev::toDouble(args[2]);
+    if (args.size() >= 1) finiteDouble(args[0], s_windStrength);
+    if (args.size() >= 2) finiteDouble(args[1], s_windDirX);
+    if (args.size() >= 3) finiteDouble(args[2], s_windDirY);
     return ev::undefined();
 }
 
@@ -603,14 +605,14 @@ Value jsWind(Value /*thisVal*/, std::span<const Value> args) {
         o.set(ev::setProperty(o.get(), "dirY", ev::fromDouble(s_windDirY)));
         return o.get();
     }
-    if (args.size() >= 1 && ev::isNumber(args[0])) s_windStrength = ev::toDouble(args[0]);
-    if (args.size() >= 2 && ev::isNumber(args[1])) s_windDirX = ev::toDouble(args[1]);
-    if (args.size() >= 3 && ev::isNumber(args[2])) s_windDirY = ev::toDouble(args[2]);
+    if (args.size() >= 1) finiteDouble(args[0], s_windStrength);
+    if (args.size() >= 2) finiteDouble(args[1], s_windDirX);
+    if (args.size() >= 3) finiteDouble(args[2], s_windDirY);
     return ev::undefined();
 }
 
 Value jsSetDensity(Value /*thisVal*/, std::span<const Value> args) {
-    if (args.size() >= 1 && ev::isNumber(args[0])) s_density = ev::toDouble(args[0]);
+    if (args.size() >= 1) finiteDouble(args[0], s_density);
     return ev::undefined();
 }
 
@@ -618,7 +620,7 @@ Value jsDensity(Value /*thisVal*/, std::span<const Value> args) {
     if (args.empty()) {
         return ev::fromDouble(s_density);
     }
-    if (args.size() >= 1 && ev::isNumber(args[0])) s_density = ev::toDouble(args[0]);
+    if (args.size() >= 1) finiteDouble(args[0], s_density);
     return ev::undefined();
 }
 
@@ -639,7 +641,7 @@ Value jsSwayTransforms(Value /*thisVal*/, std::span<const Value> args) {
         buf.assign(src, src + bi.elementCount);
     }
     double factor = 1.0;
-    if (args.size() >= 3 && ev::isNumber(args[2])) factor = ev::toDouble(args[2]);
+    if (args.size() >= 3) finiteDouble(args[2], factor);
     const size_t count = buf.size() / 16;
     applyWindToTransforms(buf.data(), count, s_windTime, s_windStrength * factor, s_windDirX, s_windDirY);
 
@@ -655,8 +657,9 @@ Value jsSwayTransforms(Value /*thisVal*/, std::span<const Value> args) {
 }
 
 Value jsUpdate(Value /*thisVal*/, std::span<const Value> args) {
-    if (!args.empty() && ev::isNumber(args[0])) {
-        s_windTime += ev::toDouble(args[0]);
+    double dt = 0.0;
+    if (!args.empty() && finiteDouble(args[0], dt)) {
+        s_windTime += dt;
     }
     return ev::undefined();
 }

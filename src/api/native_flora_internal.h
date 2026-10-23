@@ -202,14 +202,25 @@ inline bool seedField(Value obj, std::string_view prop, std::string_view what, u
 // The single-read helpers below are safe on a plain Value; the multi-read
 // ones root their input first.
 
+inline bool finiteFloat(Value v, float& out) {
+    if (!ev::isNumber(v)) return false;
+    const double d = ev::toDouble(v);
+    if (!std::isfinite(d)) return false;
+    out = static_cast<float>(d);
+    return true;
+}
+
+inline bool finiteDouble(Value v, double& out) {
+    if (!ev::isNumber(v)) return false;
+    const double d = ev::toDouble(v);
+    if (!std::isfinite(d)) return false;
+    out = d;
+    return true;
+}
+
 inline bool readFloatField(Value obj, std::string_view prop, float& out) {
     if (!ev::isObject(obj)) return false;
-    Value v = ev::getProperty(obj, prop);
-    if (ev::isNumber(v)) {
-        double d = ev::toDouble(v);
-        if (!std::isnan(d)) { out = static_cast<float>(d); return true; }
-    }
-    return false;
+    return finiteFloat(ev::getProperty(obj, prop), out);
 }
 
 inline bool readBoolField(Value obj, std::string_view prop, bool& out) {
@@ -228,10 +239,15 @@ inline bool readVec3Prop(Value obj, std::string_view prop, bromath::Vec3& out) {
     if (!ev::isObject(v)) return false;
     Value lenV = ev::getProperty(v, "length");
     if (ev::isNumber(lenV) && ev::toDouble(lenV) >= 3.0) {
-        out.x = static_cast<float>(ev::toDouble(ev::getElement(v, 0)));
-        out.y = static_cast<float>(ev::toDouble(ev::getElement(v, 1)));
-        out.z = static_cast<float>(ev::toDouble(ev::getElement(v, 2)));
-        return true;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        if (finiteFloat(ev::getElement(v, 0), x) &&
+            finiteFloat(ev::getElement(v, 1), y) &&
+            finiteFloat(ev::getElement(v, 2), z)) {
+            out.x = x;
+            out.y = y;
+            out.z = z;
+            return true;
+        }
     }
     return false;
 }
@@ -425,16 +441,22 @@ inline bromesh::LeafShape parseLeafShapeValue(Value v) {
         if (s == "frond") return bromesh::LeafShape::Frond;
         if (s == "petal") return bromesh::LeafShape::Petal;
     } else if (ev::isNumber(v)) {
-        int val = static_cast<int>(ev::toDouble(v));
-        if (val >= 0 && val <= 5) return static_cast<bromesh::LeafShape>(val);
+        const double d = ev::toDouble(v);
+        if (std::isfinite(d) && d >= 0.0 && d <= 5.0) {
+            int val = static_cast<int>(d);
+            return static_cast<bromesh::LeafShape>(val);
+        }
     }
     return bromesh::LeafShape::Oval;
 }
 
 inline broflora::Phyllotaxy parsePhyllotaxy(Value v) {
     if (ev::isNumber(v)) {
-        int val = static_cast<int>(ev::toDouble(v));
-        if (val >= 0 && val <= 4) return static_cast<broflora::Phyllotaxy>(val);
+        const double d = ev::toDouble(v);
+        if (std::isfinite(d) && d >= 0.0 && d <= 4.0) {
+            int val = static_cast<int>(d);
+            return static_cast<broflora::Phyllotaxy>(val);
+        }
     } else if (ev::isString(v)) {
         std::string s = ev::toUtf8(v);
         if (s == "alternate" || s == "Alternate") return broflora::Phyllotaxy::Alternate;
@@ -512,11 +534,12 @@ inline bool readLeafPlacementOptions(Value in, bromesh::LeafPlacementOptions& op
         opts.densityWeight.reserve(std::min<uint32_t>(n, kReserveCap));
         for (uint32_t i = 0; i < n; ++i) {
             Value e = ev::getElement(dw, i);
-            if (!ev::isNumber(e)) {
-                ev::throwTypeError("leaf placement opts.densityWeight[" + std::to_string(i) + "] must be a number");
+            float fw = 0.0f;
+            if (!finiteFloat(e, fw)) {
+                ev::throwTypeError("leaf placement opts.densityWeight[" + std::to_string(i) + "] must be a finite number");
                 return false;
             }
-            opts.densityWeight.push_back(static_cast<float>(ev::toDouble(e)));
+            opts.densityWeight.push_back(fw);
         }
     }
     return true;
