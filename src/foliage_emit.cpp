@@ -4,6 +4,7 @@
 
 #include "broflora/mesh_emit.h"
 
+#include <brass/codegen/kernel_jit.hpp>
 #include "bromath/vec.h"
 #include "internal_foliage.h"
 #include "internal_kinks.h"
@@ -212,9 +213,24 @@ std::vector<FoliageSample> emitPlantFoliage(const Plant& plant) {
 }
 
 std::vector<FoliageSample> emitWorldFoliage(const WorldState& world) {
+    const size_t nPlants = world.plants.size();
     std::vector<FoliageSample> out;
-    for (const auto& plant : world.plants) {
-        emitPlantFoliageInto(plant, out);
+    if (nPlants == 0) return out;
+    if (nPlants == 1) {
+        emitPlantFoliageInto(world.plants[0], out);
+        return out;
+    }
+    std::vector<std::vector<FoliageSample>> perPlant(nPlants);
+    brass::codegen::parallel_for(0, static_cast<int64_t>(nPlants), [&](int64_t b, int64_t e) {
+        for (int64_t i = b; i < e; ++i) {
+            emitPlantFoliageInto(world.plants[static_cast<size_t>(i)], perPlant[static_cast<size_t>(i)]);
+        }
+    });
+    size_t total = 0;
+    for (const auto& v : perPlant) total += v.size();
+    out.reserve(total);
+    for (const auto& v : perPlant) {
+        out.insert(out.end(), v.begin(), v.end());
     }
     return out;
 }
@@ -226,11 +242,31 @@ std::vector<BloomAnchor> emitPlantBloomAnchors(const Plant& plant) {
 }
 
 std::vector<BloomAnchor> emitWorldBloomAnchors(const WorldState& world) {
+    const size_t nPlants = world.plants.size();
     std::vector<BloomAnchor> out;
+    if (nPlants == 0) return out;
+    if (nPlants == 1) {
+        emitPlantBloomAnchorsInto(world.plants[0], out, 0);
+        return out;
+    }
+    std::vector<size_t> segBases(nPlants, 0);
     size_t segBase = 0;
-    for (const auto& plant : world.plants) {
-        emitPlantBloomAnchorsInto(plant, out, segBase);
-        segBase += plantSegmentCount(plant);
+    for (size_t i = 0; i < nPlants; ++i) {
+        segBases[i] = segBase;
+        segBase += plantSegmentCount(world.plants[i]);
+    }
+    std::vector<std::vector<BloomAnchor>> perPlant(nPlants);
+    brass::codegen::parallel_for(0, static_cast<int64_t>(nPlants), [&](int64_t b, int64_t e) {
+        for (int64_t i = b; i < e; ++i) {
+            const size_t idx = static_cast<size_t>(i);
+            emitPlantBloomAnchorsInto(world.plants[idx], perPlant[idx], segBases[idx]);
+        }
+    });
+    size_t total = 0;
+    for (const auto& v : perPlant) total += v.size();
+    out.reserve(total);
+    for (const auto& v : perPlant) {
+        out.insert(out.end(), v.begin(), v.end());
     }
     return out;
 }

@@ -1,7 +1,10 @@
 #include "broflora/broflora.h"
+#include "broflora/clumps.h"
 #include "broflora/sdf_mesh.h"
+#include "broflora/sway.h"
 #include "bromesh/analysis/bbox.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -196,12 +199,80 @@ static void test_empty_plant() {
     CHECK(mesh.indices.empty(), "Indices must be empty");
 }
 
+static void test_grove_parallel_emit() {
+    std::cout << "Testing 16-plant grove parallel emit and SDF mesh..." << std::endl;
+    WorldState world;
+    for (int gz = 0; gz < 4; ++gz) {
+        for (int gx = 0; gx < 4; ++gx) {
+            Plant p = createGrownPlant({static_cast<float>(gx) * 5.0f, 0.0f, static_cast<float>(gz) * 5.0f});
+            p.flowering = true;
+            world.plants.push_back(std::move(p));
+        }
+    }
+
+    ClumpOptions clumpOpts;
+    clumpOpts.minDepth = 0;
+    clumpOpts.minDensity = 0.0f;
+
+    auto t0 = std::chrono::steady_clock::now();
+    auto singleSegs = emitPlantSegments(world.plants[0]);
+    auto worldSegs = emitWorldSegments(world);
+    auto worldFoliage = emitWorldFoliage(world);
+    auto worldSway = emitWorldSway(world);
+    auto worldClumps = emitWorldClumps(world, clumpOpts);
+    auto worldBlooms = emitWorldBloomAnchors(world);
+    auto t1 = std::chrono::steady_clock::now();
+
+    CHECK(worldSegs.size() == singleSegs.size() * 16, "World segments count matches 16 plants");
+    CHECK(worldFoliage.size() == worldSegs.size(), "World foliage count matches world segments");
+    CHECK(worldSway.size() == worldSegs.size(), "World sway count matches world segments");
+    CHECK(!worldClumps.empty(), "World clumps must not be empty");
+    CHECK(!worldBlooms.empty(), "World bloom anchors must not be empty");
+
+    // Verify parent segment indices in plant k are properly offset by k * singleSegs.size()
+    const size_t nPerPlant = singleSegs.size();
+    for (size_t p = 0; p < 16; ++p) {
+        const size_t base = p * nPerPlant;
+        for (size_t s = 0; s < nPerPlant; ++s) {
+            const int expectedParent = singleSegs[s].parent >= 0
+                ? singleSegs[s].parent + static_cast<int>(base)
+                : -1;
+            CHECK(worldSegs[base + s].parent == expectedParent, "World segment parent offset matches");
+        }
+    }
+
+    SdfMeshOptions opts;
+    opts.useSurfaceNets = true;
+    opts.voxelSize = 0.04f;
+    opts.smoothK = 0.03f;
+    opts.margin = 0.08f;
+
+    auto t2 = std::chrono::steady_clock::now();
+    bromesh::MeshData singleMesh = emitPlantSdfMesh(world.plants[0], opts);
+    auto t3 = std::chrono::steady_clock::now();
+    bromesh::MeshData groveMesh = emitWorldSdfMesh(world, opts);
+    auto t4 = std::chrono::steady_clock::now();
+
+    CHECK(groveMesh.vertexCount() == singleMesh.vertexCount() * 16,
+          "Disjoint 16-plant grove SDF vertex count equals 16x single plant");
+    CHECK(groveMesh.triangleCount() == singleMesh.triangleCount() * 16,
+          "Disjoint 16-plant grove SDF triangle count equals 16x single plant");
+    CHECK(bromesh::isManifold(groveMesh), "16-plant grove SDF mesh must be manifold");
+
+    double emitMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    double singleSdfMs = std::chrono::duration<double, std::milli>(t3 - t2).count();
+    double groveSdfMs = std::chrono::duration<double, std::milli>(t4 - t3).count();
+    std::cout << "16-plant parallel emit: " << emitMs << " ms | single SDF: "
+              << singleSdfMs << " ms | 16-plant grove SDF: " << groveSdfMs << " ms" << std::endl;
+}
+
 int main() {
     std::cout << "=== Running broflora SDF Mesh Tests ===" << std::endl;
     test_surface_nets();
     test_marching_cubes();
     test_world_sdf_mesh();
     test_empty_plant();
+    test_grove_parallel_emit();
     std::cout << "All tests passed! (" << g_testsPassed << "/" << g_testsRun << " assertions)" << std::endl;
     return 0;
 }

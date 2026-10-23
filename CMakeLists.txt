@@ -120,6 +120,7 @@ target_link_libraries(broflora PUBLIC bromesh)
 # builds against.
 bro_dependency(bronze GITHUB wlejon/bronze TARGET bronze_runtime_shared
                OPTIONS BRONZE_BUILD_SHARED_RUNTIME=ON BRONZE_BUILD_TESTS=OFF)
+target_link_libraries(broflora PUBLIC $<BUILD_INTERFACE:brass>)
 
 # --- Standalone Bronze JavaScript API ---
 add_subdirectory(src/api)

@@ -1,6 +1,7 @@
 #include "broflora/leaf_cluster.h"
 #include "broflora/mesh_emit.h"
 
+#include <brass/codegen/kernel_jit.hpp>
 #include <bromath/bromath.h>
 #include <bromath/spatial_hash.h>
 
@@ -555,134 +556,140 @@ LeafPlacements placeLeafClustersOnBranches(
     std::vector<std::vector<float>> segRadius(segCount);
     std::vector<std::vector<int>> segDepth(segCount);
 
-    #pragma omp parallel for schedule(dynamic, 16) if(segCount > 32)
-    for (int i = 0; i < static_cast<int>(segCount); ++i) {
-        const BranchSegment& seg = segments[static_cast<size_t>(i)];
-        Vec3 d = seg.to - seg.from;
-        float length = vlen(d);
-        if (length < 1e-6f) continue;
-        if (seg.depth < opts.minDepth) continue;
-        if (seg.radius > 0.0f && seg.radius > opts.maxRadius) continue;
-        if (opts.terminalOnly && childCount[static_cast<size_t>(i)] > 0) continue;
+    auto evalSegRange = [&](int64_t begin, int64_t end) {
+        for (int64_t i = begin; i < end; ++i) {
+            const BranchSegment& seg = segments[static_cast<size_t>(i)];
+            Vec3 d = seg.to - seg.from;
+            float length = vlen(d);
+            if (length < 1e-6f) continue;
+            if (seg.depth < opts.minDepth) continue;
+            if (seg.radius > 0.0f && seg.radius > opts.maxRadius) continue;
+            if (opts.terminalOnly && childCount[static_cast<size_t>(i)] > 0) continue;
 
-        Vec3 T = d * (1.0f / length);
+            Vec3 T = d * (1.0f / length);
 
-        float weight = 1.0f;
-        if (!opts.densityWeight.empty()) {
-            weight = (static_cast<size_t>(i) < opts.densityWeight.size())
-                         ? std::max(0.0f, opts.densityWeight[static_cast<size_t>(i)])
-                         : 0.0f;
-            if (weight <= 0.0f) continue;
-        }
+            float weight = 1.0f;
+            if (!opts.densityWeight.empty()) {
+                weight = (static_cast<size_t>(i) < opts.densityWeight.size())
+                             ? std::max(0.0f, opts.densityWeight[static_cast<size_t>(i)])
+                             : 0.0f;
+                if (weight <= 0.0f) continue;
+            }
 
-        FastRng rng(opts.seed ^ (static_cast<uint64_t>(i) * 0x9E3779B97F4A7C15ULL));
+            FastRng rng(opts.seed ^ (static_cast<uint64_t>(i) * 0x9E3779B97F4A7C15ULL));
 
-        float expected = length * opts.perUnitLength * weight;
-        int sampleCount = static_cast<int>(std::floor(expected));
-        if (rng.uni01() < (expected - static_cast<float>(sampleCount))) {
-            ++sampleCount;
-        }
-        if (sampleCount <= 0) continue;
+            float expected = length * opts.perUnitLength * weight;
+            int sampleCount = static_cast<int>(std::floor(expected));
+            if (rng.uni01() < (expected - static_cast<float>(sampleCount))) {
+                ++sampleCount;
+            }
+            if (sampleCount <= 0) continue;
 
-        auto& transforms = segTransforms[static_cast<size_t>(i)];
-        auto& radii = segRadius[static_cast<size_t>(i)];
-        auto& depths = segDepth[static_cast<size_t>(i)];
-        transforms.reserve(static_cast<size_t>(sampleCount) * 16);
-        radii.reserve(static_cast<size_t>(sampleCount));
-        depths.reserve(static_cast<size_t>(sampleCount));
+            auto& transforms = segTransforms[static_cast<size_t>(i)];
+            auto& radii = segRadius[static_cast<size_t>(i)];
+            auto& depths = segDepth[static_cast<size_t>(i)];
+            transforms.reserve(static_cast<size_t>(sampleCount) * 16);
+            radii.reserve(static_cast<size_t>(sampleCount));
+            depths.reserve(static_cast<size_t>(sampleCount));
 
-        for (int s = 0; s < sampleCount; ++s) {
-            float u = rng.uni01();
-            float t = (opts.densityFalloff > 0.0f)
-                ? 1.0f - std::pow(1.0f - u, 1.0f + opts.densityFalloff)
-                : u;
+            for (int s = 0; s < sampleCount; ++s) {
+                float u = rng.uni01();
+                float t = (opts.densityFalloff > 0.0f)
+                    ? 1.0f - std::pow(1.0f - u, 1.0f + opts.densityFalloff)
+                    : u;
 
-            float phi = rng.uni01() * kTwoPi;
-            Vec3 e1 = perpendicularUnit(T);
-            Vec3 e2 = vcross(T, e1);
-            Vec3 R = e1 * std::cos(phi) + e2 * std::sin(phi);
+                float phi = rng.uni01() * kTwoPi;
+                Vec3 e1 = perpendicularUnit(T);
+                Vec3 e2 = vcross(T, e1);
+                Vec3 R = e1 * std::cos(phi) + e2 * std::sin(phi);
 
-            // Attachment point on branch surface
-            Vec3 P = seg.from + d * t + R * seg.radius;
+                // Attachment point on branch surface
+                Vec3 P = seg.from + d * t + R * seg.radius;
 
-            // Obstacle test on candidate origin
-            const int selfTag = static_cast<int>(i);
-            if (opts.avoid != nullptr && !opts.avoid->empty()) {
-                if (opts.avoid->tooClose(P, opts.obstacleClearance, selfTag)) {
-                    if (opts.obstaclePushout > 0.0f) {
-                        auto n = opts.avoid->nearest(P, selfTag);
-                        if (n.tag != -1 || std::isfinite(n.distance)) {
-                            P = n.point + n.normal * (opts.obstacleClearance + opts.obstaclePushout);
-                        }
-                        if (opts.avoid->tooClose(P, opts.obstacleClearance, selfTag)) {
+                // Obstacle test on candidate origin
+                const int selfTag = static_cast<int>(i);
+                if (opts.avoid != nullptr && !opts.avoid->empty()) {
+                    if (opts.avoid->tooClose(P, opts.obstacleClearance, selfTag)) {
+                        if (opts.obstaclePushout > 0.0f) {
+                            auto n = opts.avoid->nearest(P, selfTag);
+                            if (n.tag != -1 || std::isfinite(n.distance)) {
+                                P = n.point + n.normal * (opts.obstacleClearance + opts.obstaclePushout);
+                            }
+                            if (opts.avoid->tooClose(P, opts.obstacleClearance, selfTag)) {
+                                continue;
+                            }
+                        } else {
                             continue;
                         }
-                    } else {
-                        continue;
                     }
                 }
-            }
-            if (!opts.keepOut.empty()) {
-                bool blocked = false;
-                for (const auto& sp : opts.keepOut) {
-                    Vec3 dv = P - sp.center;
-                    float r = sp.radius + opts.obstacleClearance;
-                    if (vdot(dv, dv) <= r * r) { blocked = true; break; }
+                if (!opts.keepOut.empty()) {
+                    bool blocked = false;
+                    for (const auto& sp : opts.keepOut) {
+                        Vec3 dv = P - sp.center;
+                        float r = sp.radius + opts.obstacleClearance;
+                        if (vdot(dv, dv) <= r * r) { blocked = true; break; }
+                    }
+                    if (blocked) continue;
                 }
-                if (blocked) continue;
+
+                // Cluster growth direction: along branch tangent flared by branchAngle
+                float flare = (t > 0.85f && childCount[static_cast<size_t>(i)] == 0)
+                                  ? (opts.branchAngle * 0.3f)
+                                  : opts.branchAngle;
+                Vec3 D = vnormOr(T * (1.0f - flare) + R * flare, T);
+
+                // Gravity sag / droop
+                float horiz = std::sqrt(D.x * D.x + D.z * D.z);
+                Vec3 F = vnormOr(D + gravity * (0.15f * horiz), D);
+
+                // Phototropism: turn cluster toward light
+                Vec3 Fraw = F * (1.0f - opts.upBias * 0.4f) + worldUp * (opts.upBias * 0.4f);
+                F = vnormOr(Fraw, F);
+
+                // Tilt jitter
+                if (opts.tiltJitter > 0.0f) {
+                    float tiltAng = (rng.uni01() * 2.0f - 1.0f) * opts.tiltJitter;
+                    Vec3 tiltAxis = vnormOr(vcross(F, T), e2);
+                    F = vnorm(qrotate(qaxisAngle(tiltAxis, tiltAng), F));
+                }
+
+                // Upper surface normal faces skyward / light
+                Vec3 sideAxis = vcross(F, worldUp);
+                if (vdot(sideAxis, sideAxis) < 1e-8f) {
+                    sideAxis = vcross(F, Vec3{1.0f, 0.0f, 0.0f});
+                }
+                sideAxis = vnorm(sideAxis);
+                Vec3 N = vnorm(vcross(sideAxis, F));
+
+                // Roll jitter
+                if (opts.rollJitter > 0.0f) {
+                    float rollAng = (rng.uni01() * 2.0f - 1.0f) * opts.rollJitter;
+                    Quat q = qaxisAngle(F, rollAng);
+                    sideAxis = vnorm(qrotate(q, sideAxis));
+                    N = vnorm(qrotate(q, N));
+                }
+
+                float jitter = (rng.uni01() * 2.0f - 1.0f) * opts.scaleJitter;
+                float radiusFactor = 1.0f;
+                if (opts.scaleByRadius > 0.0f) {
+                    float ratio = (seg.radius > 0.0f) ? (seg.radius / refRadius) : 1.0f;
+                    radiusFactor = 1.0f + opts.scaleByRadius * (ratio - 1.0f);
+                    if (radiusFactor < 0.05f) radiusFactor = 0.05f;
+                }
+                float scale = opts.baseScale * (1.0f + jitter) * radiusFactor;
+                if (scale < 1e-6f) continue;
+
+                writeMatrix(transforms, sideAxis, N, F, P, scale);
+                radii.push_back(seg.radius);
+                depths.push_back(seg.depth);
             }
-
-            // Cluster growth direction: along branch tangent flared by branchAngle
-            float flare = (t > 0.85f && childCount[static_cast<size_t>(i)] == 0)
-                              ? (opts.branchAngle * 0.3f)
-                              : opts.branchAngle;
-            Vec3 D = vnormOr(T * (1.0f - flare) + R * flare, T);
-
-            // Gravity sag / droop
-            float horiz = std::sqrt(D.x * D.x + D.z * D.z);
-            Vec3 F = vnormOr(D + gravity * (0.15f * horiz), D);
-
-            // Phototropism: turn cluster toward light
-            Vec3 Fraw = F * (1.0f - opts.upBias * 0.4f) + worldUp * (opts.upBias * 0.4f);
-            F = vnormOr(Fraw, F);
-
-            // Tilt jitter
-            if (opts.tiltJitter > 0.0f) {
-                float tiltAng = (rng.uni01() * 2.0f - 1.0f) * opts.tiltJitter;
-                Vec3 tiltAxis = vnormOr(vcross(F, T), e2);
-                F = vnorm(qrotate(qaxisAngle(tiltAxis, tiltAng), F));
-            }
-
-            // Upper surface normal faces skyward / light
-            Vec3 sideAxis = vcross(F, worldUp);
-            if (vdot(sideAxis, sideAxis) < 1e-8f) {
-                sideAxis = vcross(F, Vec3{1.0f, 0.0f, 0.0f});
-            }
-            sideAxis = vnorm(sideAxis);
-            Vec3 N = vnorm(vcross(sideAxis, F));
-
-            // Roll jitter
-            if (opts.rollJitter > 0.0f) {
-                float rollAng = (rng.uni01() * 2.0f - 1.0f) * opts.rollJitter;
-                Quat q = qaxisAngle(F, rollAng);
-                sideAxis = vnorm(qrotate(q, sideAxis));
-                N = vnorm(qrotate(q, N));
-            }
-
-            float jitter = (rng.uni01() * 2.0f - 1.0f) * opts.scaleJitter;
-            float radiusFactor = 1.0f;
-            if (opts.scaleByRadius > 0.0f) {
-                float ratio = (seg.radius > 0.0f) ? (seg.radius / refRadius) : 1.0f;
-                radiusFactor = 1.0f + opts.scaleByRadius * (ratio - 1.0f);
-                if (radiusFactor < 0.05f) radiusFactor = 0.05f;
-            }
-            float scale = opts.baseScale * (1.0f + jitter) * radiusFactor;
-            if (scale < 1e-6f) continue;
-
-            writeMatrix(transforms, sideAxis, N, F, P, scale);
-            radii.push_back(seg.radius);
-            depths.push_back(seg.depth);
         }
+    };
+    if (segCount > 32) {
+        brass::codegen::parallel_for(0, static_cast<int64_t>(segCount), evalSegRange);
+    } else {
+        evalSegRange(0, static_cast<int64_t>(segCount));
     }
 
     size_t totalTransforms = 0;

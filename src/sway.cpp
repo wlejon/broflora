@@ -6,6 +6,7 @@
 
 #include "broflora/mesh_emit.h"
 
+#include <brass/codegen/kernel_jit.hpp>
 #include "bromath/vec.h"
 
 #include <algorithm>
@@ -534,9 +535,25 @@ std::vector<SegmentSway> emitPlantSway(const Plant& plant) {
 }
 
 std::vector<SegmentSway> emitWorldSway(const WorldState& world) {
+    const size_t nPlants = world.plants.size();
     std::vector<SegmentSway> out;
-    for (const auto& plant : world.plants) {
-        computePlantSway(plant, emitPlantSegments(plant), emitPlantFoliage(plant), out);
+    if (nPlants == 0) return out;
+    if (nPlants == 1) {
+        computePlantSway(world.plants[0], emitPlantSegments(world.plants[0]), emitPlantFoliage(world.plants[0]), out);
+        return out;
+    }
+    std::vector<std::vector<SegmentSway>> perPlant(nPlants);
+    brass::codegen::parallel_for(0, static_cast<int64_t>(nPlants), [&](int64_t b, int64_t e) {
+        for (int64_t i = b; i < e; ++i) {
+            const auto& plant = world.plants[static_cast<size_t>(i)];
+            computePlantSway(plant, emitPlantSegments(plant), emitPlantFoliage(plant), perPlant[static_cast<size_t>(i)]);
+        }
+    });
+    size_t total = 0;
+    for (const auto& v : perPlant) total += v.size();
+    out.reserve(total);
+    for (const auto& v : perPlant) {
+        out.insert(out.end(), v.begin(), v.end());
     }
     return out;
 }
@@ -547,20 +564,28 @@ std::vector<float> leafVegetation(const bromesh::LeafPlacements& pl,
     const size_t count = pl.count();
     std::vector<float> out(count * kVegetationFloats, 0.0f);
     if (pl.segment.size() != count) return out;
-    for (size_t i = 0; i < count; ++i) {
-        const float* M = &pl.transforms[i * 16];
-        const Vec3 P{M[3], M[7], M[11]};
-        Vec3 F{M[2], M[6], M[10]};
-        const float fl = bromath::vlen(F);
-        F = fl > 1e-8f ? F * (1.0f / fl) : Vec3{0.0f, 1.0f, 0.0f};
-        const int32_t si = pl.segment[i];
-        if (si < 0 || static_cast<size_t>(si) >= segs.size() || static_cast<size_t>(si) >= sway.size()) continue;
-        const auto& seg = segs[static_cast<size_t>(si)];
-        const SegmentSway& s = sway[static_cast<size_t>(si)];
-        const Vec3 d = seg.to - seg.from;
-        const float dd = bromath::vdot(d, d);
-        const float t = dd > 1e-12f ? std::clamp(bromath::vdot(P - seg.from, d) / dd, 0.0f, 1.0f) : 1.0f;
-        writeVegetation(&out[i * kVegetationFloats], s, P, s.weightFrom + (s.weightTo - s.weightFrom) * t, F, true);
+    auto evalRange = [&](int64_t b, int64_t e) {
+        for (int64_t idx = b; idx < e; ++idx) {
+            const size_t i = static_cast<size_t>(idx);
+            const float* M = &pl.transforms[i * 16];
+            const Vec3 P{M[3], M[7], M[11]};
+            Vec3 F{M[2], M[6], M[10]};
+            const float fl = bromath::vlen(F);
+            F = fl > 1e-8f ? F * (1.0f / fl) : Vec3{0.0f, 1.0f, 0.0f};
+            const int32_t si = pl.segment[i];
+            if (si < 0 || static_cast<size_t>(si) >= segs.size() || static_cast<size_t>(si) >= sway.size()) continue;
+            const auto& seg = segs[static_cast<size_t>(si)];
+            const SegmentSway& s = sway[static_cast<size_t>(si)];
+            const Vec3 d = seg.to - seg.from;
+            const float dd = bromath::vdot(d, d);
+            const float t = dd > 1e-12f ? std::clamp(bromath::vdot(P - seg.from, d) / dd, 0.0f, 1.0f) : 1.0f;
+            writeVegetation(&out[i * kVegetationFloats], s, P, s.weightFrom + (s.weightTo - s.weightFrom) * t, F, true);
+        }
+    };
+    if (count >= 256) {
+        brass::codegen::parallel_for(0, static_cast<int64_t>(count), evalRange);
+    } else {
+        evalRange(0, static_cast<int64_t>(count));
     }
     return out;
 }
@@ -568,11 +593,19 @@ std::vector<float> leafVegetation(const bromesh::LeafPlacements& pl,
 std::vector<float> vegetationPerVertex(const std::vector<float>& perItem, size_t verts) {
     const size_t items = perItem.size() / kVegetationFloats;
     std::vector<float> out(items * verts * kVegetationFloats);
-    for (size_t i = 0; i < items; ++i) {
-        for (size_t v = 0; v < verts; ++v) {
-            std::copy_n(&perItem[i * kVegetationFloats], kVegetationFloats,
-                        &out[(i * verts + v) * kVegetationFloats]);
+    auto evalRange = [&](int64_t b, int64_t e) {
+        for (int64_t idx = b; idx < e; ++idx) {
+            const size_t i = static_cast<size_t>(idx);
+            for (size_t v = 0; v < verts; ++v) {
+                std::copy_n(&perItem[i * kVegetationFloats], kVegetationFloats,
+                            &out[(i * verts + v) * kVegetationFloats]);
+            }
         }
+    };
+    if (items * verts >= 512) {
+        brass::codegen::parallel_for(0, static_cast<int64_t>(items), evalRange);
+    } else {
+        evalRange(0, static_cast<int64_t>(items));
     }
     return out;
 }

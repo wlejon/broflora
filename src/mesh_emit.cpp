@@ -1,5 +1,6 @@
 #include "broflora/mesh_emit.h"
 
+#include <brass/codegen/kernel_jit.hpp>
 #include "bromath/quat.h"
 #include "bromath/scalar.h"
 #include "bromath/vec.h"
@@ -936,9 +937,28 @@ void refreshSupports(WorldState& world) {
 }
 
 std::vector<bromesh::BranchSegment> emitWorldSegments(const WorldState& world) {
+    const size_t nPlants = world.plants.size();
     std::vector<bromesh::BranchSegment> out;
-    for (const auto& plant : world.plants) {
-        emitPlantSegmentsInto(plant, out);
+    if (nPlants == 0) return out;
+    if (nPlants == 1) {
+        emitPlantSegmentsInto(world.plants[0], out);
+        return out;
+    }
+    std::vector<std::vector<bromesh::BranchSegment>> perPlant(nPlants);
+    brass::codegen::parallel_for(0, static_cast<int64_t>(nPlants), [&](int64_t b, int64_t e) {
+        for (int64_t i = b; i < e; ++i) {
+            emitPlantSegmentsInto(world.plants[static_cast<size_t>(i)], perPlant[static_cast<size_t>(i)]);
+        }
+    });
+    size_t total = 0;
+    for (const auto& v : perPlant) total += v.size();
+    out.reserve(total);
+    for (auto& v : perPlant) {
+        const int base = static_cast<int>(out.size());
+        for (auto& seg : v) {
+            if (seg.parent >= 0) seg.parent += base;
+            out.push_back(seg);
+        }
     }
     return out;
 }
