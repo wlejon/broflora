@@ -423,11 +423,6 @@ bool clumpLeaves(const broflora::WorldState& world, const broflora::Plant* plant
 // The clump-mode emitScatterSegments object.
 Value scatterClumps(const broflora::WorldState& world, Value opts);
 Value jsEmitClumps(Value thisVal, std::span<const Value> args);
-// The herbs (native_flora_herbs.cpp, broflora/herbs.h): the preset names, a
-// preset as an object, the species table bro.scene's grass node draws.
-Value jsHerbPresets(Value thisVal, std::span<const Value> args);
-Value jsHerbPreset(Value thisVal, std::span<const Value> args);
-Value jsHerbRecords(Value thisVal, std::span<const Value> args);
 
 // ── Leaf shape & phyllotaxy parsing ────────────────────────────────────
 

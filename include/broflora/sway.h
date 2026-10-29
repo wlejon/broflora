@@ -2,7 +2,7 @@
 
 // Wind sway: what a renderer needs to move a plant in wind the way wood and
 // leaves move, and the vegetation records that carry it to bro.scene
-// (docs/look-and-motion.md "Step 4 as built").
+// (bro's docs/vegetation-api.js "Vegetation records").
 //
 // The motion model. A plant is three levels of cantilever, each bending in
 // the wind like a beam fixed at its base:

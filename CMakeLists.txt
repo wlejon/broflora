@@ -33,7 +33,6 @@ add_library(broflora STATIC
     src/leaf_cluster.cpp
     src/sdf_mesh.cpp
     src/world_io.cpp
-    src/herbs.cpp
 )
 add_library(broflora::broflora ALIAS broflora)
 
