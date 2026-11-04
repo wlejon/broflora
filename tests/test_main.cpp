@@ -14,8 +14,9 @@ std::vector<TestEntry>& testRegistry() {
     return r;
 }
 
-// Optional argv[1] is a case-sensitive substring filter: only tests whose name
-// contains it run. With no argument every test runs (the default CI invocation).
+// Supports `--filter=<substr>`, `--filter <substr>`, `-f <substr>`, a bare
+// positional `<substr>` argument, or `--list` / `-l`. With no argument every
+// test runs (the default CI invocation).
 int main(int argc, char** argv) {
 #ifdef _WIN32
     // Route CRT/STL debug assertions (e.g. a bounds-checked vector subscript in
@@ -27,7 +28,30 @@ int main(int argc, char** argv) {
     }
 #endif
 
-    const char* filter = (argc > 1) ? argv[1] : nullptr;
+    const char* filter = nullptr;
+    bool listOnly = false;
+
+    for (int i = 1; i < argc; ++i) {
+        const char* arg = argv[i];
+        if (std::strcmp(arg, "--list") == 0 || std::strcmp(arg, "-l") == 0) {
+            listOnly = true;
+        } else if (std::strncmp(arg, "--filter=", 9) == 0) {
+            filter = arg + 9;
+        } else if ((std::strcmp(arg, "--filter") == 0 || std::strcmp(arg, "-f") == 0) && i + 1 < argc) {
+            filter = argv[++i];
+        } else if (arg[0] != '-') {
+            filter = arg;
+        }
+    }
+
+    if (listOnly) {
+        for (const auto& t : testRegistry()) {
+            if (filter && std::strstr(t.name, filter) == nullptr) continue;
+            std::printf("%s\n", t.name);
+        }
+        return 0;
+    }
+
     for (auto& t : testRegistry()) {
         if (filter && std::strstr(t.name, filter) == nullptr) continue;
         std::printf("[ run  ] %s\n", t.name);
